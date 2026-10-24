@@ -1,4 +1,4 @@
-"""Phase 1 terminal entry point: inspect inputs or validate supplied predictions."""
+"""Offline deletion audit: predict, inspect evidence, or validate an output."""
 
 import argparse
 import json
@@ -13,17 +13,43 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("inspect", "validate-output", "phase2", "phase3"), nargs="?", default="inspect")
+    parser.add_argument("command", choices=("predict", "inspect", "validate-output", "phase2", "phase3"), nargs="?", default="predict")
     parser.add_argument("--dataset", type=Path, default=ROOT / "dataset")
     parser.add_argument("--samples", action="store_true")
     parser.add_argument("--predictions", type=Path)
+    parser.add_argument("--diagnostics", type=Path, help="Prediction diagnostic JSON (includes abstentions)")
     parser.add_argument("--case-id", help="Inspect one Phase 2/3 case (includes raw fictional evidence)")
     args = parser.parse_args(argv)
     if args.command == "validate-output" and args.predictions is None:
         parser.error("validate-output requires --predictions")
+    if args.command == 'validate-output' and not args.predictions.is_file():
+        parser.error('prediction file does not exist; a blocked prediction run does not create output.csv')
+    if args.case_id and args.command not in {'phase2', 'phase3'}:
+        parser.error('--case-id is supported only for phase2 and phase3')
     dataset = load_dataset(args.dataset, samples=args.samples)
     index = EvidenceIndex(dataset.observations, registry=dataset.registry)
-    if args.command in {"phase2", "phase3"}:
+    if args.command == 'predict':
+        from ghost_audit.prediction import PredictionBlocked, diagnostics, predict, publish, write_diagnostics
+
+        run = predict(dataset, index)
+        diagnostic_path = args.diagnostics or ROOT / 'code/evaluation' / (
+            'sample_prediction_diagnostics.json' if args.samples else 'full_prediction_diagnostics.json')
+        output_path = args.predictions or ROOT / ('sample_predictions.csv' if args.samples else 'output.csv')
+        if diagnostic_path.resolve() == output_path.resolve():
+            parser.error('diagnostics and predictions must use different paths')
+        if any(path.resolve().is_relative_to(args.dataset.resolve()) for path in (diagnostic_path, output_path)):
+            parser.error('prediction artifacts must be outside the read-only dataset directory')
+        write_diagnostics(diagnostic_path, run)
+        summary = diagnostics(run)
+        try:
+            publish(output_path, run, dataset, index)
+        except PredictionBlocked as exc:
+            summary.update(output_written=False, error=str(exc))
+            print(json.dumps(summary, indent=2))
+            return 2
+        summary.update(output_written=True, output_path=str(output_path))
+        print(json.dumps(summary, indent=2))
+    elif args.command in {"phase2", "phase3"}:
         from ghost_audit.phase2 import Phase2Analyzer, diagnostics
 
         requests = sorted(dataset.requests, key=lambda r: r.case_id)
@@ -55,7 +81,7 @@ def main(argv=None) -> int:
             "parsed_files": sum(doc.status == "parsed" for doc in dataset.documents),
             "deferred_files": sum(doc.status == "deferred" for doc in dataset.documents),
             "observations": len(index.observations),
-            "prediction_engine": "not implemented in Phase 1",
+            "prediction_engine": "deterministic policy and planning; abstains when evidence cannot establish a verdict",
         }, indent=2))
     return 0
 

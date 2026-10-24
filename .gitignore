@@ -5,3 +5,5 @@ __pycache__/
 .env
 output.csv
 code.zip
+sample_predictions.csv
+code/evaluation/*_prediction_diagnostics.json

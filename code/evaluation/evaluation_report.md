@@ -1,6 +1,200 @@
-# Offline pipeline evaluation: Phases 1, 2, and 3
+# Phase 4 evaluation — 2026-10-24
 
-No independent audit predictions or submission output have been produced. Case-level
+The deterministic decision pipeline is implemented. The supplied corpus still cannot support
+an honest 518-row submission: **172 cases abstain**, so root `output.csv` is deliberately
+not created. Supported INCOMPLETE statuses establish a violation; unresolved coverage can
+still leave their plans short of the complete canonical resource list. No organizer data
+or hidden labels were used. Historical checkpoint results follow this current report.
+
+## Reproduction and validation
+
+Python **3.12.10**, existing requirements only, no external model integration:
+
+```text
+python -m pytest -q
+python code/main.py
+python code/main.py predict --samples
+python code/evaluation/main.py --run
+python code/evaluation/main.py --run --json
+python code/main.py validate-output --predictions output.csv
+```
+
+- Full pytest: **416 passed, 0 failed**, 50.47 seconds. This includes all 356 existing
+  regressions, 58 new policy/prediction integrations, and two additional evaluation tests.
+- Full and sample production commands: expected exit **2**, with explicit diagnostic
+  abstentions; no placeholder CSV is written. Evaluation `--run` exits **0**.
+- All **346 supported full-dataset rows** pass unchanged output validation, including
+  evidence existence, cutoff, canonical ordering, and parsed resource linkage. There are
+  **0 prediction validation errors**. This is not validation of a full submission.
+- Root validation was attempted and exits **2** because `output.csv` does not exist.
+- A separate synthetic integration processes, writes, rereads, and validates exactly
+  **518 grounded rows**. Blocked publication preserves an existing file byte for byte.
+- Official dataset files, AGENTS.md, Phase 2 correlation, Phase 3 state selection, and
+  the output validator are unchanged. The temporal adapter additionally carries policy
+  fields and recognizes extra identifying fields; it does not promote potential ownership.
+
+## Independent evaluation of every public sample
+
+The runtime never reads sample answers. The evaluation harness compares its independent
+predictions against all **32** reference rows, treating **15 abstentions as errors**.
+There are 17 emitted INCOMPLETE rows and no emitted COMPLETE/NOT_APPLICABLE rows.
+All 17 emitted statuses agree with the references; that selective result is not 100% coverage.
+
+| Metric | Exact result | Percentage |
+| --- | --- | ---: |
+| Deletion-status accuracy | 17 / 32 = 0.53125 | 53.125% |
+| Exact case accuracy | 4 / 32 = 0.125 | 12.5% |
+| Step accuracy | 111 / 195 = 0.5692307692307692 | 56.9230769231% |
+| Step precision | 111 / 114 = 0.9736842105263158 | 97.3684210526% |
+| Step recall | 111 / 193 = 0.5751295336787565 | 57.5129533679% |
+| Field accuracy | 612 / 1365 = 0.44835164835164837 | 44.8351648352% |
+| Sequence accuracy | 4 / 32 = 0.125 | 12.5% |
+
+Reference steps: **193**; predicted steps: **114**; matched steps: **111**;
+missing steps: **82**; extra steps: **3**; incorrect evidence substitutions: **0**.
+A wrong citation counts as a missing and extra exact step. The substitution metric compares
+otherwise identical semantic steps; it does not certify citations for undiscovered resources.
+Position-sensitive field and sequence scores include the effect of missing steps.
+
+The three extra steps are retained-backup presence checks in two cases and a future profile
+absence check in one of those cases. They are explicitly planned checks, not asserted current
+states. The implementation keeps policy-required retention coverage rather than special-casing
+those sample rows. Missing checks and findings dominate the remaining error.
+
+Failure grouping is a nonexclusive set of investigation priorities from engine diagnostics
+and reference mismatches, not authoritative root-cause labels:
+
+| Group | Affected failing samples | Interpretation |
+| --- | ---: | --- |
+| Intent classification | 0 | No diagnosed authorization error; samples do not establish universal language coverage. |
+| Identity resolution | 0 | No unresolved subject; association ambiguity remains a separate issue. |
+| Evidence discovery | 28 | Missing resources/checks, unsupported ownership chains, deferred artifacts. |
+| Temporal reconstruction | 1 | Explicit failover/primary coverage gap; missing rows remain UNKNOWN. |
+| Policy mapping | 10 | Missing conditional facts and one unsupported contact-replica schema. |
+| State interpretation | 12 | Insufficient field, retention, or process-safety evidence. |
+| Remediation planning | 9 | Missing findings/treatments for unsupported resources or policy conditions. |
+| Verification planning | 28 | Missing resource checks and three additional future checks. |
+| Ordering and evidence selection | 0 | No otherwise identical step has a substituted citation or ordering-only error. |
+
+Run `--run --json` for exact missing/extra steps, citations, blockers, and per-case details.
+This full breakdown is produced by the evaluation harness, outside production prediction code.
+
+## Full 518-request run
+
+| Outcome | Count |
+| --- | ---: |
+| COMPLETE | 0 |
+| INCOMPLETE | 336 |
+| NOT_APPLICABLE | 10 |
+| UNDECIDABLE diagnostic abstention, no official row | 172 |
+| Cases with unresolved evidence or an abstention blocker | 508 |
+| Unsupported policy-state assessments | 1606 |
+| Assessments without a selected state-evidence citation | 1581 |
+
+UNDECIDABLE is internal diagnostics only. The three official status counts total **346**,
+not 518; no fourth status or fabricated row is serialized. All 336 supported INCOMPLETE
+cases still carry uncertainty about other resources. Last observed states and partial
+resource discovery do not establish exhaustive compliance.
+
+Before the final safety correction, 49 cases had only a retained security record and could
+have been incorrectly marked COMPLETE. They now abstain: retention or safe process state
+alone cannot prove a deletion treatment. Of the final abstentions, 123 have insufficient or
+unresolved state evidence, and 49 additional cases lack any verified deletion treatment.
+Blocker reasons overlap; `no_verified_deletion_treatment` occurs in 110 cases overall.
+Eleven images remain an unassigned candidate pool, never 11 violations per case.
+
+Scoped violations, before logical output deduplication (counts span cases and physical scopes):
+
+| Category | Count |
+| --- | ---: |
+| USER_PROFILE | 55 |
+| SEARCH_INDEX_ENTRY | 336 |
+| SUPPORT_MESSAGE | 112 |
+| ANALYTICS_PROFILE | 89 |
+| USER_EXPORT | 33 |
+| ACCOUNT_TOMBSTONE | 8 |
+| DATA_FLOW | 135 |
+| BACKUP_ARCHIVE restore risk | 29 |
+
+Emitted full-dataset operation counts:
+
+| Operation | Count |
+| --- | ---: |
+| REPORT_REMAINING_RECORD | 351 |
+| REPORT_EXPOSED_PII | 159 |
+| REPORT_ACTIVE_DATA_FLOW | 112 |
+| REPORT_RESTORE_RISK | 22 |
+| DISABLE_DATA_FLOW | 112 |
+| BLOCK_RESTORE | 22 |
+| DELETE_RECORD | 351 |
+| REDACT_RECORD | 87 |
+| ANONYMIZE_RECORD | 72 |
+| VERIFY_RECORD_ABSENT | 404 |
+| VERIFY_RECORD_PRESENT | 170 |
+| VERIFY_RECORD_REDACTED | 87 |
+| VERIFY_RECORD_ANONYMIZED | 72 |
+| VERIFY_DATA_FLOW_DISABLED | 113 |
+| VERIFY_RESTORE_BLOCKED | 23 |
+
+Final full prediction/state reconstruction and per-row validation: **6.8314 seconds**;
+sample processing: **1.3924 seconds**. These exclude ingestion and JSON serialization and
+were measured while tests also ran. No performance gate, timeout, or additional framework
+was introduced. Each file is parsed once and the existing index is reused.
+
+## Participant-created cases and generalized fixes
+
+Executable examples in `code/tests/test_prediction.py` include:
+
+1. A scoped negative profile read proves COMPLETE with only a cited absence verification;
+   a successful deletion operation alone instead abstains.
+2. A missing primary record and surviving read/failover copies prove INCOMPLETE. Physical
+   scopes remain distinct; one logical finding cites a surviving copy, never the absent one.
+3. Exposed tombstone identifiers require REDACT while preserving the stable user reference.
+   A fully observed clean tombstone complies; a former profile explicitly becoming a
+   deleted tombstone changes treatment rather than being deleted.
+4. Attributable analytics requires ANONYMIZE. Full observed null identity-field coverage
+   can prove the required representation; a lone null email or an extra linkable device
+   cannot. Contemporaneous contradictory identifier values remain UNKNOWN.
+5. Retained security and active legal-hold records survive; a released hold is not reactivated
+   by a future deadline. Retention-only, disabled-flow-only, and blocked-backup-only cases
+   cannot prove that the subject's data was deleted.
+6. Active flows and unsafe restores are secured before cleanup. Retained records receive
+   future presence checks. Explicit cleanup dependencies conflicting with mandatory
+   canonical order cause a diagnostic abstention.
+7. Historical request email resolution, POTENTIAL ownership, cutoff exclusion, future capture,
+   unknown state, input permutations, negative/uncertain intent, all 15 policy categories,
+   all-518 serialization, and both CLI publication paths have separate integrations.
+
+Generalized corrections from evaluation: service-export container names now supply policy
+types without inventing collection joins; identity-service tombstones map to their REDACT
+rule; a contact read with actual marketing-preference fields maps to DELETE; missing shared
+context/retention fields on a later read do not revoke an earlier scoped obligation; field
+conflicts cannot become PII findings. The initial synthetic fixture omitted manifest registry
+entries and correctly failed the provenance boundary; the fixture now registers its evidence.
+No production validation or correlation guard was relaxed, and no case-ID condition was added.
+
+## Remaining accuracy gaps and Phase 5 priorities
+
+1. Recover missing resource ownership and schema context from participant evidence while
+   preserving contamination, collection, and temporal safeguards. Three sample requests
+   have no discovered resource observations at all. Most errors are missing coverage.
+2. Extract and independently link the deferred images and unsupported business-document
+   facts. Missing attachments, exports, replica/system aliases, and anonymous post-treatment
+   records must not be inferred from resource prefixes or reference answers.
+3. Establish shared-context, subject-only attachment, retention/hold, and restore-permission
+   facts where current readbacks omit them. A category label such as active backup alone
+   is still insufficient to prove restoration permission.
+4. Improve verified completion coverage and canonical resource/check selection. Keep the
+   three extra checks visible and review their general policy basis; never hardcode samples.
+
+Phase 5 is **not implemented**. The final submission remains blocked until all requests have
+adequately supported statuses and plans. The following sections preserve prior checkpoints.
+
+---
+
+# Historical evaluation: Phases 1, 2, and 3
+
+At the Phase 1 checkpoint, no independent audit predictions or submission output had been produced. Case-level
 deletion-status accuracy, step accuracy, field accuracy, sequence accuracy, and exact-case
 accuracy on the public samples are **not yet measured**. These metrics must be reported
 from independent engine predictions in a later phase. Hidden evaluation labels are not used.
@@ -317,6 +511,6 @@ and indexed in integration tests; repeated case lookups are checked to perform n
 - Scoped extraction keeps future sibling snapshots from delaying unrelated records;
   future record observations cannot borrow an earlier envelope as a valid citation.
 
-All predictions, semantic policy correctness, remediation dependencies, and final sample
-accuracy remain unmeasured. Image extraction and semantic document interpretation are
+At the Phase 1 checkpoint, predictions, semantic policy correctness, remediation dependencies, and sample
+accuracy remained unmeasured. Image extraction and semantic document interpretation are
 unfinished and must be addressed before claiming complete evidence coverage.

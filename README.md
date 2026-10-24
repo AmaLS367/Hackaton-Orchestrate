@@ -10,11 +10,14 @@ For each request, the agent must first determine whether deletion was actually r
 
 Read [`problem_statement.md`](./problem_statement.md) for the complete challenge contract.
 
-## Phase 1 implementation
+## Implementation
 
-The offline foundations are implemented. There is **no audit prediction engine yet**:
-the CLI inspects inputs and validates independently supplied output; it does not create
-placeholder answers or a root `output.csv`. Dataset files are read only.
+The deterministic offline pipeline implements intent, historical identity resolution,
+correlation, temporal reconstruction, all 15 supplied policies, remediation, verification,
+and validated serialization. Dataset files are read only. Unsupported cases cause explicit
+abstentions in diagnostics; a full submission is written only when every request has a
+grounded prediction. Current measured results and blockers are in
+[`code/evaluation/evaluation_report.md`](./code/evaluation/evaluation_report.md).
 
 ### Install and test
 
@@ -45,7 +48,7 @@ Missing sample cases count as errors; unknown or duplicate case IDs are rejected
 it does not measure prediction accuracy. The scorer refuses the reference file itself
 as the prediction input. Only the testing-only `code/evaluation/` package reads sample answers.
 
-To check a future full-dataset output (exact request coverage, ordering, schema, and citation times):
+To check a generated full-dataset output (exact request coverage, ordering, schema, and citation times):
 
 ```text
 python code/main.py validate-output --predictions output.csv
@@ -107,9 +110,73 @@ can select another participant dataset directory. Run pytest from the repository
   paid account, API key, or remote model call is part of Phase 1.
 
 Images and PDF pages without extractable text are explicitly marked `deferred`, never treated
-as empty/compliant evidence. Phase 3 below implements temporal state selection over parsed
-evidence. Semantic PDF interpretation, OCR, policy application, dependency-aware remediation
-planning, and actual predictions remain future work.
+as empty/compliant evidence. Semantic PDF interpretation and OCR remain unfinished.
+Phase 3 implements temporal reconstruction; Phase 4 applies policy and constructs predictions.
+
+## Phase 4: predictions and honest abstention
+
+With the Python 3.12 environment activated, the official invocation is:
+
+```text
+python code/main.py
+```
+
+It processes all 518 requests. Exit **0** means root `output.csv` was written after strict
+validation. Exit **2** means some cases could not be substantiated: the output is neither
+created nor replaced, and any older file is stale. No fourth status or placeholder row enters
+the submission. Inspect `code/evaluation/full_prediction_diagnostics.json` for the summary,
+each case's decision or abstention, policy assessments, supporting evidence, and blockers.
+These generated diagnostic artifacts are ignored by Git.
+
+Separate sample production and evaluation commands:
+
+```text
+python code/main.py predict --samples
+python code/evaluation/main.py --run
+python code/evaluation/main.py --run --json
+```
+
+Sample production attempts `sample_predictions.csv` and writes
+`code/evaluation/sample_prediction_diagnostics.json`; it has the same all-cases publication
+gate and never reads reference answers. `--run` independently attempts every sample and
+scores against all 32 reference rows, counting abstentions as errors. The evaluation harness
+alone reads `sample_output.csv`. Use `--predictions PATH` to select the production destination
+or score an existing independent sample CSV with the evaluation CLI. `--diagnostics PATH`
+selects a diagnostic JSON destination. Artifacts cannot overwrite files inside the dataset.
+
+`policy.py` maps explicit record types, known system/collection pairs, service-export object
+schemas, and readback events to CSV policy rules. It evaluates shared context, subject-only
+attachment ownership, attribution, email exposure, retention deadlines, legal holds, restore
+configuration, and deleted tombstones. Missing conditions and unknown schemas remain unknown.
+Historical condition evidence is separate from evidence proving the selected record state.
+Full identifying-field coverage is required for null-only anonymization; a lone null email
+is insufficient. Tombstones preserve the subject's stable reference; security and legal records
+are never deleted because of a user reference.
+
+`planning.py` deduplicates logical operations across separately assessed physical scopes.
+Flows and restores are secured before cleanup. Every incomplete plan verifies intended
+final states, including retained records and process safety, using empty future citations.
+Findings cite current violation evidence. Complete plans cite proven compliant states only.
+Unknown retention applicability causes precautionary preservation checks in an independently
+established incomplete case; it cannot prove compliance. Absent retained records require
+investigation because the official operations include no safe record-recreation operation.
+
+The official schema requires operation/system/resource order even between cleanup records.
+When an explicit downstream-before-source dependency contradicts that order, the engine reports
+the conflict and abstains rather than emitting an unsafe or invalid sequence. Unassigned images
+do not block every case. Potential associations, snapshot gaps, claims, and unknown states cannot
+establish violations. They can prevent `COMPLETE`; an independent proven violation still
+establishes `INCOMPLETE`. A supported status with unresolved resources remains explicitly
+flagged as a potentially incomplete plan. Discovery coverage is not a canonical label.
+Retention or process-safety evidence alone cannot prove that deletion occurred: a complete
+case also requires a proven compliant deletion, redaction, or anonymization record state.
+
+`prediction.py` reuses the existing shared index and Phase 2/3 boundaries. Each emitted row
+passes the existing output validator plus parsed, resource-linked citation checks before
+publication. Aggregate diagnostics include status/abstention counts, scoped policy violations,
+operation counts, unsupported states, runtime, validation results, and zero offline model usage.
+No new dependency or runtime AI provider is required. Detailed metrics and remaining Phase 5
+priorities are recorded directly in the Markdown evaluation and usage reports.
 
 ## Phase 2: intent, historical identity, and evidence correlation
 
@@ -253,10 +320,10 @@ authorized cases have unresolved evidence, ambiguity, or gaps. The full request 
 supported replica disagreements; samples expose one failover/primary coverage gap. Synthetic
 tests exercise explicit replica disagreements rather than promoting potential corpus evidence.
 
-For Phase 4, apply policy to field-level observations and each independent source scope, inspect
-`support`, `unresolved_states`, and replica comparisons before drawing conclusions, and retain
-the cited ownership chain. Implement policy and dependency planning separately; do not map
-`PRESENT`, null identifiers, discovery counts, or an absence of conflicts directly to compliance.
+Phase 4 consumes these observations and independent scopes, checks `support`, unresolved states,
+and replica comparisons, and retains the cited ownership chain. Its policy and planning modules
+do not map presence, null identifiers, discovery counts, or an absence of conflicts directly
+to compliance.
 
 ---
 

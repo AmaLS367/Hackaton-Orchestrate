@@ -17,8 +17,9 @@ REPLICA_SUFFIX = re.compile(
     r'failover_replica|replica(?:_[a-z0-9_]+)?)$')
 DIRECT_FIELDS = {'name', 'full_name', 'display_name', 'requester_name', 'customer_name',
                  'email', 'phone', 'email_hash', 'customer_email', 'owner_email',
-                 'requester_email', 'customer_phone', 'owner_phone', 'requester_phone'}
-STABLE_FIELDS = {'user_id', 'customer_reference', 'subject_reference', 'subject_ref'}
+                 'requester_email', 'customer_phone', 'owner_phone', 'requester_phone',
+                 'uploaded_by', 'ip_address', 'device_id', 'advertising_id', 'postal_address'}
+STABLE_FIELDS = {'user_id', 'customer_reference', 'subject_reference', 'subject_ref', 'subject_selector'}
 CONTENT_FIELDS = {'message_text', 'message_body', 'message_excerpt', 'body', 'notes', 'matched_value'}
 REDACTED = {'[redacted]', 'redacted'}
 ANONYMIZED = {'[anonymized]', 'anonymized', 'anonymous'}
@@ -29,6 +30,10 @@ OBSERVABLE_ATTRIBUTES = {
     'source_system', 'target_system', 'retention_until', 'account_status',
     'direct_identifiers', 'query_scope', 'rows', 'http_status', 'status_code',
     'total_hits', 'result', 'observed_state', 'event', 'reported_result', 'event_type',
+    'retained_until', 'legal_hold_until', 'hold_active', 'shared_context', 'subject_only',
+    'restore_blockable', 'ticket_id', 'source_resource_id', 'source_system_id',
+    'target_resource_id', 'target_system_id',
+    'email_opt_in',
 }
 
 # Only established schema families may equate physical replica tables. Generic
