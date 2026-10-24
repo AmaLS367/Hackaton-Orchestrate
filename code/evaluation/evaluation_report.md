@@ -1,4 +1,191 @@
-# Phase 4 evaluation — 2026-10-24
+# Phase 5 evaluation — evidence recovery (2026-10-24)
+
+Phase 5 keeps the Phase 1–4 architecture and recovers evidence the pipeline previously could
+not use. Every metric below comes from independent predictions; only the evaluation harness
+reads `sample_output.csv`. No case IDs, sample answers or lookup tables enter production code.
+
+## Reproduction
+
+Python **3.12.10** (project `.venv`; the machine's default Python 3.13 cannot import the
+pinned test environment). No new dependency. Optional OCR uses a local Tesseract 5.3 binary.
+
+```text
+python -m pytest -q                         # 438 passed
+python code/main.py inspect                 # 94 files parsed, 0 deferred (OCR available)
+python code/main.py phase2                  # exit 0
+python code/main.py phase3                  # exit 0
+python code/evaluation/main.py --run --json # exit 0
+python code/main.py                         # exit 2: 6 abstentions, output.csv withheld
+```
+
+The Phase 4 baseline was reproduced exactly before any edit: 416 tests passed; 17/32 status,
+4/32 exact, 111/193 matched steps, 15 abstentions on the samples. Two identical full runs
+produce byte-identical case diagnostics (determinism check).
+
+## Sample metrics (32 public requests, abstentions count as errors)
+
+| Metric | Phase 4 | Phase 5 |
+| --- | ---: | ---: |
+| Status accuracy | 17/32 = 53.1% | **32/32 = 100%** |
+| Exact case accuracy | 4/32 = 12.5% | **19/32 = 59.4%** |
+| Sequence accuracy | 4/32 = 12.5% | **19/32 = 59.4%** |
+| Step accuracy | 111/195 = 56.9% | **178/193 = 92.2%** |
+| Step precision | 111/114 = 97.4% | **178/178 = 100%** |
+| Step recall | 111/193 = 57.5% | **178/193 = 92.2%** |
+| Field accuracy | 612/1365 = 44.8% | **1149/1351 = 85.0%** |
+| Missing / extra steps | 82 / 3 | **15 / 0** |
+| Incorrect evidence citations | 0 | 0 |
+| Abstentions | 15 | **0** |
+| Predicted COMPLETE / INCOMPLETE | 0 / 17 | 10 / 22 |
+
+All 15 remaining missing steps are verification steps; no finding, remediation, status or
+citation is wrong:
+
+| Cause | Missing steps | Samples |
+| --- | ---: | --- |
+| Anonymized analytics record in a batch shared by several requests (no identifier left anywhere) | 6 | 03, 21, 25, 26, 27, 28 |
+| Primary profile ambiguous among same-status profiles of one batch | 6 | 18, 23, 28, 29, 31, 32 |
+| Resource absent from every participant file and activity | 3 | 04 (`account_004`), 18, 20 (audit records) |
+
+Ambiguous profiles are not guessed. Deciding them would need either an ordering heuristic
+correlated with case IDs or identity facts observed after the case's audit time; both are
+excluded by the challenge rules.
+
+## Full 518-request run
+
+| Outcome | Phase 4 | Phase 5 |
+| --- | ---: | ---: |
+| COMPLETE | 0 | **151** |
+| INCOMPLETE | 336 | **351** |
+| NOT_APPLICABLE | 10 | 10 |
+| Diagnostic abstentions (no row) | 172 | **6** |
+| Grounded rows passing per-row validation | 346 | **512** |
+| Validation errors | 0 | 0 |
+| Root `output.csv` | not written | not written (6 abstentions) |
+
+Evidence and resource coverage (Phase 2/3 diagnostics, full set):
+
+| Measure | Phase 4 | Phase 5 |
+| --- | ---: | ---: |
+| Confirmed observation associations | 2,100 | 4,196 |
+| Distinct associated system/resource pairs | 1,247 | 1,579 |
+| Established record states | 1,544 | 1,770 |
+| Deferred evidence files | 11 | 0 (Tesseract present) |
+| Requests with a uniquely attributed primary profile | n/a | 343 of 508 |
+| Requests whose ambiguous profile candidates are all proven absent | n/a | 149 |
+
+Prediction plus per-row validation takes 8.7 s (samples 2.6 s), excluding ingestion and OCR.
+
+The six remaining abstentions are one-off image cases where the evidence is insufficient
+or contradictory:
+
+| Case | Blocker |
+| --- | --- |
+| case_39 | Connector screen: the connector's enabled state is not stated in recoverable text |
+| case_45 | Only retained security records found; no deletion treatment can be verified |
+| case_46 | Tombstone screen: redaction of direct identifiers is not provable from the rendering |
+| case_52 | OCR misread the e-mail (`outiook.com`): link left unconfirmed by design |
+| case_55 | Backup screen: restore permission is not shown |
+| case_63 | Marketing screen shows a different person's e-mail than the catalogued subject |
+
+## Generalized improvements
+
+1. **Workflow-batch attribution** (`workflow.py`). Worker events carry no subject, so the
+   primary profile of each request is the deletion event in its batch window before
+   `reported_at` whose result matches the reported status (SUCCESS↔COMPLETE,
+   PARTIAL↔PARTIALLY_COMPLETE, FAILED↔NOT_STARTED in the early window; lenient at report
+   time). Exact-identity owners visible at the audit exclude other people's profiles, and
+   unique assignments eliminate rivals across both request files. With the strict mapping
+   every authorized request keeps at least one candidate, which supports the rule.
+   Per-resource actions are attributed only when a single request remains and the window
+   holds no more profiles than known requests (otherwise an unseen batch overlaps).
+2. **Observation-time linkage.** Late exports contain earlier scoped snapshots; their own
+   clocks (never earlier than any record `updated_at`) gate linkage, while citation and
+   state still require the manifest capture by `audit_at`. Inner snapshots stamped after
+   the audit (e.g. a recreated profile) stay excluded.
+3. **Collection compatibility.** Rows of one system's resource ID join unless an explicit
+   logical collection differs; replica tables of a family are equivalent. Envelope
+   collections no longer leak onto records that name another system.
+4. **Complete-listing absence.** A confirmed record never read in a citable state is ABSENT
+   when the latest complete listing of its collection omits it. Explicit reads win, and a
+   linkage-only row seen present at or after the listing blocks the inference. The validator
+   accepts such citations for absence checks only.
+5. **Freshest surface and newest read.** The latest supported read decides (precise reads
+   only break same-clock ties); policy assesses the most recently read surface of each
+   resource, so an old replica cannot override a newer read while simultaneous replica
+   drift still yields a finding.
+6. **Policy facts.** Categories come from every confirmed row of the resource with explicit
+   signals first; backups carry only the restore obligation; documented defaults for rule
+   05/06/12/13 apply only when no participant field states the condition, and are named in
+   diagnostics. Redaction/anonymization is proven by observed nulled identifier fields with
+   no remaining value. Cleanup-order conflicts are diagnostics because the order is fixed.
+7. **Documents and images.** Whole-document PDF observations connect a subject and resource
+   on different lines. Data-catalog link events map reference texts (statement numbers, page
+   keys) to resources, matched only within a day of the catalogue entry. Images use optional
+   offline OCR limited to catalogued resources and their lines, so OCR errors cannot create
+   identity links. Hash, capture time and provenance are those of the original file.
+8. **Disjunctive profile verification.** When the profile stays ambiguous but every candidate
+   is proven absent, the subject's profile is gone whichever it is; COMPLETE is allowed
+   without naming it. Retention-only cases still abstain.
+
+## Participant-created evaluation cases (executable in `code/tests/test_phase5.py`)
+
+1. Two requests reported together, one COMPLETE and one NOT_STARTED, with a SUCCESS and a
+   FAILED profile deletion: each request receives the status-consistent profile, verified
+   absent through a cited export lookup. Both are COMPLETE.
+2. Two COMPLETE requests sharing a batch with two SUCCESS profiles: neither is named. When a
+   later listing omits both, the case is COMPLETE with only its retained-record check; when the
+   listing still contains one candidate, the case abstains (`no_verified_deletion_treatment`).
+3. An identity fact about the rival's profile observed after this case's audit is not used to
+   resolve this case's ambiguity; the rival's later audit can use it.
+4. A record observed before the cutoff but packaged in a later export appears only as an
+   uncited future verification; it never supplies a citation.
+5. A complete listing proves a never-read profile absent (validator support `coverage`); the
+   same listing cannot support any other operation, an explicit earlier 404 is cited instead
+   when present, and a listing that still contains the profile yields a remaining-record finding.
+6. An old replica showing the profile and a newer export returning 404: COMPLETE, citing the newer read.
+7. OCR text with a catalogued resource, another customer's row and a misread e-mail keeps only
+   the catalogued resource and its line; an image without OCR stays deferred.
+
+Further cases cover a worker-typed support record, a subject's earlier request, catalogue
+time windows, collection fallbacks and the backup restore-only obligation.
+
+## Failures found and corrected during Phase 5
+
+- A catalog entry using the subject key as its reference text (`tombstone_17 (user_17)`)
+  turned every document mentioning `user_17`, including a legal register, into a tombstone
+  observation. Catalogue references now match only documents captured near the entry.
+- An anonymized analytics record was attributed to the only known request in its window, but
+  a second profile deletion in that window belonged to a subject with no request; crowded
+  windows now block per-resource attribution (precision back to 100%).
+- `no direct identifier` in summary readbacks was parsed as an unknown person and as an
+  identifier value, demoting genuine links; it is now a null marker.
+- Complete-listing absence initially overrode records seen present in linkage-only rows and
+  flow/restore-only resources; both are now excluded.
+- The inventory `support_records` table lists messages and attachments alike and wrongly
+  typed attachments; only specific collections now type support records.
+- Allowing linkage by inner clocks first ignored a later `updated_at` on the row; linkage time
+  now includes record times (caught by an existing regression).
+- Several Phase 2–4 regressions encoded the previous conservative rules (unknown collections
+  isolated, precise reads outranking newer summaries, ACTIVE archives without restore risk,
+  backup presence checks, dependency abstention, images always deferred). They were rewritten
+  to state the new contracts, each backed by participant evidence and sample behaviour.
+
+## Remaining risks and Phase 6 priorities
+
+1. Publishing: decide the policy for the six evidence-insufficient image cases. They cannot be
+   given grounded rows today; `output.csv` stays withheld until that decision.
+2. Ambiguous batch attribution leaves 165 eval requests without a named profile and many
+   anonymized analytics records unnamed (status is unaffected; steps are missing).
+3. Defaults for rules 05, 06, 12 and 13 match all sample behaviour but rest on the absence of
+   contrary fields; a hidden case with an expired retention period or shared attachment would
+   need that explicit fact.
+4. OCR quality depends on the local Tesseract build; without it, eleven image cases revert
+   to deferred and their predictions change.
+
+---
+
+# Historical: Phase 4 evaluation — 2026-10-24
 
 The deterministic decision pipeline is implemented. The supplied corpus still cannot support
 an honest 518-row submission: **172 cases abstain**, so root `output.csv` is deliberately

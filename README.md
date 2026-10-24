@@ -19,6 +19,50 @@ abstentions in diagnostics; a full submission is written only when every request
 grounded prediction. Current measured results and blockers are in
 [`code/evaluation/evaluation_report.md`](./code/evaluation/evaluation_report.md).
 
+## Phase 5: evidence recovery
+
+Phase 5 keeps the Phase 1–4 pipeline and recovers evidence it previously could not use.
+On the 32 public samples, status accuracy rises from 17/32 to **32/32**, step recall from
+57.5% to **92.2%** at **100%** precision, and exact cases from 4/32 to **19/32**. On the full
+set, abstentions fall from 172 to **6** (151 COMPLETE, 351 INCOMPLETE, 10 NOT_APPLICABLE
+grounded rows). `output.csv` is still withheld because six image-only cases lack sufficient
+or consistent evidence. Details: [`code/evaluation/evaluation_report.md`](./code/evaluation/evaluation_report.md).
+
+- `workflow.py` attributes `deletion_worker` events to the request whose batch produced
+  them. A primary-profile deletion must fall in the batch window before `reported_at`
+  and report a result consistent with the request's status. Exact-identity owners
+  visible at the audit exclude other subjects, and unique assignments eliminate rivals
+  (sample and evaluation requests compete because they share the stream). Ambiguous
+  profiles are never named; when every candidate is proven absent, the deletion is
+  verified without a step for the profile. A window holding more profiles than known
+  requests disables per-resource attribution there.
+- Linkage uses each observation's own clock (`linkage_time`). An earlier snapshot packaged
+  in a later export can identify a record, but Phase 3 marks it linkage-only: it is never
+  cited and never sets a state. Same-system resource IDs join unless an explicit logical
+  collection differs. A subject's earlier request keeps evidence observed by its audit.
+- Phase 3 takes the newest supported read, preferring precise reads only among ties. A
+  confirmed record never read in a citable state is `ABSENT` when the latest complete
+  listing of its collection (SQL table or JSON snapshot envelope) omits it; the output
+  validator accepts that citation only for `VERIFY_RECORD_ABSENT` (`resource_support='coverage'`).
+- Policy types each resource from all its confirmed rows (record type, collection,
+  export container, read event, document/workflow hints, then the scoped system). The
+  freshest surface decides, so a stale replica cannot outlive a newer read. Backups carry
+  only the restore obligation. Without an explicit supplied fact, support conversations
+  are shared (rule 05), confirmed attachments belong only to the subject (rule 06), and
+  security/legal records without a deadline are preserved (rules 12/13); each default is
+  named in the assessment reasons, and explicit facts always win. Redaction/anonymization
+  is proven by observed nulled identifier fields with no exposed value.
+- Documents: PDFs yield one observation per explicit or catalogued resource with the whole
+  document's identifiers. Images use optional local Tesseract OCR (`ocr.py`, no Python OCR
+  package; set `GHOST_AUDIT_OCR=0` to disable or `GHOST_AUDIT_TESSERACT` to locate the binary).
+  OCR keeps only catalogued resources and the lines naming them; a misread identifier
+  matches nothing and leaves the link unconfirmed. Without Tesseract, images stay deferred.
+- Systems/collections: collection-only exports map to their schema's system,
+  `support_replica` reports on `support_platform`, and envelope collections are not
+  inherited by records that name another system.
+
+No external model is called at runtime; Gemini was not configured (no key) and was not needed.
+
 ### Install and test
 
 Use Python **3.12**. From the repository root, on Windows PowerShell:
@@ -89,8 +133,9 @@ can select another participant dataset directory. Run pytest from the repository
 - Cutoff filtering requires the manifest capture time and all applicable enclosing/record
   source timestamps to be at or before `audit_at`. Nested snapshots keep their own scopes.
   Expiration, retention, and scheduled deadlines remain business facts and do not delay
-  evidence availability. Activity results are tagged as claims. No state is inferred from
-  absence of a row or from an operation result.
+  evidence availability. Activity results are tagged as claims. No state is inferred from an
+  operation result; Phase 5 infers absence only from a complete listing omitting a confirmed,
+  never-read record, and links (not cites) facts by their own observation clock.
 - `output.py`: strict operation/phase/state combinations, citation placement, nonempty
   authorized outputs, exact request coverage, duplicate rejection, and deterministic CSV/JSON
   serialization. `canonical_steps` explicitly sorts by the official operation order, then
@@ -110,7 +155,7 @@ can select another participant dataset directory. Run pytest from the repository
   paid account, API key, or remote model call is part of Phase 1.
 
 Images and PDF pages without extractable text are explicitly marked `deferred`, never treated
-as empty/compliant evidence. Semantic PDF interpretation and OCR remain unfinished.
+as empty/compliant evidence. (Phase 5 adds catalogued OCR and document-level PDF observations.)
 Phase 3 implements temporal reconstruction; Phase 4 applies policy and constructs predictions.
 
 ## Phase 4: predictions and honest abstention
@@ -162,8 +207,8 @@ established incomplete case; it cannot prove compliance. Absent retained records
 investigation because the official operations include no safe record-recreation operation.
 
 The official schema requires operation/system/resource order even between cleanup records.
-When an explicit downstream-before-source dependency contradicts that order, the engine reports
-the conflict and abstains rather than emitting an unsafe or invalid sequence. Unassigned images
+When an explicit downstream-before-source dependency contradicts that order, Phase 5 keeps the
+official order and records the conflict in the case diagnostics. Unassigned images
 do not block every case. Potential associations, snapshot gaps, claims, and unknown states cannot
 establish violations. They can prevent `COMPLETE`; an independent proven violation still
 establishes `INCOMPLETE`. A supported status with unresolved resources remains explicitly
@@ -216,9 +261,9 @@ source records. `--dataset PATH` works with these commands. Existing `inspect` a
 - `correlation.py`: exact identifier anchors, one file/service-scoped trace hop, one explicitly
   supported resource-reference hop, then terminal collection of observations for established
   resources. Each accepted link retains the full chain of evidence IDs and observation locators.
-  Automatic resource joins require a matching system, resource ID, and known logical collection;
-  physical replica tables may differ. Unknown collections and ownership boundaries prevent
-  automatic confirmation. Explicit cross-collection links need independently scoped references;
+  Automatic resource joins require a matching system and resource ID; an explicitly different
+  logical collection or an ownership boundary prevents confirmation (Phase 5 no longer requires
+  both sides to state a collection). Explicit cross-collection links need independently scoped references;
   ambiguous target collections stay potential. `related_system` takes precedence, while documented
   `relationship_direction` (or `direction`) values `upstream` and `downstream` select source and
   target systems respectively. An absent or unknown direction never defaults to the source.
@@ -293,16 +338,16 @@ and exposes known SQL sibling-table coverage gaps. Analysis performs no file I/O
   conflict with actual fields. Security/legal categories never imply compliance.
 - `temporal.py` gates both observation and availability clocks. Snapshot observation times come
   from scoped capture clocks, independently of older row updates or later export packaging.
-  Per-scope histories are chronological. Precise snapshots/resource reads outrank summary labels;
-  among precise observations, the latest clock wins. Conflicting simultaneous direct observations
+  Per-scope histories are chronological. The latest supported read wins; precise snapshots/resource
+  reads outrank summary labels only at the same clock (Phase 5). Conflicting simultaneous direct observations
   remain `UNKNOWN`/`CONFLICTED`; a later resolution retains historical conflict evidence.
   Activity and operation results remain `CLAIM_ONLY` and cannot override direct contents.
 - Known SQL schema families can equate logical collections across primary, read, regional,
   reporting, and failover tables. Explicit `collection_name` remains authoritative. Physical table
   and replica scope stay attached to each fact. Generic tables require explicit logical collection
   metadata. Potential associations never become proof, including potential replica records.
-  Unknown collections are isolated per observation; unspecified service surfaces are separated
-  by origin and region. No inferred cross-source equivalence is used to erase evidence.
+  A row without a collection joins its resource's single known collection (Phase 5); unspecified
+  service surfaces are separated by origin and region, and policy uses the freshest surface.
 - Scoped 404/zero-row resource lookups can establish absence. Search misses require explicit
   resource query scope; cache misses, failed reads, unavailable downloads, and missing SQL rows
   do not prove absence. Known sibling-table gaps are `UNKNOWN`, not synthetic deletion facts.

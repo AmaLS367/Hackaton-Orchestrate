@@ -49,7 +49,8 @@ class ObservationLink(StrictModel):
 
 
 class CorrelationLink(StrictModel):
-    method: Literal['DIRECT_IDENTIFIER', 'SCOPED_TRACE', 'RESOURCE', 'EXPLICIT_RESOURCE_REFERENCE']
+    method: Literal['DIRECT_IDENTIFIER', 'SCOPED_TRACE', 'RESOURCE', 'EXPLICIT_RESOURCE_REFERENCE',
+                    'WORKFLOW_BATCH']
     supporting_observations: list[ObservationLink]
     matched_identifiers: list[str] = Field(default_factory=list)
     alias_origins: list[IdentityAlias] = Field(default_factory=list)
@@ -83,6 +84,9 @@ class CaseEvidenceBundle(StrictModel):
     limitations: list[str]
     # Unrelated corpus rows are omitted rather than copied into every case bundle.
     unrelated_observation_count: int
+    # Primary profiles the workflow may have targeted when no single one is attributable.
+    # They are not associations: none is the subject's record until proven otherwise.
+    primary_profile_candidates: list[ResourceRef] = Field(default_factory=list)
 
     @property
     def observation_timestamps(self) -> list[datetime]:

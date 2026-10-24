@@ -1,6 +1,6 @@
 """Reusable Phase 2 services and privacy-conscious diagnostics."""
 
-from collections import Counter
+from collections import Counter, defaultdict
 
 from .correlation import EvidenceCorrelator
 from .identity import IdentityResolver
@@ -9,6 +9,7 @@ from .ingestion import Dataset
 from .intent import IntentClassifier
 from .models import DeletionRequest, Observation
 from .phase2_models import AssociatedObservation, CaseEvidenceBundle
+from .workflow import WorkflowAttribution
 
 
 class Phase2Analyzer:
@@ -18,10 +19,23 @@ class Phase2Analyzer:
         self.resolver = IdentityResolver(dataset.identities, dataset.identity_changes)
         self.classifier = IntentClassifier()
         self.correlator = EvidenceCorrelator(self.index, self.resolver)
+        universe = getattr(dataset, 'workflow_requests', None) or dataset.requests
+        self.workflow = WorkflowAttribution(universe, self.index, self.resolver, self.correlator, self.classifier)
+        self.by_subject = defaultdict(list)
+        for other in self.workflow.requests:
+            self.by_subject[self.workflow.users[other.case_id]].append(other)
+
+    def prior_audit(self, request: DeletionRequest, user):
+        """Latest audit of an earlier authorized request by the same subject."""
+        earlier = [r.audit_at for r in self.by_subject.get(user, ())
+                   if r.case_id != request.case_id and r.audit_at < request.requested_at]
+        return max(earlier, default=None)
 
     def analyze(self, request: DeletionRequest) -> CaseEvidenceBundle:
         identity = self.resolver.resolve(request)
-        observations, resources, ambiguities = self.correlator.correlate(identity, request.audit_at)
+        observations, resources, ambiguities = self.correlator.correlate(
+            identity, request.audit_at, workflow_seeds=self.workflow.attributed(request),
+            prior_audit=self.prior_audit(request, identity.user_id))
         deferred = sorted((entry for entry in self.index.registry.entries.values()
                            if entry.parsing_status == 'deferred' and entry.captured_at is not None
                            and entry.captured_at <= request.audit_at), key=lambda e: e.evidence_id)
@@ -40,6 +54,9 @@ class Phase2Analyzer:
                          'Deferred files are an unassigned candidate pool; contents and subject are unknown.',
                          'Unmatched documents and unsupported relationships require further interpretation.'],
             unrelated_observation_count=visible - len(observations),
+            primary_profile_candidates=sorted(
+                (r for i in self.workflow.primary_candidates(request) for r in self.index.observations[i].resources),
+                key=lambda r: (r.system_id or '', r.resource_id)),
         )
 
     @staticmethod

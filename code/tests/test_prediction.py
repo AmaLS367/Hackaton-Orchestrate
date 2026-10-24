@@ -92,8 +92,15 @@ def test_subject_only_attachment_and_unknown_condition(rules):
     row = observation(category='SUPPORT_ATTACHMENT', system='support_platform', collection='ticket_attachments',
                       subject_only=True)
     assert 'DELETE_RECORD' in operations(decision(rules, row))
-    unknown = observation(category='SUPPORT_ATTACHMENT', system='support_platform', collection='ticket_attachments')
-    result = decision(rules, unknown)
+    # Without an explicit flag, confirmed association (no other identified subject)
+    # establishes the condition, and the default is named in the assessment.
+    unflagged = decision(rules, observation(category='SUPPORT_ATTACHMENT', system='support_platform',
+                                            collection='ticket_attachments'))
+    assert 'DELETE_RECORD' in operations(unflagged)
+    assert 'attachment_subject_only_by_confirmed_association' in unflagged.assessments[0].reasons
+    shared = observation(category='SUPPORT_ATTACHMENT', system='support_platform', collection='ticket_attachments',
+                         subject_only=False)
+    result = decision(rules, shared)
     assert result.prediction is None
     assert 'policy_condition_unestablished_or_ambiguous' in result.unresolved
 
@@ -115,10 +122,18 @@ def test_compliant_analytics_requires_sufficient_field_coverage(rules):
     assert result.decision == 'COMPLETE'
     assert operations(result) == ['VERIFY_RECORD_ANONYMIZED']
     assert result.prediction.steps[0].evidence_id == 'clean'
+    # Observed nulled identifier slots with no exposed value are the treatment itself.
     partial = observation(category='ANALYTICS_PROFILE', system='analytics_platform', file='clean', at=LATE,
         collection='customer_analytics_profiles', user_id=None, email=None)
-    result = decision(rules, anchor, partial)
-    assert result.prediction is None
+    assert decision(rules, anchor, partial).decision == 'COMPLETE'
+    # Any remaining identifier value keeps it attributable.
+    linked = observation(category='ANALYTICS_PROFILE', system='analytics_platform', file='clean', at=LATE,
+        collection='customer_analytics_profiles', email=None, phone=None, email_hash=None)
+    assert operations(decision(rules, anchor, linked), 'FINDING') == ['REPORT_EXPOSED_PII']
+    # A read showing no identifier slot at all proves nothing.
+    bare = observation(category='ANALYTICS_PROFILE', system='analytics_platform', file='clean', at=LATE,
+        collection='customer_analytics_profiles').model_copy(update={'payload': {'audience_cohort': 'x'}})
+    assert decision(rules, anchor, bare).prediction is None
 
 
 def test_retained_security_user_reference_is_not_a_violation(rules):
@@ -180,7 +195,8 @@ def test_backup_retained_and_restore_blocked(rules, allowed, status):
         collection='backup_catalog', restore_allowed=allowed, archive_present=True))
     assert result.decision == status
     assert 'DELETE_RECORD' not in operations(result)
-    assert operations(result, 'VERIFICATION') == ['VERIFY_RECORD_ABSENT', 'VERIFY_RECORD_PRESENT', 'VERIFY_RESTORE_BLOCKED']
+    # The archive itself is retained (rule 14); its obligation is the restore path only.
+    assert operations(result, 'VERIFICATION') == ['VERIFY_RECORD_ABSENT', 'VERIFY_RESTORE_BLOCKED']
     assert ('BLOCK_RESTORE' in operations(result)) == allowed
 
 
@@ -240,7 +256,10 @@ def test_known_violation_despite_unknown_state(rules):
     result = decision(rules, observation(), observation(resource='other', file='claim',
         event='delete_completed', reported_result='SUCCESS'))
     assert result.decision == 'INCOMPLETE' and result.unresolved
-    assert all(s.resource_id == 'arbitrary-key' for s in result.prediction.steps)
+    # The claim-only record is never reported or remediated, only checked afterwards.
+    assert all(s.resource_id == 'arbitrary-key' for s in result.prediction.steps if s.phase != 'VERIFICATION')
+    assert [(s.operation, s.evidence_id) for s in result.prediction.steps if s.resource_id == 'other'] == [
+        ('VERIFY_RECORD_ABSENT', '')]
 
 
 def test_plan_disables_flow_and_restore_before_cleanup_and_keeps_retained_checks(rules):
@@ -253,8 +272,7 @@ def test_plan_disables_flow_and_restore_before_cleanup_and_keeps_retained_checks
                     file='audit', retention_until=FUTURE))
     assert operations(result, 'REMEDIATION') == ['DISABLE_DATA_FLOW', 'BLOCK_RESTORE', 'DELETE_RECORD']
     assert operations(result, 'VERIFICATION') == ['VERIFY_RECORD_ABSENT', 'VERIFY_RECORD_PRESENT',
-                                                 'VERIFY_RECORD_PRESENT', 'VERIFY_DATA_FLOW_DISABLED',
-                                                 'VERIFY_RESTORE_BLOCKED']
+                                                 'VERIFY_DATA_FLOW_DISABLED', 'VERIFY_RESTORE_BLOCKED']
     assert all(s.evidence_id == '' for s in result.prediction.steps if s.phase != 'FINDING')
 
 
@@ -278,15 +296,16 @@ def test_explicit_downstream_dependency_and_unrepresentable_order(rules):
     downstream = observation('z-downstream', file='copy', source_resource_id='a-source',
                              source_system_id='account_service')
     result = decision(rules, source, downstream)
-    assert result.prediction is None
-    assert any('cleanup_dependency_conflicts_with_official_order' in b for b in result.blockers)
+    # The problem statement fixes the order; the explicit dependency stays diagnostic.
+    assert [s.resource_id for s in result.prediction.steps if s.phase == 'REMEDIATION'] == ['a-source', 'z-downstream']
+    assert any('cleanup_dependency_conflicts_with_official_order' in u for u in result.unresolved)
 
 
 def test_cleanup_dependency_without_system_uses_only_unambiguous_planned_resource(rules):
     result = decision(rules, observation('a-source'), observation('z-downstream', file='copy',
                       source_resource_id='a-source'))
-    assert result.prediction is None
-    assert any('cleanup_dependency_conflicts_with_official_order' in b for b in result.blockers)
+    assert result.decision == 'INCOMPLETE'
+    assert any('cleanup_dependency_conflicts_with_official_order' in u for u in result.unresolved)
 
 
 def test_valid_evidence_cutoff_and_no_future_state_override(rules):
@@ -340,7 +359,9 @@ def test_schema_mapping_never_uses_resource_prefixes(rules):
     mapped = observation(resource='not-an-account-prefix').model_copy(update={
         'payload': {'user_id': 'subject_x', 'email': 'subject@example.test'}})
     assert 'DELETE_RECORD' in operations(decision(rules, mapped))
-    unknown = observation(resource='account_123', category='UNRECOGNIZED', collection='unknown')
+    # A resource-ID prefix never types a record: an unmapped system stays unknown.
+    unknown = observation(resource='account_123', category='UNRECOGNIZED', system='unmapped_store',
+                          collection='unknown')
     assert decision(rules, unknown).prediction is None
 
 

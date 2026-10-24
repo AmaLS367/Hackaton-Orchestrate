@@ -37,7 +37,8 @@ class TemporalObservation(StrictModel):
     association: Literal['CONFIRMED', 'POTENTIAL']
     association_links: list[CorrelationLink]
     category: Literal['SNAPSHOT', 'RESOURCE_READBACK', 'SERVICE_READBACK',
-                      'OPERATION_CLAIM', 'UNINTERPRETED', 'SNAPSHOT_GAP']
+                      'OPERATION_CLAIM', 'UNINTERPRETED', 'SNAPSHOT_GAP',
+                      'SNAPSHOT_COVERAGE', 'DOCUMENT']
     record_state: RecordState = 'UNKNOWN'
     flow_state: FlowState = 'UNKNOWN'
     restore_state: RestoreState = 'UNKNOWN'
@@ -114,3 +115,6 @@ class CaseStateBundle(StrictModel):
     conflicting_evidence: list[ObservationLink]
     unresolved_states: list[UnresolvedState]
     limitations: list[str]
+    # Set only when every ambiguous primary-profile candidate is proven absent at the
+    # cutoff: whichever one the subject's is, it is gone. One citation per candidate.
+    primary_profile_absence: list[ObservationLink] = Field(default_factory=list)

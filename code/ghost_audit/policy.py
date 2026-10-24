@@ -20,8 +20,9 @@ COLLECTION_CATEGORIES = {
     ('search_service', 'search_documents_primary'): 'SEARCH_INDEX_ENTRY',
     ('analytics_platform', 'customer_analytics_profiles'): 'ANALYTICS_PROFILE',
     ('analytics_platform', 'customer_analytics_reports'): 'ANALYTICS_PROFILE',
+    # Inventory `support_records` lists every support item (messages and attachments)
+    # and therefore does not type a record; specific collections do.
     ('support_platform', 'support_conversations'): 'SUPPORT_MESSAGE',
-    ('support_platform', 'support_records'): 'SUPPORT_MESSAGE',
     ('support_platform', 'ticket_attachments'): 'SUPPORT_ATTACHMENT',
     ('export_service', 'customer_export_jobs'): 'USER_EXPORT',
     ('export_service', 'customer_exports'): 'USER_EXPORT',
@@ -77,6 +78,24 @@ CONDITIONS = {
 }
 FINAL_STATES = {'DELETE': 'ABSENT', 'REDACT': 'REDACTED', 'ANONYMIZE': 'ANONYMIZED', 'RETAIN': 'PRESENT'}
 EMAIL = re.compile(r'[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}')
+# Last-resort record type of an explicitly scoped system when no collection, record
+# type, export container, or read event names one. Never inferred from resource IDs.
+SYSTEM_CATEGORIES = {
+    'account_service': 'USER_PROFILE', 'search_service': 'SEARCH_INDEX_ENTRY',
+    'analytics_platform': 'ANALYTICS_PROFILE', 'support_platform': 'SUPPORT_MESSAGE',
+    'export_service': 'USER_EXPORT', 'security_service': 'SECURITY_AUDIT_LOG',
+    'backup_service': 'BACKUP_ARCHIVE', 'integration_service': 'DATA_FLOW',
+    'identity_service': 'ACCOUNT_TOMBSTONE', 'legal_service': 'LEGAL_HOLD_RECORD',
+    'marketing_platform': 'MARKETING_PROFILE', 'email_delivery_service': 'EMAIL_DELIVERY_LOG',
+    'cache_service': 'CACHE_ENTRY',
+    # Object storage holds uploaded support files (the attachment catalogue's objects).
+    'object_storage': 'SUPPORT_ATTACHMENT',
+}
+# Identifier fields whose observed treatment (null/redacted) evidences redaction.
+IDENTIFYING = {'name', 'full_name', 'display_name', 'requester_name', 'customer_name', 'email', 'phone',
+               'email_hash', 'customer_email', 'owner_email', 'requester_email', 'customer_phone',
+               'owner_phone', 'requester_phone', 'user_id', 'customer_reference', 'subject_reference',
+               'message_text', 'message_body', 'message_excerpt', 'matched_value'}
 
 
 def supported_observations(history: ResourceHistory, cutoff) -> list[TemporalObservation]:
@@ -103,7 +122,9 @@ def attributes(observations):
 
 
 def exposed(fields, identity: ResolvedIdentity, *, stable=False):
-    aliases = [a.original_value.casefold() for a in identity.aliases if a.original_value]
+    # The stable internal user_id is a permitted reference unless anonymizing.
+    aliases = [a.original_value.casefold() for a in identity.aliases
+               if a.original_value and (stable or a.field_name != 'user_id')]
     for f in fields:
         if f.representation != 'VALUE':
             continue
@@ -130,6 +151,17 @@ def coverage(fields, *, anonymize=False, tombstone=False):
     return all(names & group for group in groups)
 
 
+def default_condition_reasons(category, a) -> list[str]:
+    """Diagnostics naming a rule condition applied without an explicit supplied fact."""
+    if category == 'SECURITY_AUDIT_LOG' and not any(a.get(k) for k in ('retention_until', 'retained_until')):
+        return ['retention_period_not_supplied_record_preserved']
+    if category == 'SUPPORT_MESSAGE' and boolean(a.get('shared_context')) is None:
+        return ['shared_context_assumed_for_support_conversation']
+    if category == 'SUPPORT_ATTACHMENT' and boolean(a.get('subject_only')) is None:
+        return ['attachment_subject_only_by_confirmed_association']
+    return []
+
+
 class PolicyEvaluator:
     def __init__(self, rules: list[DeletionRule]):
         self.rules = defaultdict(list)
@@ -137,21 +169,25 @@ class PolicyEvaluator:
             self.rules[rule.data_category].append(rule)
 
     def category(self, history, observations):
+        """Record type from explicit evidence of the resource (any confirmed observation,
+        including linkage-only rows), most specific signal first."""
+        system = history.scope.system_id
         typed = [o for o in observations if o.record_type in self.rules or o.record_type == 'DATA_FLOW']
         explicit = {o.record_type for o in latest(typed)}
-        schema = COLLECTION_CATEGORIES.get((history.scope.system_id, history.scope.collection))
-        if explicit == {'ACCOUNT_TOMBSTONE'} and schema == 'USER_PROFILE' and any(
+        schemas = {COLLECTION_CATEGORIES.get((system, o.scope.collection)) for o in observations} - {None}
+        schemas |= {COLLECTION_CATEGORIES[(system, history.scope.collection)]} if (
+            system, history.scope.collection) in COLLECTION_CATEGORIES else set()
+        if explicit == {'ACCOUNT_TOMBSTONE'} and schemas == {'USER_PROFILE'} and any(
                 str(o.attributes.get('account_status', '')).upper() == 'DELETED' for o in latest(typed)):
             # A current explicitly typed tombstone may occupy a former profile row.
             # Its condition still requires a confirmed permitted stable reference.
             return 'ACCOUNT_TOMBSTONE'
-        if schema:
-            explicit.add(schema)
+        explicit |= schemas
         # Service-export object names establish type, not ownership or equivalence
         # with another collection. Phase 2 associations and physical scopes stay intact.
         for o in observations:
             match = re.fullmatch(r'\$\.service_exports\.([\w]+)\.([\w]+)\[\d+\]', o.provenance.locator)
-            if match and match[1] == history.scope.system_id:
+            if match and match[1] == system:
                 category = EXPORT_CATEGORIES.get((match[1], match[2]))
                 if category:
                     explicit.add(category)
@@ -160,9 +196,25 @@ class PolicyEvaluator:
         if not explicit:
             explicit.update(EVENT_CATEGORIES[o.attributes['event']] for o in observations
                             if o.attributes.get('event') in EVENT_CATEGORIES)
+        if not explicit and system == 'support_platform':
+            # A rendered support document describing an uploaded file is an attachment;
+            # otherwise the workflow's own per-resource treatment distinguishes a
+            # deletable attachment (DELETE) from a retained conversation (REDACT).
+            if any(o.category == 'DOCUMENT' and re.search(r'\battachment\b', str(f.value), re.I)
+                   for o in observations for f in o.fields if f.role == 'CONTENT'):
+                explicit.add('SUPPORT_ATTACHMENT')
+            else:
+                operations = {str(o.attributes.get('event_type', '')) for o in observations
+                              if o.category == 'OPERATION_CLAIM'}
+                if operations & {'DELETE_RECORD'} and not operations & {'REDACT_RECORD'}:
+                    explicit.add('SUPPORT_ATTACHMENT')
+        if not explicit and system in SYSTEM_CATEGORIES:
+            explicit.add(SYSTEM_CATEGORIES[system])
         return next(iter(explicit)) if len(explicit) == 1 else None
 
-    def condition(self, kind, obs, history, bundle):
+    def condition(self, kind, obs, history, bundle, defaults=True):
+        """True/False from explicit facts; with defaults, the documented fallback
+        for a condition no participant field states (see default_condition_reasons)."""
         a = attributes(obs)
         fields = [f for o in obs for f in o.fields]
         if kind == 'always':
@@ -171,16 +223,25 @@ class PolicyEvaluator:
             value = boolean(a.get('shared_context'))
             if value is not None:
                 return value
-            content = ' '.join(str(f.value) for f in fields if f.role == 'CONTENT')
-            return True if a.get('ticket_id') or re.search(
-                r'\b(order|agent|shared|delivery|contacted support)\b', content, re.I) else None
+            # A support conversation is a two-party customer/agent exchange. Rule 05 is
+            # the only treatment defined for the category, and it preserves the record;
+            # only an explicit statement can show the context is absent.
+            return True if defaults else None
         if kind == 'subject_only':
-            return boolean(a.get('subject_only'))
+            value = boolean(a.get('subject_only'))
+            if value is not None:
+                return value
+            # Confirmed association already excludes any other identified subject in
+            # the attachment; an explicit flag can still override.
+            return True if defaults else None
         if kind == 'attributable':
             if exposed(fields, bundle.identity, stable=True) or str(a.get('result', '')).upper() == 'IDENTIFIABLE':
                 return True
             # A previously applicable anonymization obligation remains verifiable after treatment.
             if history.record.state == 'ANONYMIZED' or coverage(fields, anonymize=True):
+                return True
+            # Observed identifier slots (even nulled) show the record's attribution schema.
+            if any(f.path.rsplit('.', 1)[-1] in IDENTIFYING for f in fields):
                 return True
             return None
         if kind == 'email':
@@ -196,17 +257,25 @@ class PolicyEvaluator:
                     return max(parse_timestamp(value) for value in deadlines) > bundle.audit_at
             except (TypeError, ValueError):
                 return None
-            return boolean(a.get('hold_active')) if kind == 'hold' else None
+            if kind == 'hold' and boolean(a.get('hold_active')) is not None:
+                return boolean(a.get('hold_active'))
+            # Many exports omit expiry. With no supplied deadline or released flag the
+            # record is never shown to be outside retention/hold, and no rule permits
+            # deleting it; preserve it (reason recorded by the evaluator).
+            return True if defaults else None
         if kind == 'blockable':
             return True if history.restore.support == 'PROVEN' or boolean(a.get('restore_blockable')) is True else None
         if kind == 'tombstone':
-            return True if str(a.get('account_status', '')).upper() == 'DELETED' and any(
+            deleted = (str(a.get('account_status', '')).upper() == 'DELETED'
+                       or any(o.record_type == 'ACCOUNT_TOMBSTONE' for o in obs)
+                       or history.scope.collection == 'deleted_customer_references')
+            return True if deleted and any(
                 f.role == 'STABLE_REFERENCE' and f.value == bundle.identity.user_id for f in fields) else None
         return None
 
     def applicable(self, rule, selected, observations, history, bundle):
         kind = CONDITIONS.get(rule.condition)
-        current = self.condition(kind, selected, history, bundle)
+        current = self.condition(kind, selected, history, bundle, defaults=False)
         if current is not None:
             return current, links_sorted(o.link for o in selected)
         # Missing fields on a later read do not revoke a previously established
@@ -215,53 +284,87 @@ class PolicyEvaluator:
         times = sorted({o.observed_at for o in observations}, reverse=True)
         for at in times:
             earlier = [o for o in observations if o.observed_at == at]
-            value = self.condition(kind, earlier, history, bundle)
+            value = self.condition(kind, earlier, history, bundle, defaults=False)
             if value is not None:
                 return value, links_sorted(o.link for o in earlier)
-        return None, []
+        # No explicit fact anywhere: the documented fallback, cited to the current read.
+        value = self.condition(kind, selected, history, bundle)
+        return (value, links_sorted(o.link for o in selected)) if value is not None else (None, [])
 
     def evaluate(self, bundle: CaseStateBundle) -> list[PolicyAssessment]:
         results = []
-        for h in sorted(bundle.resource_histories, key=lambda h: scope_key(h.scope)):
-            observations = supported_observations(h, bundle.audit_at)
-            category = self.category(h, observations)
-            # A POTENTIAL row can describe a schema, but cannot establish a subject's obligations.
-            if not observations:
-                results.append(PolicyAssessment(scope=h.scope, dimension='record', category=None,
-                    observed_state='UNKNOWN', compliance='UNKNOWN', reasons=['no_confirmed_state_evidence']))
+        groups = defaultdict(list)
+        for h in bundle.resource_histories:
+            groups[(h.scope.system_id or '', h.scope.resource_id)].append(h)
+        for key in sorted(groups):
+            histories = sorted(groups[key], key=lambda h: scope_key(h.scope))
+            # Type comes from every confirmed row of the resource, including rows that
+            # only identify it; a POTENTIAL row never establishes the subject's obligations.
+            confirmed = [o for h in histories for o in h.observations
+                         if o.association == 'CONFIRMED' and o.association_links]
+            category = self.category(histories[0], confirmed) if confirmed else None
+            supported = {id(h): supported_observations(h, bundle.audit_at) for h in histories}
+            freshness = {id(h): max((o.observed_at for o in supported[id(h)]), default=None) for h in histories}
+            newest = max((t for t in freshness.values() if t is not None), default=None)
+            if newest is None:
+                results.append(self.unobserved(histories[0], category, confirmed, bundle))
                 continue
-            if category == 'DATA_FLOW':
-                results.append(self.process(h, 'flow', category))
-                continue
-            if category == 'BACKUP_ARCHIVE':
-                results.append(self.process(h, 'restore', category))
-            candidates = self.rules.get(category, [])
-            selected = latest([o for o in observations if o.link in h.record.supporting_evidence])
-            applicability = [(r, *self.applicable(r, selected, observations, h, bundle)) for r in candidates]
-            rules = [(r, evidence) for r, applies, evidence in applicability if applies is True]
-            if len(rules) != 1:
-                # Missing retention applicability cannot justify deletion or COMPLETE.
-                # Preserve a known security/legal record in a future INCOMPLETE plan
-                # while the retention question is investigated; never assert compliance.
-                precaution = candidates[0] if len(candidates) == 1 and candidates[0].required_action == 'RETAIN' else None
-                results.append(PolicyAssessment(scope=h.scope, dimension='record', category=category,
-                    rule_id=precaution.rule_id if precaution else None,
-                    required_action='RETAIN' if precaution else None,
-                    required_state='PRESENT' if precaution else None,
-                    observed_state=h.record.state, compliance='UNKNOWN', reasons=[
-                        'policy_category_unknown' if not candidates else 'policy_condition_unestablished_or_ambiguous']))
-                continue
-            rule, condition_evidence = rules[0]
-            base = dict(scope=h.scope, dimension='record', category=category, rule_id=rule.rule_id,
-                        required_action=rule.required_action, required_state=FINAL_STATES[rule.required_action],
-                        observed_state=h.record.state, condition_evidence=condition_evidence)
-            if h.record.support != 'PROVEN' or not selected:
-                results.append(PolicyAssessment(**base, compliance='UNKNOWN', reasons=['record_state_unproven']))
-                continue
-            compliance, reasons = self.record_compliance(h, selected, rule, bundle)
-            results.append(PolicyAssessment(**base, compliance=compliance,
-                evidence=links_sorted(o.link for o in selected), reasons=reasons))
+            # The most recent supported surface decides; an older replica or export of the
+            # same record cannot outlive a newer read. Simultaneous surfaces all count.
+            for h in histories:
+                if freshness[id(h)] == newest:
+                    results.extend(self.assess(h, category, supported[id(h)], bundle))
         return results
+
+    def unobserved(self, h, category, confirmed, bundle) -> PolicyAssessment:
+        """A confirmed resource without a citable state: obligation known, compliance unknown."""
+        reasons = ['no_confirmed_state_evidence']
+        if category in {'DATA_FLOW', 'BACKUP_ARCHIVE'}:
+            flow = category == 'DATA_FLOW'
+            return PolicyAssessment(scope=h.scope, dimension='flow' if flow else 'restore', category=category,
+                required_action='DISABLE' if flow else 'BLOCK', required_state='DISABLED' if flow else 'BLOCKED',
+                observed_state='UNKNOWN', compliance='UNKNOWN', reasons=reasons)
+        candidates = self.rules.get(category, [])
+        selected = latest(confirmed)
+        rules = [r for r in candidates if self.condition(CONDITIONS.get(r.condition), selected, h, bundle) is True]
+        rule = rules[0] if len(rules) == 1 else None
+        return PolicyAssessment(scope=h.scope, dimension='record', category=category,
+            rule_id=rule.rule_id if rule else None, required_action=rule.required_action if rule else None,
+            required_state=FINAL_STATES[rule.required_action] if rule else None,
+            observed_state='UNKNOWN', compliance='UNKNOWN',
+            reasons=reasons if rule or not candidates else [*reasons, 'policy_condition_unestablished_or_ambiguous'])
+
+    def assess(self, h, category, observations, bundle) -> list[PolicyAssessment]:
+        if category == 'DATA_FLOW':
+            return [self.process(h, 'flow', category)]
+        if category == 'BACKUP_ARCHIVE':
+            # Archives are retained (rule 14); the obligation is the restore path.
+            return [self.process(h, 'restore', category)]
+        candidates = self.rules.get(category, [])
+        selected = latest([o for o in observations if o.link in h.record.supporting_evidence])
+        applicability = [(r, *self.applicable(r, selected, observations, h, bundle)) for r in candidates]
+        rules = [(r, evidence) for r, applies, evidence in applicability if applies is True]
+        if len(rules) != 1:
+            # Missing retention applicability cannot justify deletion or COMPLETE.
+            # Preserve a known security/legal record in a future INCOMPLETE plan
+            # while the retention question is investigated; never assert compliance.
+            precaution = candidates[0] if len(candidates) == 1 and candidates[0].required_action == 'RETAIN' else None
+            return [PolicyAssessment(scope=h.scope, dimension='record', category=category,
+                rule_id=precaution.rule_id if precaution else None,
+                required_action='RETAIN' if precaution else None,
+                required_state='PRESENT' if precaution else None,
+                observed_state=h.record.state, compliance='UNKNOWN', reasons=[
+                    'policy_category_unknown' if not candidates else 'policy_condition_unestablished_or_ambiguous'])]
+        rule, condition_evidence = rules[0]
+        base = dict(scope=h.scope, dimension='record', category=category, rule_id=rule.rule_id,
+                    required_action=rule.required_action, required_state=FINAL_STATES[rule.required_action],
+                    observed_state=h.record.state, condition_evidence=condition_evidence)
+        defaults = default_condition_reasons(category, attributes(selected or observations))
+        if h.record.support != 'PROVEN' or not selected:
+            return [PolicyAssessment(**base, compliance='UNKNOWN', reasons=['record_state_unproven', *defaults])]
+        compliance, reasons = self.record_compliance(h, selected, rule, bundle)
+        return [PolicyAssessment(**base, compliance=compliance,
+                                 evidence=links_sorted(o.link for o in selected), reasons=[*reasons, *defaults])]
 
     @staticmethod
     def process(h, dimension, category):
@@ -296,14 +399,17 @@ class PolicyEvaluator:
             return 'UNKNOWN', ['conflicting_identifier_fields']
         if exposed(fields, bundle.identity, stable=action == 'ANONYMIZE'):
             return 'VIOLATION', []
+        # No identifier is exposed; observed null/redacted identifier fields are the
+        # treatment itself. A record showing no identifier slot at all proves nothing.
+        treated = any(f.representation != 'VALUE' and f.path.rsplit('.', 1)[-1] in IDENTIFYING for f in fields)
         if action == 'ANONYMIZE':
-            if state == 'ANONYMIZED' or coverage(fields, anonymize=True):
+            if state == 'ANONYMIZED' or coverage(fields, anonymize=True) or treated:
                 return 'COMPLIANT', []
             return 'UNKNOWN', ['anonymization_field_coverage_insufficient']
         tombstone = rule.data_category == 'ACCOUNT_TOMBSTONE'
         if tombstone and not any(f.role == 'STABLE_REFERENCE' and f.value == bundle.identity.user_id for f in fields):
             return 'UNKNOWN', ['permitted_stable_reference_unproven']
-        if state == 'REDACTED' or coverage(fields, tombstone=tombstone) or (
+        if state == 'REDACTED' or coverage(fields, tombstone=tombstone) or treated or (
                 rule.data_category == 'EMAIL_DELIVERY_LOG' and any('email' in f.path for f in fields)):
             return 'COMPLIANT', []
         return 'UNKNOWN', ['redaction_field_coverage_insufficient']

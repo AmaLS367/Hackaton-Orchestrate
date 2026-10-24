@@ -20,10 +20,11 @@ DIRECT_FIELDS = {'name', 'full_name', 'display_name', 'requester_name', 'custome
                  'requester_email', 'customer_phone', 'owner_phone', 'requester_phone',
                  'uploaded_by', 'ip_address', 'device_id', 'advertising_id', 'postal_address'}
 STABLE_FIELDS = {'user_id', 'customer_reference', 'subject_reference', 'subject_ref', 'subject_selector'}
-CONTENT_FIELDS = {'message_text', 'message_body', 'message_excerpt', 'body', 'notes', 'matched_value'}
+CONTENT_FIELDS = {'message_text', 'message_body', 'message_excerpt', 'body', 'notes', 'matched_value',
+                  'document_text'}
 REDACTED = {'[redacted]', 'redacted'}
 ANONYMIZED = {'[anonymized]', 'anonymized', 'anonymous'}
-NULL = {'null', 'none', ''}
+NULL = {'null', 'none', '', 'no direct identifier'}
 OBSERVABLE_ATTRIBUTES = {
     'enabled', 'restore_allowed', 'archive_present', 'eligible', 'deletion_block',
     'decision', 'scheduler_registered', 'connector_name', 'destination', 'mode',
@@ -78,6 +79,17 @@ def observation_time(o: Observation):
         priority = max(priorities[t.field.lower()] for t in deepest)
         return max(t.value for t in deepest if priorities[t.field.lower()] == priority)
     return o.provenance.captured_at or o.available_at
+
+
+def linkage_time(o: Observation):
+    """When an observation's facts were known: its own observation clock, never earlier
+    than a record time it reports. A later packaging/export clock does not delay it."""
+    at = observation_time(o)
+    if at is None:
+        return None
+    record_times = [t.value for t in o.provenance.timestamps
+                    if t.role == 'source' and t.field.lower() in {'updated_at', 'created_at'}]
+    return max([at, *record_times])
 
 
 def boolean(value):
@@ -164,6 +176,9 @@ def interpret(item: AssociatedObservation, reference: ResourceRef) -> TemporalOb
             record = 'PRESENT'
     elif failed_read:
         reason = 'failed_read_does_not_establish_resource_state'
+    elif 'document_reference' in data:
+        # A business document or console screen rendering the record at capture time.
+        category, reason, record = 'DOCUMENT', 'participant_document_renders_record', 'PRESENT'
     elif snapshot or resource_read or structured_read or json_read or config_read:
         category = ('SNAPSHOT' if snapshot else
                     'SERVICE_READBACK' if structured_read else 'RESOURCE_READBACK')
@@ -236,6 +251,9 @@ def interpret(item: AssociatedObservation, reference: ResourceRef) -> TemporalOb
             record = 'PRESENT'
             if result == 'BLOCKED':
                 restore = 'BLOCKED'
+            elif result == 'ACTIVE' and restore == 'UNKNOWN':
+                # An archive reported ACTIVE (not BLOCKED) remains restorable.
+                restore = 'ALLOWED'
         # Restore authorization is independent of archive existence.
         if any(k in data for k in ('archive_path', 'archive_key', 'object_key')) or boolean(data.get('available')) is True:
             record = 'PRESENT'

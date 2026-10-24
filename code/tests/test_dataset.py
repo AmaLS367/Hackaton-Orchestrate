@@ -16,7 +16,7 @@ def loaded_dataset():
     return load_dataset(root / "dataset")
 
 
-def test_all_participant_formats_ingest_and_images_are_deferred(loaded_dataset):
+def test_all_participant_formats_ingest_and_images_are_deferred_or_catalogued_ocr(loaded_dataset):
     dataset = loaded_dataset
     assert len(dataset.requests) == 518
     assert len(dataset.documents) == 94
@@ -24,8 +24,13 @@ def test_all_participant_formats_ingest_and_images_are_deferred(loaded_dataset):
     assert Counter(Path(doc.manifest.file_path).suffix for doc in dataset.documents) == {
         '.json': 28, '.sql': 24, '.log': 26, '.pdf': 4, '.png': 11, '.txt': 1,
     }
-    assert all(doc.status == "deferred" for doc in dataset.documents
-               if doc.manifest.file_path.endswith('.png'))
+    for doc in dataset.documents:
+        if doc.manifest.file_path.endswith('.png'):
+            # Without Tesseract an image stays deferred. With OCR it is parsed only into
+            # document observations of catalogued resources, original provenance intact.
+            assert doc.status == 'deferred' or doc.observations and all(
+                o.provenance.locator.startswith('document:') and o.provenance.sha256 == doc.sha256
+                and o.provenance.captured_at == doc.manifest.captured_at for o in doc.observations)
     assert all(doc.observations for doc in dataset.documents if doc.status == "parsed")
 
 

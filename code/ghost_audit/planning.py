@@ -68,13 +68,16 @@ def plan_case(bundle, assessments):
     valid = [a for a in assessments if a.scope.system_id and a.required_action]
     violations = [a for a in valid if a.compliance == 'VIOLATION']
     if not violations:
-        # UNKNOWN and potential associations never become proof of either violation or absence.
+        # Every confirmed resource must be proven compliant: an UNKNOWN assessment never
+        # becomes absence. Potential associations and unassigned files are not the
+        # subject's confirmed records and stay diagnostic (see `unresolved`).
         if not valid or any(a.compliance != 'COMPLIANT' for a in assessments):
             blockers.append('insufficient_evidence_for_complete_or_incomplete')
-        if unresolved:
-            blockers.append('unresolved_relevant_evidence_prevents_complete')
+        # Retention or process safety alone never proves deletion. An ambiguous primary
+        # profile counts only when every candidate the workflow could have targeted is
+        # proven absent; it is then verified, but cannot be named in a step.
         if not any(a.dimension == 'record' and a.required_action in {'DELETE', 'REDACT', 'ANONYMIZE'}
-                   and a.compliance == 'COMPLIANT' for a in valid):
+                   and a.compliance == 'COMPLIANT' for a in valid) and not bundle.primary_profile_absence:
             blockers.append('no_verified_deletion_treatment')
     if blockers:
         return CaseDecision(case_id=bundle.case_id, decision='UNDECIDABLE', prediction=None,
@@ -101,7 +104,9 @@ def plan_case(bundle, assessments):
             citations = [link.evidence_id for a in values for link in a.evidence]
             steps.append(step(values[0], VERIFICATION[values[0].required_action], min(citations)))
     steps = deduplicate(steps)
-    blockers.extend(dependency_conflicts(bundle, steps))
+    # The problem statement fixes the order (operation, system, resource); flows and
+    # restores already precede every record change. Explicit source links are recorded.
+    unresolved.extend(dependency_conflicts(bundle, steps))
     if blockers:
         return CaseDecision(case_id=bundle.case_id, decision='UNDECIDABLE', prediction=None,
             assessments=assessments, unresolved=sorted(set(unresolved)), blockers=sorted(set(blockers)))

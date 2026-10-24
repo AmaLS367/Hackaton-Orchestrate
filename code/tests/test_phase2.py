@@ -8,6 +8,7 @@ from ghost_audit.ingestion import load_dataset
 from ghost_audit.models import DeletionRequest, EvidenceDocument, EvidenceFile
 from ghost_audit.phase2 import Phase2Analyzer, diagnostics
 from ghost_audit.phase2_models import CaseEvidenceBundle
+from ghost_audit.temporal_adapters import linkage_time
 
 
 @pytest.fixture(scope='module')
@@ -26,7 +27,9 @@ def test_full_dataset_finishes_and_contract_is_ready_for_phase3(analyzed):
         assert bundle.identity.status in {'RESOLVED', 'AMBIGUOUS', 'UNRESOLVED'}
         assert 'deletion_status' not in type(bundle).model_fields
         assert all(a.event_time <= bundle.audit_at for a in bundle.aliases)
-        assert all(o.observation.available_at <= bundle.audit_at for o in bundle.observations)
+        # Ownership facts count from their own observation time; a later export of an
+        # earlier snapshot can link but never be cited (Phase 3 marks it linkage-only).
+        assert all(linkage_time(o.observation) <= bundle.audit_at for o in bundle.observations)
         for item in bundle.observations:
             assert item.links
             assert all(link.supporting_observations for link in item.links)
@@ -43,13 +46,15 @@ def test_full_dataset_finishes_and_contract_is_ready_for_phase3(analyzed):
 
 
 def test_aggregate_is_an_association_report_without_raw_pii(analyzed):
-    _, bundles = analyzed
+    analyzer, bundles = analyzed
     report = diagnostics(bundles)
     assert report['cases'] == 518
     assert sum(report['intent'].values()) == sum(report['identity'].values()) == 518
     assert report['cases_with_confirmed_associations'] > 0
     assert report['distinct_resources'] > 0
-    assert report['deferred_files_available'] == 11
+    # Images stay deferred only when OCR is unavailable or yields no catalogued resource.
+    deferred = sum(d.status == 'deferred' for d in analyzer.dataset.documents)
+    assert report['deferred_files_available'] == deferred <= 11
     assert report['deferred_files_confirmed_by_content'] == 0
     assert '@' not in json.dumps(report)
     assert 'not measured' in report['prediction_accuracy']

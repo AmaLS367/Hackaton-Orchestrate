@@ -13,6 +13,7 @@ from .models import Observation
 TABLE_SYSTEMS = {
     "customer_profiles": "account_service",
     "customer_search_documents": "search_service",
+    "search_documents": "search_service",
     "customer_analytics_profiles": "analytics_platform",
     "support_records": "support_platform",
     "customer_exports": "export_service",

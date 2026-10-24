@@ -281,14 +281,25 @@ def test_future_trace_conflict_does_not_contaminate_visible_trace(context):
     assert not issues
 
 
-@pytest.mark.parametrize('anchor_collection, collection', [('profiles', 'exports'), ('profiles', None), (None, None)])
-def test_resource_join_requires_logical_collection_compatibility(context, anchor_collection, collection):
+def test_resource_join_rejects_explicitly_different_logical_collection(context):
+    first = parse_json({'resource_id': '123', 'user_id': 'user_one'},
+                       replace(context, system='store', collection='profiles'))
+    other = parse_json({'resource_id': '123'}, replace(context, system='store', collection='exports'), '$.other')
+    result, resources, _ = correlate([*first, *other])
+    assert len(confirmed(result)) == 1
+    assert {r.reference.collection for r in resources} == {'profiles'}
+
+
+@pytest.mark.parametrize('anchor_collection, collection',
+                         [('profiles', None), (None, None), (None, 'profiles'), ('profiles', 'profiles_replica')])
+def test_one_system_resource_id_joins_when_no_collection_contradicts(context, anchor_collection, collection):
+    # Phase 5: an export row without a collection (or a replica table of the same family)
+    # names the same record of the same system; only a different collection blocks it.
     first = parse_json({'resource_id': '123', 'user_id': 'user_one'},
                        replace(context, system='store', collection=anchor_collection))
     other = parse_json({'resource_id': '123'}, replace(context, system='store', collection=collection), '$.other')
-    result, resources, _ = correlate([*first, *other])
-    assert len(confirmed(result)) == 1
-    assert {r.reference.collection for r in resources} == {anchor_collection}
+    result, _, _ = correlate([*first, *other])
+    assert len(confirmed(result)) == 2
 
 
 def test_independent_cross_collection_evidence_is_preserved(context):

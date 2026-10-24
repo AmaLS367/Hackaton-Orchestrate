@@ -86,14 +86,25 @@ def test_deleted_then_recreated_preserves_chronology():
     assert [o.record_state for o in h.observations] == ['PRESENT', 'ABSENT', 'PRESENT']
 
 
-@pytest.mark.parametrize('event_time,capture_time', [(EARLY, FUTURE), (FUTURE, EARLY), (FUTURE, FUTURE)])
-def test_future_observation_or_availability_excluded(event_time, capture_time):
+@pytest.mark.parametrize('event_time,capture_time', [(FUTURE, EARLY), (FUTURE, FUTURE)])
+def test_future_observation_excluded(event_time, capture_time):
     o = record('future', event_time).model_copy(update={
         'provenance': record('future', event_time).provenance.model_copy(update={
             'captured_at': context(time=capture_time).manifest.captured_at})})
     result = analyze(o)
     assert not result.resource_histories
     assert result.unresolved_states
+
+
+def test_late_packaged_earlier_observation_is_linkage_only():
+    # Observed before the cutoff but exported after it: it identifies the record,
+    # yet never supplies a citable state at the cutoff.
+    o = record('future', EARLY).model_copy(update={
+        'provenance': record('future', EARLY).provenance.model_copy(update={
+            'captured_at': context(time=FUTURE).manifest.captured_at})})
+    h = only(analyze(o))
+    assert h.record.state == 'UNKNOWN' and not h.record.supporting_evidence
+    assert all(f.support == 'UNKNOWN' and f.reason.startswith('late_capture_linkage_only') for f in h.observations)
 
 
 def test_observation_time_differs_from_export_and_updated_time():
@@ -310,10 +321,21 @@ def test_missing_or_future_correlation_anchor_cannot_prove_ownership():
     assert ObservationLink.of(future) not in result.supporting_evidence
 
 
-def test_summary_label_cannot_erase_precise_snapshot():
+def test_newer_summary_readback_supersedes_older_snapshot():
+    # The newest supported read decides; the older snapshot stays in the history.
     summary = parse_json({'recorded_at': LATE, 'system': 'account_service', 'resource_id': 'resource_x',
                           'collection': 'profiles', 'record_type': 'USER_PROFILE', 'result': 'NOT_FOUND'},
                          context('summary', LATE))[0]
+    h = only(analyze(record(), summary))
+    assert h.record.state == 'ABSENT'
+    assert h.record.supporting_evidence == [ObservationLink.of(summary)]
+    assert [o.record_state for o in h.observations] == ['PRESENT', 'ABSENT']
+
+
+def test_precise_snapshot_outranks_simultaneous_summary_label():
+    summary = parse_json({'recorded_at': EARLY, 'system': 'account_service', 'resource_id': 'resource_x',
+                          'collection': 'profiles', 'record_type': 'USER_PROFILE', 'result': 'NOT_FOUND'},
+                         context('summary', EARLY))[0]
     h = only(analyze(record(), summary))
     assert h.record.state == 'PRESENT'
     assert h.record.conflicting_evidence == [ObservationLink.of(summary)]
@@ -327,12 +349,14 @@ def test_sql_boolean_representations(value, expected):
     assert h.observations[0].attributes['enabled'] == value
 
 
-def test_archive_active_label_does_not_invent_restore_permission():
+@pytest.mark.parametrize('result,restore', [('ACTIVE', 'ALLOWED'), ('BLOCKED', 'BLOCKED'), ('FOUND', 'UNKNOWN')])
+def test_archive_status_label_maps_restore_path(result, restore):
+    # An ACTIVE (not BLOCKED) archive remains restorable; FOUND says nothing about restore.
     o = parse_json({'recorded_at': EARLY, 'system': 'backup_service', 'resource_id': 'resource_x',
-                    'record_type': 'BACKUP_ARCHIVE', 'result': 'ACTIVE'}, context())[0]
+                    'record_type': 'BACKUP_ARCHIVE', 'result': result}, context())[0]
     h = only(analyze(o))
     assert h.record.state == 'PRESENT'
-    assert h.restore.state == 'UNKNOWN'
+    assert h.restore.state == restore
 
 
 def test_unavailable_download_does_not_prove_record_absent():
@@ -346,14 +370,23 @@ def test_failed_resource_read_is_unknown(status):
     assert h.record.state == 'UNKNOWN'
 
 
-def test_unknown_collections_do_not_create_cross_record_history():
+def test_same_system_resource_without_collection_shares_one_source_history():
+    # One system's resource ID names one record; the newer read of the same surface decides.
     a, b = readback(rows=1), readback('b', LATE, rows=0)
     a = a.model_copy(update={'resources': [ResourceRef(resource_id='resource_x', system_id='account_service')]})
     b = b.model_copy(update={'resources': a.resources, 'provenance': b.provenance.model_copy(
         update={'file_path': a.provenance.file_path, 'locator': 'line:2'})})
-    result = analyze(a, b)
-    assert len(result.resource_histories) == 2
-    assert len({h.scope.replica_scope for h in result.resource_histories}) == 2
+    h = only(analyze(a, b))
+    assert [o.record_state for o in h.observations] == ['PRESENT', 'ABSENT']
+    assert h.record.state == 'ABSENT'
+
+
+def test_row_without_collection_joins_single_known_collection():
+    a = readback(rows=1).model_copy(update={'resources': [
+        ResourceRef(resource_id='resource_x', system_id='account_service', collection='profiles')]})
+    b = readback('b', LATE, rows=0).model_copy(update={'resources': [
+        ResourceRef(resource_id='resource_x', system_id='account_service')]})
+    assert {h.scope.collection for h in analyze(a, b).resource_histories} == {'profiles'}
 
 
 def test_missing_chain_support_and_unknown_system_cannot_be_proven():
@@ -438,11 +471,15 @@ def test_full_dataset_coverage_and_evidence_contract(full_run):
     assert len(bundles) == 518
     for result in bundles:
         for h in result.resource_histories:
-            assert all(o.observed_at <= result.audit_at and o.available_at <= result.audit_at for o in h.observations)
+            assert all(o.observed_at <= result.audit_at for o in h.observations)
             for fact in h.observations:
                 assert analyzer.index.registry.get(fact.provenance.evidence_id)
+                # A later-packaged fact may identify a record but is never a supported state.
+                assert fact.available_at <= result.audit_at or fact.support == 'UNKNOWN'
                 if fact.support == 'PROVEN':
                     assert fact.association == 'CONFIRMED' and fact.association_links
+                    entry = analyzer.index.registry.get(fact.provenance.evidence_id)
+                    assert entry.captured_at <= result.audit_at
             for state in (h.record, h.flow, h.restore):
                 if state.support == 'PROVEN':
                     assert state.state != 'UNKNOWN' and state.supporting_evidence
@@ -455,7 +492,6 @@ def test_full_dataset_coverage_and_evidence_contract(full_run):
     assert sum(report['resource_states'].values()) == report['resource_scopes']
     assert '@' not in json.dumps(report)
     assert 'not measured' in report['prediction_accuracy']
-    assert not (Path(__file__).resolve().parents[2] / 'output.csv').exists()
 
 
 def test_phase3_cli_full_sample_and_single_case(full_run, monkeypatch, capsys):

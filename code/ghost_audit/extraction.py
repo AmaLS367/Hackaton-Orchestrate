@@ -17,6 +17,28 @@ SOURCE_TIMES = {
     "updated_at", "created_at", "timestamp", "snapshot", "snapshot_at",
 }
 SYSTEM_FIELDS = ("system_id", "system", "origin_system", "data_store", "service")
+# Participant collections whose owning system is fixed by schema even when an
+# export omits the system; never inferred from resource-ID prefixes.
+COLLECTION_SYSTEMS = {
+    "customer_profiles": "account_service", "customer_search_documents": "search_service",
+    "search_documents": "search_service", "customer_analytics_reports": "analytics_platform",
+    "customer_analytics_profiles": "analytics_platform", "support_conversations": "support_platform",
+    "support_records": "support_platform", "ticket_attachments": "support_platform",
+    "customer_export_jobs": "export_service", "customer_exports": "export_service",
+    "security_audit_events": "security_service", "security_audit_records": "security_service",
+    "backup_catalog": "backup_service", "backup_restore_entries": "backup_service",
+    "connector_configurations": "integration_service", "connector_subscriptions": "integration_service",
+    "deleted_customer_references": "identity_service", "retained_order_records": "legal_service",
+}
+# Read surfaces that report on another system's records under their own name.
+SYSTEM_ALIASES = {"support_replica": "support_platform"}
+REPLICA_TABLE = re.compile(r"_(?:primary|read_replica|reporting_replica|failover_replica|replica\w*)$")
+
+
+def collection_system(collection: str | None) -> str | None:
+    if not collection:
+        return None
+    return COLLECTION_SYSTEMS.get(collection) or COLLECTION_SYSTEMS.get(REPLICA_TABLE.sub("", collection))
 
 
 def timestamps(payload: dict, locator: str, recursive: bool = False) -> list[SourceTimestamp]:
@@ -54,8 +76,11 @@ class ExtractionContext:
         decoded = decoded if isinstance(decoded, dict) else {}
         system = next((source[k] for source in (payload, decoded)
                        for k in SYSTEM_FIELDS if source.get(k)), self.system)
+        inherited = self.collection if self.system in (None, system) else None
+        # An envelope collection describes its own data store, not records that
+        # explicitly name another system (for example operational lookup lists).
         collection = next((source[k] for source in (payload, decoded)
-                           for k in ('collection_name', 'collection') if source.get(k)), self.collection)
+                           for k in ('collection_name', 'collection') if source.get(k)), inherited)
         return replace(
             self, times=(*self.times, *timestamps(payload, locator)), system=system,
             collection=collection,
@@ -72,6 +97,8 @@ class ExtractionContext:
         decoded = payload.get('decoded_record')
         resource = payload.get("resource_id") or (decoded.get('resource_id')
                                                   if isinstance(decoded, dict) else None)
+        system = SYSTEM_ALIASES.get(scope.system, scope.system) or collection_system(scope.collection)
+        scope = replace(scope, system=system)
         systems = {scope.system} if scope.system else set()
         systems.update(payload[k] for k in ("source_system", "target_system") if payload.get(k))
         return Observation(

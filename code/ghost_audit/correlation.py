@@ -6,6 +6,7 @@ Never expand by file, system alone, name, or a newly encountered person's alias.
 import re
 from collections import defaultdict
 
+from .extraction import REPLICA_TABLE
 from .identity import IdentityResolver
 from .index import EvidenceIndex, identifier_values, normalize_identifier
 from .models import Observation, ResourceRef
@@ -13,6 +14,7 @@ from .phase2_models import (
     AssociatedObservation, AssociatedResource, CorrelationLink, ObservationLink,
     ResolvedIdentity,
 )
+from .temporal_adapters import linkage_time
 from .time import parse_timestamp
 
 RESOURCE_FIELDS = {'source_resource_id', 'target_resource_id', 'related_resource_id'}
@@ -25,7 +27,11 @@ SUBJECT_TOKEN = re.compile(
     r"[\w.+%'-]+@[\w.-]+\.[A-Za-z]{2,}|(?<!\w)\+\d[\d ()-]{6,}\d(?!\w)|\buser_[\w]+\b(?!\\?[\"']?\s*[:=])",
     re.IGNORECASE,
 )
-EMPTY_SELECTORS = {'null', 'none', 'redacted', '[redacted]', 'anonymous', 'anonymized'}
+EMPTY_SELECTORS = {'null', 'none', 'redacted', '[redacted]', 'anonymous', 'anonymized', 'no direct identifier'}
+
+
+def same_collection(left: str | None, right: str | None) -> bool:
+    return not left or not right or REPLICA_TABLE.sub('', left) == REPLICA_TABLE.sub('', right)
 
 
 def reference_key(resource: ResourceRef) -> tuple:
@@ -39,12 +45,18 @@ class EvidenceCorrelator:
         self.tokens = [identifier_values(o.payload) | identifier_values(o.raw_text)
                        for o in index.observations]
         self.subjects = [self._subject_identifiers(o) for o in index.observations]
+        # Ownership facts are visible from the time they were observed. A late export
+        # can carry an earlier scoped snapshot; its later capture limits citation, not linkage.
+        self.times = [linkage_time(o) for o in index.observations]
         self.by_scoped_resource = defaultdict(set)
         for i, item in enumerate(index.observations):
             for r in item.resources:
                 self.by_scoped_resource[(r.system_id, r.resource_id)].add(i)
 
-    def correlate(self, identity: ResolvedIdentity, audit_at):
+    def correlate(self, identity: ResolvedIdentity, audit_at, *, workflow_seeds=(), prior_audit=None):
+        """workflow_seeds: worker events attributed to this request's batch.
+        prior_audit: the latest earlier audit of the same subject; evidence observed by
+        then was already attributable to that earlier request, not this one."""
         audit_at = parse_timestamp(audit_at)
         if identity.status != 'RESOLVED':
             return [], [], ['identity_not_uniquely_resolved']
@@ -66,7 +78,7 @@ class EvidenceCorrelator:
                 observations[i].provenance.locator, observations[i].model_dump_json()))
 
         def visible(i):
-            time = observations[i].available_at
+            time = self.times[i]
             return observations[i].kind != 'identity' and time is not None and time <= audit_at
 
         def owners(value):
@@ -154,7 +166,12 @@ class EvidenceCorrelator:
         candidates = set().union(*(self.index.by_identifier.get(value, set()) for value in alias_map))
         for i in ordered(candidates):
             if visible(i):
-                add(i, 'DIRECT_IDENTIFIER', matched=self.tokens[i] & alias_map.keys())
+                earlier = prior_audit is not None and event_time(i) <= prior_audit
+                add(i, 'DIRECT_IDENTIFIER', matched=self.tokens[i] & alias_map.keys(),
+                    forced_reason='attributed_to_earlier_request_of_subject' if earlier else None)
+        for i in ordered(workflow_seeds):
+            if visible(i):
+                add(i, 'WORKFLOW_BATCH')
 
         # Only direct anchors may seed a trace. Detect conflicting subjects over
         # the entire visible scoped trace before accepting any trace-only result.
@@ -218,8 +235,10 @@ class EvidenceCorrelator:
                     continue
                 refs = [r for r in observations[j].resources if r.resource_id == resource_id]
                 if any(r.system_id == system and system is not None for r in refs):
-                    compatible = bool(collection) and any(
-                        r.system_id == system and r.collection == collection for r in refs)
+                    # One system's resource ID names one record. Only an explicitly
+                    # different logical collection makes the rows incompatible.
+                    compatible = any(r.system_id == system and same_collection(r.collection, collection)
+                                     for r in refs)
                     safe_parents = [p for p in parents if ownership_safe(p, j, resource)] if compatible else []
                     reason = ('incompatible_resource_collection' if not compatible
                               else 'resource_ownership_boundary' if not safe_parents else None)

@@ -32,7 +32,7 @@ def predict(dataset, index: EvidenceIndex | None = None) -> PredictionRun:
         if decision.prediction is not None:
             try:
                 checks = validate_output([decision.prediction], [request], phase2.index)
-                if any(check.resource_support != 'linked' or check.parsing_status != 'parsed' for check in checks):
+                if any(check.resource_support == 'unknown' or check.parsing_status != 'parsed' for check in checks):
                     raise ValueError('prediction citation lacks parsed resource linkage')
             except ValueError as exc:
                 message = f'{request.case_id}: {exc}'

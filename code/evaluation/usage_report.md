@@ -1,4 +1,43 @@
-# Phase 4 full-dataset attempt — 2026-10-24
+# Phase 5 full-dataset run — 2026-10-24
+
+`python code/main.py` processed all **518 requests** on Python **3.12.10**: 151 COMPLETE,
+351 INCOMPLETE and 10 NOT_APPLICABLE grounded rows (512 pass per-row validation) and 6
+diagnostic abstentions. It exited 2 and **did not write output.csv**, so this is the usage
+of the final attempted run, not of a published submission.
+
+## Runtime model usage (the solution itself)
+
+| Measure | Final full-dataset run |
+| --- | --- |
+| Model providers | None |
+| Runtime model names | None |
+| Model-call count | 0 |
+| Input / output / total tokens | 0 / 0 / 0 |
+| Average tokens per request | 0 / 518 = 0 |
+| Estimated total API cost | USD 0 |
+| Estimated API cost per request | USD 0 / 518 = USD 0 |
+| Per-model totals | Not applicable; no runtime model configured or called |
+| Overall calls / tokens / cost | 0 / 0 / USD 0 |
+| Local OCR | Tesseract 5.3.1 CLI, 11 image files, once per file digest per process; offline, no tokens or API cost |
+| Prediction + per-row validation time | 8.69 s (excluding ingestion/OCR) |
+
+The independent 32-sample run also used 0 model calls, 0 tokens and USD 0 (2.56 s).
+
+**Gemini**: not used. No `GEMINI_API_KEY`/`GOOGLE_API_KEY` is configured, so availability and
+model listing could not be checked. Deterministic OCR plus catalogue cross-checks recovered the
+images with usable facts, and the six remaining abstentions involve contradictory or absent facts
+that an unverified model extraction should not override. No adapter or SDK was added.
+
+## Development-assistant usage (not runtime)
+
+Phase 5 was developed with **Claude Code** using model **claude-opus-5-5**. That usage
+belongs to development, not to any prediction run, and is excluded from the per-request
+figures above. The assistant's own token counts and billing are not exposed to the project,
+so they are not estimated here. No credentials were used or recorded.
+
+---
+
+# Historical: Phase 4 full-dataset attempt — 2026-10-24
 
 The final measured offline attempt processed **518 requests** on Python **3.12.10** using
 `python code/main.py`. It established 336 INCOMPLETE and 10 NOT_APPLICABLE predictions;

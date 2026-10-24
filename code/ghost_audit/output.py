@@ -131,8 +131,27 @@ class CitationCheck:
     step_no: int
     evidence_id: str
     parsing_status: Literal['parsed', 'deferred']
-    resource_support: Literal['linked', 'unknown']
+    # 'coverage': an absence check cites a complete listing that omits the resource.
+    resource_support: Literal['linked', 'coverage', 'unknown']
     state_support: Literal['unverified'] = 'unverified'
+
+
+_LISTINGS: dict[int, dict] = {}
+
+
+def omitted_from_listing(evidence: EvidenceIndex, evidence_id: str, system_id: str,
+                         resource_id: str, cutoff: datetime) -> bool:
+    """The cited file holds a complete listing of the system's collection, captured by
+    the cutoff, and that listing does not contain the resource."""
+    from .temporal import coverage_surfaces
+
+    surfaces = _LISTINGS.get(id(evidence))
+    if surfaces is None or surfaces.get('index') is not evidence:
+        surfaces = _LISTINGS[id(evidence)] = {'index': evidence, 'surfaces': coverage_surfaces(evidence.observations)}
+    return any(surface.provenance.evidence_id == evidence_id and at is not None and at <= cutoff
+               and resource_id not in ids
+               for (system, _), values in surfaces['surfaces'].items() if system == system_id
+               for at, surface, ids in values)
 
 
 def check_citation(case_id: str, step: OutputStep, cutoff: datetime,
@@ -156,6 +175,9 @@ def check_citation(case_id: str, step: OutputStep, cutoff: datetime,
                    and resource.system_id in (None, step.system_id) for resource in item.resources)
 
     resource_linked = any(linked(item) for item in visible)
+    if not resource_linked and step.operation == 'VERIFY_RECORD_ABSENT' and omitted_from_listing(
+            evidence, step.evidence_id, step.system_id, step.resource_id, cutoff):
+        return CitationCheck(case_id, step.step_no, step.evidence_id, entry.parsing_status, 'coverage')
     if not resource_linked:
         if any(linked(item) for item in candidates):
             raise ValueError(f'{case_id}: future cited resource observation is after audit_at or unavailable')
