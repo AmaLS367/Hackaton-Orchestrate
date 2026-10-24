@@ -107,8 +107,9 @@ can select another participant dataset directory. Run pytest from the repository
   paid account, API key, or remote model call is part of Phase 1.
 
 Images and PDF pages without extractable text are explicitly marked `deferred`, never treated
-as empty/compliant evidence. Semantic PDF interpretation, OCR, temporal state selection, policy
-application, dependency-aware remediation planning, and actual predictions remain future work.
+as empty/compliant evidence. Phase 3 below implements temporal state selection over parsed
+evidence. Semantic PDF interpretation, OCR, policy application, dependency-aware remediation
+planning, and actual predictions remain future work.
 
 ## Phase 2: intent, historical identity, and evidence correlation
 
@@ -180,6 +181,82 @@ associations (previously 2,857): 905 joins lacking collection proof are downgrad
 independently identified records with null/redacted subject fields are recovered. The current
 test and diagnostic results, limitations, and preparation
 for Phase 3 are documented in [`code/evaluation/evaluation_report.md`](code/evaluation/evaluation_report.md).
+
+## Phase 3: temporal state reconstruction
+
+```text
+python code/main.py phase3
+python code/main.py phase3 --samples
+python code/main.py phase3 --case-id case_33
+python code/main.py phase3 --samples --case-id case_05
+```
+
+These commands reconstruct observations at each request's `audit_at`; they do not apply
+deletion policy, classify deletion completion, plan remediation, or write `output.csv`.
+Aggregate output contains counts and case IDs without personal identifiers. Single-case
+inspection includes detailed fictional field values and provenance. Existing CLI commands
+and `--dataset PATH` continue to work.
+
+The Phase 4 integration API reuses the existing loaded dataset and index:
+
+```python
+from ghost_audit.phase2 import Phase2Analyzer
+from ghost_audit.temporal import TemporalStateEngine
+
+phase2 = Phase2Analyzer(dataset)
+engine = TemporalStateEngine(phase2.index)
+state_bundle = engine.analyze(phase2.analyze(request))
+diagnostic_json = state_bundle.model_dump_json(indent=2)
+```
+
+`TemporalStateEngine().analyze(case_bundle)` also accepts a standalone Phase 2 bundle.
+Passing the existing index additionally validates evidence registration and anchor availability,
+and exposes known SQL sibling-table coverage gaps. Analysis performs no file I/O or model calls.
+
+- `temporal_models.py` defines `CaseStateBundle`, per-resource/source histories, timestamped
+  observations, field representations, typed record/flow/restore selections, replica comparisons,
+  unresolved facts, and supporting/conflicting evidence. The resolved identity and intent survive
+  intact. Original provenance includes the evidence ID, locator, digest, capture and source clocks;
+  Phase 2 correlation links retain the full ownership evidence chain.
+- `temporal_adapters.py` interprets parsed JSON/SQL snapshots, completed resource lookups,
+  service readbacks, field scans, connector configurations, and restore permissions. `NULL`,
+  explicit redaction markers, stable references, and identifying values remain field facts.
+  A tombstone with null identifiers remains an observed `PRESENT` record; nulls alone do not
+  establish `REDACTED` or `ANONYMIZED`. Explicit state labels describe observations and can
+  conflict with actual fields. Security/legal categories never imply compliance.
+- `temporal.py` gates both observation and availability clocks. Snapshot observation times come
+  from scoped capture clocks, independently of older row updates or later export packaging.
+  Per-scope histories are chronological. Precise snapshots/resource reads outrank summary labels;
+  among precise observations, the latest clock wins. Conflicting simultaneous direct observations
+  remain `UNKNOWN`/`CONFLICTED`; a later resolution retains historical conflict evidence.
+  Activity and operation results remain `CLAIM_ONLY` and cannot override direct contents.
+- Known SQL schema families can equate logical collections across primary, read, regional,
+  reporting, and failover tables. Explicit `collection_name` remains authoritative. Physical table
+  and replica scope stay attached to each fact. Generic tables require explicit logical collection
+  metadata. Potential associations never become proof, including potential replica records.
+  Unknown collections are isolated per observation; unspecified service surfaces are separated
+  by origin and region. No inferred cross-source equivalence is used to erase evidence.
+- Scoped 404/zero-row resource lookups can establish absence. Search misses require explicit
+  resource query scope; cache misses, failed reads, unavailable downloads, and missing SQL rows
+  do not prove absence. Known sibling-table gaps are `UNKNOWN`, not synthetic deletion facts.
+  Replica reports distinguish state disagreement, field disagreement, and coverage gaps, and
+  indicate whether compared observations are contemporaneous.
+- Flow activity and restore permission have independent selections. An existing archive can
+  remain `PRESENT` with restoration `BLOCKED`; a restore authorization does not establish archive
+  existence. A category label such as active backup does not establish restore permission.
+
+The full run processes 518 requests (508 authorized), establishing record states in 498 cases.
+Across 2,703 resource/source scopes it establishes 1,544 record states and leaves 1,159 unknown.
+It observes 135 active flows and 29 allowed restore permissions. These are discovery coverage
+counts, not prediction accuracy or policy violations. Eleven images remain deferred, and 504
+authorized cases have unresolved evidence, ambiguity, or gaps. The full request set has no
+supported replica disagreements; samples expose one failover/primary coverage gap. Synthetic
+tests exercise explicit replica disagreements rather than promoting potential corpus evidence.
+
+For Phase 4, apply policy to field-level observations and each independent source scope, inspect
+`support`, `unresolved_states`, and replica comparisons before drawing conclusions, and retain
+the cited ownership chain. Implement policy and dependency planning separately; do not map
+`PRESENT`, null identifiers, discovery counts, or an absence of conflicts directly to compliance.
 
 ---
 

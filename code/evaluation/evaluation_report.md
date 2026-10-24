@@ -1,4 +1,4 @@
-# Offline pipeline evaluation: Phases 1 and 2
+# Offline pipeline evaluation: Phases 1, 2, and 3
 
 No independent audit predictions or submission output have been produced. Case-level
 deletion-status accuracy, step accuracy, field accuracy, sequence accuracy, and exact-case
@@ -169,11 +169,105 @@ Remaining limitations:
 - Current/previous alias status is an identity-history fact, not a reconstruction of resource
   state. Resource versions and replicas are preserved for the future temporal engine.
 
-Preparation for Phase 3: review potential associations and unknown systems; extract and
+Phase 2 handoff to Phase 3: review potential associations and unknown systems; extract and
 correlate deferred document/image facts with their original locators; then design temporal
 resource reconstruction over these bundles, keeping claims separate from observed state.
 Policy evaluation and remediation planning require their own later implementation and
-independent prediction evaluation. Phase 3 has not been implemented here.
+independent prediction evaluation. The Phase 3 implementation and its measured coverage
+are described below; these earlier Phase 2 results remain the regression baseline.
+
+## Phase 3 evaluation
+
+Phase 3 consumes Phase 2 bundles without changing intent, identity, or correlation modules.
+It reconstructs resource observations and source scopes, not deletion-policy outcomes. Case-level
+deletion-status, step-level, field-level, sequence, and exact-case prediction accuracy remain
+**not measured**. No root `output.csv`, policy engine, or remediation plan is generated.
+
+Validation on Python 3.12.10 runs the full pytest suite, Phase 1 `inspect` (full and samples),
+sample-reference schema checks, Phase 2 (full, samples, and single case), and Phase 3 (full,
+samples, and single case). Phase 2 retains exactly 2,100 / 122 confirmed associations.
+The complete suite passes **356 tests, 0 failures**, retaining all 293 Phase 1/2 regressions.
+The 63 Phase 3 tests include constructed cases, participant-format parsing, all-518 integration,
+serialization round trips, privacy of aggregates, and full/sample/single-case CLI checks.
+
+Measured discovery coverage, per-case resource/source scopes (not unique global resources):
+
+| Metric | 518 requests | 32 sample requests |
+| --- | ---: | ---: |
+| Authorized deletion intent | 508 | 32 |
+| Cases with established record states | 498 | 26 |
+| Resource/source scopes | 2,703 | 153 |
+| Established record selections (`PROVEN`) | 1,544 | 77 |
+| `PRESENT` / `ABSENT` | 1,429 / 113 | 68 / 9 |
+| `REDACTED` / `ANONYMIZED` | 2 / 0 | 0 / 0 |
+| `UNKNOWN` record selections | 1,159 | 76 |
+| Record selections `CLAIM_ONLY` / `CONFLICTED` | 0 / 0 | 0 / 0 |
+| Observations `PROVEN` / `CLAIM_ONLY` / `UNKNOWN` | 1,557 / 13 / 1,133 | 79 / 2 / 72 |
+| Conflicting observation citations | 0 | 0 |
+| Supported replica disagreements | 0 | 0 |
+| Replica coverage gaps | 0 | 1 |
+| Active / inactive flows | 135 / 39 | 6 / 3 |
+| Allowed / blocked restore permissions | 29 / 39 | 2 / 3 |
+| Authorized cases with incomplete evidence | 504 | 32 |
+
+Measured final full Phase 3 CLI time was 8.92 seconds, including ingestion and correlation; samples
+took 2.97 seconds on this development machine. Timing is descriptive, not a performance gate.
+The lack of proven conflicts in this corpus is not evidence of complete deletion. Conservative
+Phase 2 associations leave many replica and anonymous-record candidates potential. The sample
+gap is a known sibling primary table without a confirmed row, alongside a populated failover
+table; it remains unknown because export completeness is not established.
+
+Participant-created temporal evaluation cases (executable in `code/tests/test_temporal.py`):
+
+1. Present snapshot, scoped 404, then recreated record: history stays `PRESENT -> ABSENT ->
+   PRESENT`; selecting an earlier cutoff excludes both future observations and late captures.
+2. Older snapshot packaged after a newer resource readback: chronology uses the scoped snapshot
+   clock, not export time or row `updated_at`; the newer authoritative read establishes absence.
+3. Successful deletion claim with a present snapshot: the claim is retained but cannot erase
+   direct evidence. A summary label likewise cannot override precise contents.
+4. Primary absent, failover/read replica present: independent scopes yield a supported state
+   disagreement. Missing rows instead produce unknown coverage; regional/reporting scopes,
+   explicit generic-table logical collections, reused IDs across collections, and field drift
+   have separate tests. Different observation times are marked as possible temporal skew.
+5. Redacted tombstone, analytics with all-null fields, analytics with direct identifiers, and
+   retained security reference: exact field representations survive. Nulls do not establish
+   anonymization, and a stable reference does not imply a policy violation.
+6. Connector enabled/disabled after account absence, and present archive with allowed/blocked
+   restoration: independent state dimensions survive, including SQLite integer booleans.
+7. Same-time contradictory readbacks remain unknown/conflicted. A later resolution does not
+   delete historical conflict evidence. Reordering input observations preserves the full result.
+8. Potential ownership, missing/future anchors, unregistered evidence, failed reads, negative
+   searches lacking resource scope, cache misses, and unavailable downloads cannot establish
+   definitive absence or ownership.
+
+Failures found and corrections during implementation:
+
+- SQLite uses integer boolean values; adapters explicitly decode 0/1 while preserving originals.
+- Service-export JSON can establish presence without HTTP fields; scoped observed contents and
+  identifiers are handled separately from operation claims.
+- Missing logical collections initially allowed source-local joining; these observations are now
+  isolated, while known SQL schema relationships retain safe cross-table comparison.
+- Earlier simultaneous conflicts could disappear from conflict diagnostics after a later read;
+  histories now retain the conflicting citations and reasons independently of latest selections.
+- The unknown-collection regression fixture originally reused an identical file/line locator for
+  two different lines; it now uses distinct source locators to exercise the intended boundary.
+- A mismatched search document could fall through to generic presence inference; search responses
+  now require their own resource-scoped semantics. HTTP 200 with zero rows establishes an empty
+  result, not contradictory presence. Restore-configuration conflicts remain separate from archive
+  existence, and simultaneous field differences retain their own conflict evidence.
+
+Remaining uncertainty: eleven images remain deferred; unsupported PDF/text semantics, missing
+logical collections, bounded correlation, and potential ownership can leave real resources
+undiscovered or unresolved. Last observed state does not prove continuous state through `audit_at`.
+Null-only analytics records intentionally remain present with field evidence; irreversible
+anonymization has not been independently established. Unspecified service origins/regions are
+independent surfaces, not assumed SQL replicas. Future extraction must preserve these boundaries.
+
+Phase 4 should consume `TemporalStateEngine(phase2.index).analyze(case_bundle)`, apply policy to
+the field evidence and independent record/flow/restore selections, and explicitly handle unknown
+or conflicted support. Preserve resource collection identity and ownership chains in citations.
+Implement remediation ordering and output generation separately; do not use these diagnostic
+coverage numbers as labels, accuracy claims, or automatic completion gates.
 
 ## Local metric definitions
 

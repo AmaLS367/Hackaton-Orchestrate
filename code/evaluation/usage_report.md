@@ -1,4 +1,4 @@
-# Phases 1 and 2 runtime usage
+# Phases 1, 2, and 3 runtime usage
 
 No final full-dataset **prediction** run has occurred, and no `output.csv` has been
 generated. The Phase 1 full-corpus ingestion/checks are offline. This is a preliminary
@@ -44,3 +44,24 @@ associations. It produces evidence bundles, not submission predictions or `outpu
 The sample diagnostic run also uses zero model calls, tokens, and API cost. Development
 assistant usage remains outside solution-runtime accounting. This report still requires
 replacement with measured usage from the eventual run producing submission predictions.
+
+## Phase 3 full-dataset reconstruction run
+
+The final Phase 3 diagnostics processed all 518 requests (508 authorized) offline with the
+existing Python 3.12 dependencies. The run established 1,544 record states across 2,703
+discovered resource/source scopes; 1,159 record selections remained unknown. This was a
+reconstruction diagnostic, not the final prediction run, and did not produce `output.csv`.
+
+| Runtime measure | Full-dataset Phase 3 diagnostics |
+| --- | --- |
+| Model providers / names | None |
+| Model-call count | 0 |
+| Input / output / total tokens | 0 / 0 / 0 |
+| Average total model tokens per request | 0 (518 requests) |
+| Estimated total / per-request API cost | USD 0 / USD 0 |
+| Per-model totals | Not applicable; no runtime models |
+| Overall calls / tokens / estimated cost | 0 / 0 / USD 0 |
+
+The sample-only and single-case runs also use no external calls, tokens, or API cost.
+Development-assistant usage is not measured by this runtime report. Final submission-run
+usage and prediction accuracy must be measured when the later policy/output engine exists.

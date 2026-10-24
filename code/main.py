@@ -13,17 +13,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("inspect", "validate-output", "phase2"), nargs="?", default="inspect")
+    parser.add_argument("command", choices=("inspect", "validate-output", "phase2", "phase3"), nargs="?", default="inspect")
     parser.add_argument("--dataset", type=Path, default=ROOT / "dataset")
     parser.add_argument("--samples", action="store_true")
     parser.add_argument("--predictions", type=Path)
-    parser.add_argument("--case-id", help="Inspect one Phase 2 case (includes raw fictional evidence)")
+    parser.add_argument("--case-id", help="Inspect one Phase 2/3 case (includes raw fictional evidence)")
     args = parser.parse_args(argv)
     if args.command == "validate-output" and args.predictions is None:
         parser.error("validate-output requires --predictions")
     dataset = load_dataset(args.dataset, samples=args.samples)
     index = EvidenceIndex(dataset.observations, registry=dataset.registry)
-    if args.command == "phase2":
+    if args.command in {"phase2", "phase3"}:
         from ghost_audit.phase2 import Phase2Analyzer, diagnostics
 
         requests = sorted(dataset.requests, key=lambda r: r.case_id)
@@ -33,6 +33,12 @@ def main(argv=None) -> int:
                 parser.error('case_id is not in the selected request set')
         analyzer = Phase2Analyzer(dataset, index)
         bundles = [analyzer.analyze(request) for request in requests]
+        if args.command == 'phase3':
+            from ghost_audit.temporal import TemporalStateEngine
+            from ghost_audit.phase3 import diagnostics
+
+            engine = TemporalStateEngine(index)
+            bundles = [engine.analyze(bundle) for bundle in bundles]
         print(bundles[0].model_dump_json(indent=2) if args.case_id
               else json.dumps(diagnostics(bundles), indent=2))
     elif args.command == "validate-output":
