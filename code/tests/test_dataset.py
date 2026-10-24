@@ -41,6 +41,17 @@ def test_csv_observations_preserve_ids_and_claim_classification(loaded_dataset):
     assert changes[0].provenance.evidence_id == dataset.identity_changes[0].audit_id
 
 
+def test_registry_contains_every_manifest_activity_and_audit_id(loaded_dataset):
+    dataset = loaded_dataset
+    for document in dataset.documents:
+        entry = dataset.registry.get(document.manifest.file_id)
+        assert entry.parsing_status == document.status
+        assert entry.captured_at == document.manifest.captured_at
+    assert all(dataset.registry.get(row.activity_id) for row in dataset.activities)
+    assert all(dataset.registry.get(row.audit_id) for row in dataset.identity_changes)
+    assert all(dataset.registry.get(row.user_id) is None for row in dataset.identities)
+
+
 def test_index_queries_do_not_parse_or_read_files_again(loaded_dataset, monkeypatch):
     index = EvidenceIndex(loaded_dataset.observations)
 

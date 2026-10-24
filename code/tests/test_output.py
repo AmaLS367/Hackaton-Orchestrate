@@ -4,7 +4,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from ghost_audit.extraction import parse_json
+from ghost_audit.extraction import parse_json, parse_text
 from ghost_audit.index import EvidenceIndex
 from ghost_audit.models import DeletionRequest
 from ghost_audit.output import (
@@ -130,6 +130,51 @@ def test_future_nested_resource_cannot_use_earlier_envelope_as_citation(context)
     row = OutputRow(case_id="fixture_case", deletion_status="COMPLETE", steps=[step()])
     with pytest.raises(ValueError, match="resource observation"):
         validate_output([row], [request()], EvidenceIndex(items))
+
+
+@pytest.mark.parametrize('payload', [
+    {'resource_id': 'unrelated'},
+    {'captured_at': '2026-01-02T00:00:00Z', 'records': [{'resource_id': 'unrelated'}]},
+    {'resource_id': 'record_x', 'system': 'other_service'},
+])
+def test_citation_exclusively_about_another_resource_is_rejected(context, payload):
+    row = OutputRow(case_id='fixture_case', deletion_status='COMPLETE', steps=[step()])
+    with pytest.raises(ValueError, match='unrelated'):
+        validate_output([row], [request()], EvidenceIndex(parse_json(payload, context)))
+
+
+@pytest.mark.parametrize('fields', ['rows=0', 'result=NOT_FOUND', 'http_status=404'])
+def test_negative_lookup_needs_no_physical_record(context, fields):
+    items = parse_text('2026-01-02T10:00:00Z INFO service=account_service '
+                       f'event=lookup_completed resource_id=record_x {fields}', context)
+    row = OutputRow(case_id='fixture_case', deletion_status='COMPLETE', steps=[step()])
+    checks = validate_output([row], [request()], EvidenceIndex(items))
+    assert checks[0].resource_support == 'linked'
+    assert checks[0].state_support == 'unverified'
+
+
+def test_trace_citation_and_future_resource_link(context):
+    # Separate citation IDs in the same grounded file/service trace.
+    started = parse_text('2026-01-02T10:00:00Z INFO service=account_service '
+                         'trace_id=trace-x email=person@example.invalid', context)[0]
+    finished = parse_text('2026-01-04T10:00:00Z INFO service=account_service '
+                          'trace_id=trace-x resource_id=record_x rows=0', context)[0]
+    finished = finished.model_copy(update={'provenance': finished.provenance.model_copy(
+        update={'evidence_id': 'other_citation'})})
+    row = OutputRow(case_id='fixture_case', deletion_status='COMPLETE', steps=[step()])
+    with pytest.raises(ValueError, match='resource observation.*after audit_at'):
+        validate_output([row], [request()], EvidenceIndex([started, finished]))
+    checks = validate_output([row], [request(audit_at='2026-01-05T00:00:00Z')],
+                             EvidenceIndex([started, finished]))
+    assert checks[0].resource_support == 'linked'
+
+
+def test_generic_text_does_not_silently_claim_semantic_support(context):
+    index = EvidenceIndex(parse_text('An uninterpreted business artifact.', context))
+    row = OutputRow(case_id='fixture_case', deletion_status='COMPLETE', steps=[step()])
+    checks = validate_output([row], [request()], index)
+    assert checks[0].resource_support == 'unknown'
+    assert checks[0].state_support == 'unverified'
 
 
 def test_schema_validation_cannot_be_bypassed_with_mutated_step_list():

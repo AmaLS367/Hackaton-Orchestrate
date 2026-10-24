@@ -79,14 +79,16 @@ def parse_sql(text: str, context: ExtractionContext) -> list[Observation]:
             ))
             table_system = next((system for name, system in TABLE_SYSTEMS.items()
                                  if table == name or table.startswith(name + "_")), None)
-            table_context = replace(context, collection=table, system=table_system)
+            table_context = replace(context, collection=table, physical_table=table, system=table_system)
             for index, row in enumerate(rows):
-                system = row.get("origin_system", table_system)
+                if "record_json" in row and row['record_json'] is not None:
+                    row['decoded_record'] = json.loads(row['record_json'])
+                decoded = row.get('decoded_record')
+                system = row.get("origin_system") or (decoded.get('origin_system')
+                                                      if isinstance(decoded, dict) else None) or table_system
                 row_context = replace(table_context, times=(
                     *context.times, *scope_by_system.get(system, ()),
                 ))
-                if "record_json" in row and row['record_json'] is not None:
-                    row['decoded_record'] = json.loads(row['record_json'])
                 observations.append(row_context.observation(
                     row, f"sql:{table}:row:{index + 1}", recursive_times=True,
                 ))

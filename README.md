@@ -62,10 +62,23 @@ can select another participant dataset directory. Run pytest from the repository
 - `extraction.py`, `sql.py`, `ingestion.py`: parse JSON, SQL, logs, text, PDFs, and CSV inputs
   once per dataset load. SQL runs only in memory with restricted commands and an instruction
   budget. Empty tables, replica names, embedded JSON, and original field values are preserved.
+- Log adapters support bracket, key-value, timestamp-plus-JSON, plain-level, timestamp-first
+  and standard RFC5424-like syslog, pipe-delimited service logs, and escaped cloud runtime
+  messages. They retain raw lines and source locations, decode quoted fields, preserve
+  unknown fields and scalar types, and correlate lookups through file/service-scoped traces.
 - Every observation carries its participant evidence ID, file path, SHA-256 digest,
   JSON path/table row/text line/PDF page locator, manifest origin/capture time, and source
   timestamps. Explicit systems and collection names remain attached to resource references.
   Unknown systems remain unknown; resource-ID prefixes are not used to guess them.
+  SQL resource references expose `physical_table` separately from `collection`; explicit
+  logical `collection_name` values (including decoded `record_json`) take precedence for
+  later classification. Replica table locators, origin systems, and snapshot times remain intact.
+- `EvidenceRegistry` in `index.py` registers every manifest file, including deferred images
+  and PDFs, plus activity and audit IDs. Entries contain source path/origin, capture time,
+  and parsing status. Ingestion exposes `dataset.registry`; pass it to
+  `EvidenceIndex(dataset.observations, registry=dataset.registry)` for complete citation coverage.
+  Existing observation-only index construction remains supported, but cannot know about
+  files without observations. Current identity snapshot user IDs are not citation IDs.
 - `index.py`: reusable indexes for identifier values (including historical CSV changes),
   resources, systems, evidence IDs, and file/service-scoped log traces. Lookup performs
   no file parsing. Email matching is case-insensitive; phone matching removes presentation
@@ -79,7 +92,14 @@ can select another participant dataset directory. Run pytest from the repository
   authorized outputs, exact request coverage, duplicate rejection, and deterministic CSV/JSON
   serialization. `canonical_steps` explicitly sorts by the official operation order, then
   system/resource, and renumbers. Readers reject incorrect order rather than silently fixing it.
-  Citation checks establish existence/availability, not whether the evidence proves a verdict.
+  Citation validation distinguishes unknown IDs, future evidence, and evidence exclusively
+  about unrelated resources/systems. It accepts grounded negative lookups without requiring
+  a physical record, follows scoped traces, and rejects resource links available only after
+  `audit_at`, even when an earlier document envelope exists.
+  `validate_output` returns `CitationCheck` diagnostics outside the output schema:
+  `resource_support` is `linked` or `unknown`, and `state_support` remains `unverified`.
+  Deferred evidence can be structurally valid while its resource support is unknown;
+  the CLI reports that count. A resource link never proves the claimed deletion state.
 - `code/evaluation/scoring.py`: isolated local sample metrics and custom test cases.
   `code/evaluation/evaluation_report.md` defines their formulas and current limitations.
 - `llm.py`: a small provider-agnostic protocol with response and token-usage metadata.
@@ -100,8 +120,8 @@ decisions, with independent sample predictions scored by the existing harness.
 Clone the repository and move into the project directory:
 
 ```bash
-git clone https://github.com/interviewstreet/hackerrank-orchestrate-october26.git
-cd hackerrank-orchestrate-october26
+git clone https://github.com/AmaLS367/Hackaton-Orchestrate.git
+cd Hackaton-Orchestrate
 ```
 
 Start your AI coding tool from the **repository root** so it automatically reads [`AGENTS.md`](./AGENTS.md) and logs your session turns to `log.txt` in the root directory.
@@ -117,7 +137,7 @@ Your solution must:
 Run the Phase 1 inspection entry point with:
 
 ```bash
-python3 code/main.py
+python code/main.py inspect
 ```
 
 The blank template at `dataset/output.csv` is provided as a reference. Your final generated file for submission must be the root-level `output.csv`.

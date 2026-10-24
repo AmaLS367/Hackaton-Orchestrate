@@ -89,6 +89,7 @@ class ResourceRef(StrictModel):
     resource_id: Identifier
     system_id: Identifier | None = None
     collection: str | None = None
+    physical_table: str | None = None
 
 
 class Observation(StrictModel):
@@ -114,3 +115,13 @@ class EvidenceDocument(StrictModel):
     status: Literal["parsed", "deferred"]
     observations: list[Observation]
     notes: list[str] = Field(default_factory=list)
+
+
+class EvidenceEntry(StrictModel):
+    """Citation metadata, independent of observations or any claimed record state."""
+
+    evidence_id: Identifier
+    file_path: Identifier
+    origin: Identifier
+    captured_at: Timestamp | None
+    parsing_status: Literal['parsed', 'deferred']

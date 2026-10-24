@@ -123,6 +123,43 @@ INSERT INTO customer_profiles VALUES ('account_x','fixture@example.invalid');'''
     assert record.available_at == context.manifest.captured_at
 
 
+@pytest.mark.parametrize('logical_location', ['column', 'decoded'])
+def test_sql_preserves_logical_collection_and_physical_replica(context, logical_location):
+    collection_column = ', collection_name TEXT' if logical_location == 'column' else ''
+    collection_value = ", 'customer_profiles'" if logical_location == 'column' else ''
+    decoded = {'resource_id': 'record_x', 'collection_name': 'customer_profiles',
+               'email': 'fictional@example.invalid'}
+    sql = f'''-- Captured at: 2026-01-02T09:00:00Z
+CREATE TABLE snapshot_scope (origin_system TEXT, captured_at TEXT);
+INSERT INTO snapshot_scope VALUES ('account_service','2026-01-02T08:00:00Z');
+CREATE TABLE customer_data_replica (resource_id TEXT, origin_system TEXT,
+                                  record_json TEXT{collection_column});
+INSERT INTO customer_data_replica VALUES
+('record_x','account_service','{json.dumps(decoded)}'{collection_value});'''
+    record = next(item for item in parse_sql(sql, context) if item.resources)
+    assert record.resources[0].collection == 'customer_profiles'
+    assert record.resources[0].physical_table == 'customer_data_replica'
+    assert record.resources[0].system_id == 'account_service'
+    assert record.payload['decoded_record'] == decoded
+    assert record.provenance.locator == 'sql:customer_data_replica:row:1'
+    assert {stamp.locator for stamp in record.provenance.timestamps} >= {
+        'sql:header.captured_at', 'sql:snapshot_scope[0].captured_at',
+    }
+
+
+def test_sql_decoded_resource_keeps_origin_snapshot_scope(context):
+    sql = '''CREATE TABLE snapshot_scope (origin_system TEXT, captured_at TEXT);
+INSERT INTO snapshot_scope VALUES ('account_service','2026-01-05T00:00:00Z');
+CREATE TABLE generic_replica (record_json TEXT);
+INSERT INTO generic_replica VALUES
+('{"resource_id":"record_x","origin_system":"account_service","collection_name":"profiles"}');'''
+    item = next(item for item in parse_sql(sql, context) if item.resources)
+    assert item.resources[0].system_id == 'account_service'
+    assert item.resources[0].collection == 'profiles'
+    assert item.resources[0].physical_table == 'generic_replica'
+    assert item.available_at == parse_timestamp('2026-01-05T00:00:00Z')
+
+
 @pytest.mark.parametrize("statement", [
     "ATTACH DATABASE 'outside.db' AS outside;",
     "SELECT load_extension('anything');", "PRAGMA writable_schema=ON;",

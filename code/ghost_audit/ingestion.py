@@ -2,13 +2,14 @@
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from pypdf import PdfReader
 
 from .csvio import load_models
 from .extraction import ExtractionContext, parse_csv, parse_json, parse_text, timestamps
+from .index import EvidenceRegistry
 from .models import (
     Activity, DeletionRequest, DeletionRule, EvidenceDocument, EvidenceFile, Identity,
     IdentityChange, Observation, Provenance, ResourceRef,
@@ -69,6 +70,11 @@ class Dataset:
     rules: list[DeletionRule]
     documents: list[EvidenceDocument]
     observations: list[Observation]
+    registry: EvidenceRegistry = field(init=False)
+
+    def __post_init__(self):
+        self.registry = EvidenceRegistry(documents=self.documents, activities=self.activities,
+                                         identity_changes=self.identity_changes)
 
 
 def load_dataset(dataset: Path, *, samples: bool = False) -> Dataset:

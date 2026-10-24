@@ -21,11 +21,13 @@ def main(argv=None) -> int:
     if args.command == "validate-output" and args.predictions is None:
         parser.error("validate-output requires --predictions")
     dataset = load_dataset(args.dataset, samples=args.samples)
-    index = EvidenceIndex(dataset.observations)
+    index = EvidenceIndex(dataset.observations, registry=dataset.registry)
     if args.command == "validate-output":
         rows = read_output(args.predictions)
-        validate_output(rows, dataset.requests, index)
+        checks = validate_output(rows, dataset.requests, index)
         print(f"Validated {len(rows)} rows. Citation existence/time checks do not establish semantic correctness.")
+        unknown = sum(check.resource_support == 'unknown' for check in checks)
+        print(f'{unknown} citations have unknown resource support. All cited state claims remain unverified.')
     else:
         print(json.dumps({
             "requests": len(dataset.requests), "identities": len(dataset.identities),

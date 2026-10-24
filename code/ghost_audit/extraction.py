@@ -2,6 +2,7 @@
 
 import csv
 import io
+import json
 import re
 from dataclasses import dataclass, replace
 
@@ -15,7 +16,7 @@ SOURCE_TIMES = {
     "captured_at", "exported_at", "recorded_at", "observed_at", "event_time",
     "updated_at", "created_at", "timestamp", "snapshot", "snapshot_at",
 }
-SYSTEM_FIELDS = ("system_id", "system", "origin_system", "data_store")
+SYSTEM_FIELDS = ("system_id", "system", "origin_system", "data_store", "service")
 
 
 def timestamps(payload: dict, locator: str, recursive: bool = False) -> list[SourceTimestamp]:
@@ -46,12 +47,18 @@ class ExtractionContext:
     times: tuple[SourceTimestamp, ...] = ()
     system: str | None = None
     collection: str | None = None
+    physical_table: str | None = None
 
     def scoped(self, payload: dict, locator: str) -> "ExtractionContext":
-        system = next((payload[k] for k in SYSTEM_FIELDS if payload.get(k)), self.system)
+        decoded = payload.get('decoded_record')
+        decoded = decoded if isinstance(decoded, dict) else {}
+        system = next((source[k] for source in (payload, decoded)
+                       for k in SYSTEM_FIELDS if source.get(k)), self.system)
+        collection = next((source[k] for source in (payload, decoded)
+                           for k in ('collection_name', 'collection') if source.get(k)), self.collection)
         return replace(
             self, times=(*self.times, *timestamps(payload, locator)), system=system,
-            collection=payload.get("collection", payload.get("collection_name", self.collection)),
+            collection=collection,
         )
 
     def observation(self, payload: dict[str, JsonValue], locator: str,
@@ -62,7 +69,9 @@ class ExtractionContext:
         if recursive_times:
             direct = {t.locator for t in timestamps(payload, locator)}
             times.extend(t for t in timestamps(payload, locator, True) if t.locator not in direct)
-        resource = payload.get("resource_id")
+        decoded = payload.get('decoded_record')
+        resource = payload.get("resource_id") or (decoded.get('resource_id')
+                                                  if isinstance(decoded, dict) else None)
         systems = {scope.system} if scope.system else set()
         systems.update(payload[k] for k in ("source_system", "target_system") if payload.get(k))
         return Observation(
@@ -70,9 +79,10 @@ class ExtractionContext:
                 evidence_id=self.manifest.file_id, file_path=self.manifest.file_path,
                 origin=self.manifest.origin, locator=locator,
                 captured_at=self.manifest.captured_at, sha256=self.sha256, timestamps=times,
-            ), payload=payload, raw_text=raw_text, trace_id=trace_id,
+            ), payload=payload, raw_text=raw_text, trace_id=trace_id or payload.get("trace_id"),
             resources=[ResourceRef(resource_id=resource, system_id=scope.system,
-                                   collection=scope.collection)] if resource else [],
+                                   collection=scope.collection,
+                                   physical_table=scope.physical_table)] if resource else [],
             system_ids=sorted(systems),
         )
 
@@ -120,11 +130,119 @@ def parse_csv(text: str, context: ExtractionContext) -> list[Observation]:
     return observations
 
 
-LOG_LINE = re.compile(
-    rf"^(?P<timestamp>{ISO_TOKEN}) \[(?P<level>[^]]+)\] "
-    r"\[(?P<system>[^]]+)\] \[(?P<trace>[^]]+)\] (?P<event>[^:]+):\s*(?P<fields>.*)$"
+KEY_VALUE = re.compile(
+    r'''(?<![\w.-])([A-Za-z_][\w.-]*)=("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s\]]+)'''
 )
-KEY_VALUE = re.compile(r'([A-Za-z_][\w.-]*)=("(?:[^"\\]|\\.)*"|\S+)')
+LEVELS = r"TRACE|DEBUG|INFO|WARN|WARNING|ERROR|CRITICAL|FATAL|NOTICE|ALERT|EMERG"
+
+
+def parse_fields(text: str) -> dict[str, str]:
+    """Decode quoting, keeping unquoted scalars and unknown escapes lossless."""
+    fields = {}
+    for key, value in KEY_VALUE.findall(text):
+        if value.startswith(('"', "'")):
+            try:
+                decoded = json.loads(value) if value.startswith('"') else None
+            except json.JSONDecodeError:
+                decoded = None
+            value = decoded if decoded is not None else re.sub(
+                r'''\\(["'\\\]])''', r'\1', value[1:-1])
+        fields[key] = value
+    return fields
+
+
+def parse_bracket_log(body: str) -> dict | None:
+    match = re.fullmatch(
+        r"\[(?P<level>[^]]+)\]\s+\[(?P<service>[^]]+)\]\s+"
+        r"(?:\[(?P<trace_id>[^]]+)\]\s+)?(?P<event>[^:]+):\s*(?P<fields>.*)", body,
+    )
+    if not match:
+        return None
+    return {'system': match['service'],
+            **{k: v for k, v in match.groupdict().items() if k != 'fields' and v is not None},
+            **parse_fields(match['fields'])}
+
+
+def parse_pipe_log(body: str) -> dict | None:
+    match = re.fullmatch(
+        rf"\|\s*(?P<level>{LEVELS})\s*\|\s*(?P<service>[^|]+?)\s*\|\s*"
+        r"(?P<trace_id>[^|]+?)\s*\|\s*(?P<event>[^|]+?)\s*\|\s*(?P<fields>.*)", body,
+    )
+    if not match:
+        return None
+    return {**{k: v for k, v in match.groupdict().items() if k != 'fields'},
+            **parse_fields(match['fields'])}
+
+
+def parse_json_log(body: str) -> dict | None:
+    if not body.startswith('{'):
+        return None
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def parse_key_value_log(body: str) -> dict | None:
+    if not re.match(r'^[A-Za-z_][\w.-]*=', body):
+        return None
+    payload = parse_fields(body)
+    if not payload:
+        return None
+    # Cloud exports wrap the original structured message in an escaped value.
+    if isinstance(payload.get('message'), str):
+        for key, value in parse_fields(payload['message']).items():
+            payload.setdefault(key, value)
+    return payload
+
+
+def parse_plain_level_log(body: str) -> dict | None:
+    match = re.fullmatch(rf"(?P<level>{LEVELS})(?:\s+(?P<fields>.*))?", body)
+    if not match:
+        return None
+    return {'level': match['level'], **(parse_key_value_log(match['fields'] or '') or {})}
+
+
+def parse_syslog(line: str) -> dict | None:
+    # Both dataset timestamp-first exports and standard RFC5424 header order.
+    match = re.fullmatch(
+        rf"(?:(?P<outer>{ISO_TOKEN})\s+)?<(?P<priority>\d+)>(?P<version>\d+)\s+"
+        rf"(?:(?P<inner>{ISO_TOKEN})\s+)?(?P<host>\S+)\s+(?P<service>\S+)\s+"
+        r"(?P<process_id>\S+)\s+(?P<message_id>\S+)\s+(?P<body>.*)", line,
+    )
+    if not match or not (match['outer'] or match['inner']):
+        return None
+    payload = {k: v for k, v in match.groupdict().items()
+               if k not in {'outer', 'inner', 'body'} and v != '-'}
+    payload.update(parse_fields(match['body']))
+    payload.setdefault('timestamp', match['outer'] or match['inner'])
+    payload['structured_data'] = re.findall(r'\[(?:[^\]\\]|\\.)*\]', match['body'])
+    if match['outer'] and match['process_id'] != '-':
+        payload.setdefault('trace_id', match['process_id'])
+    return payload
+
+
+def parse_log(line: str) -> dict | None:
+    payload = parse_syslog(line)
+    if payload is None:
+        match = re.fullmatch(rf"(?P<timestamp>{ISO_TOKEN})\s+(?P<body>.*)", line)
+        if not match:
+            return None
+        for parser in (parse_bracket_log, parse_pipe_log, parse_json_log,
+                       parse_plain_level_log, parse_key_value_log):
+            payload = parser(match['body'])
+            if payload is not None:
+                payload.setdefault('timestamp', match['timestamp'])
+                break
+    if payload is not None:
+        if 'service' not in payload:
+            service = payload.get('function') or payload.get('logger')
+            if service:
+                payload['service'] = service
+        if 'trace_id' not in payload and payload.get('requestId'):
+            payload['trace_id'] = payload['requestId']
+    return payload
 
 
 def parse_text(text: str, context: ExtractionContext,
@@ -135,15 +253,14 @@ def parse_text(text: str, context: ExtractionContext,
             continue
         locator = f"{locator_prefix}:{number}"
         payload: dict = {"text": line}
-        match = LOG_LINE.match(line)
-        trace = None
-        if match:
-            payload.update({"timestamp": match['timestamp'], "system": match['system'],
-                            "level": match['level'], "event": match['event']})
-            trace = match['trace']
-            for key, value in KEY_VALUE.findall(match['fields']):
-                # Preserve the original value; no coercion of "0", "null", or "false".
-                payload[key] = value[1:-1] if value.startswith('"') else value
+        line_context = context
+        structured = parse_log(line)
+        if structured is not None:
+            payload.update(structured)
+            # Keep the envelope clock separately: payload fields cannot overwrite it.
+            header = re.match(rf'^(?:<\d+>\d+\s+)?(?P<timestamp>{ISO_TOKEN})', line)
+            if header:
+                line_context = context.scoped({'timestamp': header['timestamp']}, f'{locator}:header')
         else:
             parts = [part.strip() for part in line.removeprefix("- ").split("|")]
             if len(parts) == 6 and re.fullmatch(ISO_TOKEN, parts[0]):
@@ -155,7 +272,7 @@ def parse_text(text: str, context: ExtractionContext,
                 timestamp = re.match(rf"(?:Snapshot:\s*|^)(?P<time>{ISO_TOKEN})", line)
                 if timestamp:
                     payload['timestamp'] = timestamp['time']
-        observations.append(context.observation(payload, locator, raw_text=line, trace_id=trace))
+        observations.append(line_context.observation(payload, locator, raw_text=line))
         if line.startswith("Snapshot:") and 'timestamp' in payload:
             context = context.scoped({"snapshot": payload['timestamp']}, locator)
     return observations

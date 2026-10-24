@@ -618,3 +618,259 @@ worktree=C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-octob
 parent_agent=none
 
 Metadata verification: the new tool and model fields were re-read and match authoritative session metadata.
+
+## [2026-10-24T13:35:24.3443419+00:00] SESSION START
+
+tool=Codex Desktop
+model=gpt-6.1-sol
+Repo Root: C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-october26
+Branch: master
+Worktree: C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-october26
+Parent Agent: none
+Language: py
+Time Remaining: not configured
+
+## [2026-10-24T13:46:21.6946734+00:00] Phase 1 stabilization review fixes
+
+User Prompt (verbatim, secrets redacted):
+Pasted text contains the user's request.
+# TASK: Phase 1 Stabilization — Fix Code Review Findings
+
+Repository: https://github.com/AmaLS367/Hackaton-Orchestrate
+
+Base commit: affbcd9a636ee6e6142f75f95bc0a2f9bb6c0b7e
+
+You are continuing the implementation of HackerRank Orchestrate October 2026, "Ghost Data Still Exists".
+
+## Objective
+
+Fix the confirmed Phase 1 review findings and stabilize the evidence-ingestion and validation foundations before Phase 2.
+
+This is a targeted stabilization task. Preserve the existing architecture and working behavior.
+
+Read AGENTS.md and follow its mandatory logging requirements. Inspect the current implementation and existing tests before editing.
+
+## FIX 1 — Support All Dataset Log Formats (P1)
+
+Relevant files:
+- code/ghost_audit/extraction.py
+- code/ghost_audit/index.py
+
+The current parser does not properly structure several log formats found in the actual dataset.
+
+Support at least:
+
+1. Bracket-style logs:
+   ISO_TIMESTAMP [LEVEL] [SERVICE] [TRACE] event: fields
+
+2. Key-value structured logs:
+   ISO_TIMESTAMP level=INFO service=... trace_id=... event=...
+
+3. Timestamp followed by a JSON object.
+
+4. Plain-level structured logs:
+   ISO_TIMESTAMP INFO service=... resource_id=...
+
+5. RFC5424-like syslog entries.
+
+Keep the existing handover and plain-text parsing behavior.
+
+Requirements:
+- Use format-specific parsing helpers.
+- Normalize fields into the existing Observation representation.
+- Preserve original raw_text and source-line provenance.
+- Extract timestamps, service/system, trace_id, resource_id, event type, and available identifier fields.
+- Correctly handle quoted values, escaped characters, and missing optional fields.
+- Preserve unknown fields where practical.
+- Avoid destructive coercion of field values.
+- Maintain backward compatibility.
+
+Trace correlation is particularly important.
+
+A lookup-started event containing an email and trace_id must be correlatable with a later lookup-completed event containing the same trace_id and a resource_id.
+
+Inspect the actual participant log files and write regression tests using representative formats.
+
+Do not infer successful deletion merely from log messages.
+
+## FIX 2 — Separate Evidence Manifest Registry from Observation Index (P1)
+
+Relevant files:
+- code/ghost_audit/ingestion.py
+- code/ghost_audit/index.py
+- code/ghost_audit/output.py
+- code/ghost_audit/models.py
+
+Currently, image evidence is deferred and contains no parsed observations. This causes legitimate image evidence IDs to be rejected as nonexistent.
+
+Implement a lightweight EvidenceRegistry using the existing evidence manifest and parsed-document metadata.
+
+Responsibilities:
+
+1. Register every participant-visible file_id, including deferred image and PDF evidence.
+2. Register activity_id and audit_id as valid citation identifiers.
+3. Track evidence source, manifest capture time, and parsing status.
+4. Make citation existence checks independent of extracted observations.
+5. Reject unknown identifiers and citations unavailable at audit_at.
+6. Preserve the existing EvidenceIndex for resource, identifier, and trace retrieval.
+
+IMPORTANT DISTINCTION:
+
+- Citation existence and temporal availability are structural checks.
+- Resource relevance and proof of a claimed state are semantic checks.
+
+An image that exists and was captured before audit_at may be a structurally valid citation even when its content has not yet been interpreted.
+
+Do not treat a deferred image or PDF as proof of deletion.
+
+Expose unverified semantic support clearly, using a minimal interface compatible with future image interpretation.
+
+Preserve the current CLI behavior and update callers as needed.
+
+## FIX 3 — Reject Unrelated Resource Citations (P1)
+
+Relevant file:
+- code/ghost_audit/output.py
+
+The current validation logic fails to reject certain citations whose evidence refers exclusively to an unrelated resource.
+
+Correct this behavior.
+
+Requirements:
+
+1. Confirm that cited evidence exists and is temporally available.
+2. When resource-level evidence has been extracted, require a grounded connection to the cited resource.
+3. Reject evidence that demonstrably concerns only unrelated resources.
+4. Support trace-correlated evidence.
+5. Support negative observations, including zero-result lookups, NOT_FOUND, and HTTP 404.
+6. Do not require an existing physical record to support VERIFY_RECORD_ABSENT.
+7. Handle deferred multimodal evidence without claiming semantic verification.
+8. Distinguish missing evidence, future evidence, unrelated evidence, and evidence with unknown semantic support.
+
+Be careful with timestamps. A later observation cannot justify an earlier audit_at.
+
+Avoid permissive fallback conditions that silently accept clearly unrelated evidence.
+
+Keep the implementation minimal and compatible with the existing output schema.
+
+## FIX 4 — Preserve SQL Physical and Logical Collection Metadata (P2)
+
+Relevant files:
+- code/ghost_audit/sql.py
+- code/ghost_audit/models.py
+
+Currently ResourceRef.collection can contain a physical SQL table name even when the row provides a more precise logical collection_name.
+
+Requirements:
+
+- Preserve the physical SQL table name separately.
+- Preserve the logical collection_name when available.
+- Prefer the logical collection for future policy classification.
+- Preserve origin_system and replica/snapshot provenance.
+- Support records containing decoded record_json.
+- Maintain compatibility with existing models and tests.
+
+Do not derive policy categories from resource-ID prefixes.
+
+## FIX 5 — Correct README Instructions (P2)
+
+Relevant file:
+- README.md
+
+Update the clone instructions to point to:
+
+https://github.com/AmaLS367/Hackaton-Orchestrate
+
+Ensure the directory name and documented Phase 1 commands are consistent with the actual repository.
+
+Clearly document the stabilization changes and remaining limitations.
+
+Do not remove official challenge requirements.
+
+## TESTING REQUIREMENTS
+
+Add focused regression tests for:
+
+1. All supported log formats.
+2. Trace correlation across multiple log lines.
+3. Image citation available before audit_at.
+4. Image citation unavailable after audit_at.
+5. Unknown evidence identifier.
+6. Evidence referring exclusively to another resource.
+7. Valid negative lookup evidence.
+8. Resource evidence available only after audit_at.
+9. Logical SQL collection_name vs. physical table name.
+10. Preservation of existing Phase 1 behavior.
+
+Use synthetic test data where appropriate.
+
+Run:
+- Full pytest suite
+- Dataset inspection CLI
+- Sample reference schema validation
+- Any additional targeted regression tests
+
+Report actual results. Do not claim independently verified accuracy from schema validation alone.
+
+## CONSTRAINTS
+
+- Python 3.12.
+- No paid API dependencies.
+- No Gemini integration during this task.
+- No new heavy frameworks.
+- Preserve existing Pydantic models where practical.
+- Keep parsing and validation deterministic.
+- Do not alter official dataset files.
+- Do not introduce hardcoded case predictions.
+- Do not modify AGENTS.md.
+- Do not build the prediction engine yet.
+- Do not implement Phase 2 identity resolution or policy logic.
+- Avoid unrelated refactoring.
+
+## ACCEPTANCE CRITERIA
+
+- Every P1 finding is addressed.
+- Both P2 fixes are included.
+- All existing tests pass.
+- New regression tests pass.
+- Manifest validation works for deferred evidence.
+- Unrelated citations are rejected when resource relevance can be established.
+- Temporal evidence restrictions remain enforced.
+- SQL logical and physical metadata are preserved.
+- No regression in existing CLI commands.
+- The project remains runnable offline.
+
+## COMPLETION
+
+After implementation:
+
+1. Run all tests.
+2. Summarize changed files and important design decisions.
+3. Report test counts and any remaining limitations.
+4. Commit changes with a clear message such as:
+   fix: stabilize evidence parsing and citation validation
+5. Push to the existing master branch.
+6. Return the final commit SHA.
+
+Do not proceed into Phase 2 in this task.
+
+Agent Response Summary:
+Implemented all five requested stabilization fixes while preserving Phase 1 architecture and the output schema. Added format-specific log adapters, scoped trace correlation, a manifest/activity/audit EvidenceRegistry, citation relevance and cutoff checks with explicit unverified semantic diagnostics, and separate SQL physical/logical collection metadata; corrected README clone/run instructions and documented limitations. Python 3.12.10 verification passed: 125 full-suite tests (29 added), 71 focused regressions, dataset inspection of 518 requests and 94 evidence files, and schema validation of 32 sample reference rows; no prediction accuracy was measured. Dataset files and AGENTS.md were not modified, and no Phase 2 engine or model integration was added. The reviewed changes are ready for the requested conventional commit and push to the existing master branch.
+
+Actions:
+* Read AGENTS.md, task attachment, implementation, tests, and representative participant log/SQL formats.
+* Applied systematic-debugging and test-driven-development skills; reproduced failures before implementing fixes.
+* Edited README.md; code/ghost_audit/{extraction,index,ingestion,models,output,sql}.py; code/main.py.
+* Added code/tests/test_log_formats.py and test_registry.py; extended test_output.py, test_parsing.py, and test_dataset.py.
+* Ran .venv/Scripts/python.exe -m pytest -q: 125 passed.
+* Ran .venv/Scripts/python.exe code/main.py inspect: 518 requests, 94 files, 9690 observations; 11 deferred images.
+* Ran .venv/Scripts/python.exe code/evaluation/main.py --check-reference: 32 schema-valid reference rows, no prediction accuracy measured.
+* Ran focused log/registry/output regressions: 71 passed; reviewed git diff and checked remote master matches the base commit.
+
+Context:
+tool=Codex Desktop
+model=gpt-6.1-sol
+branch=master
+repo_root=C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-october26
+worktree=C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-october26
+parent_agent=none
