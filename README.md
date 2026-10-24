@@ -107,11 +107,67 @@ can select another participant dataset directory. Run pytest from the repository
   paid account, API key, or remote model call is part of Phase 1.
 
 Images and PDF pages without extractable text are explicitly marked `deferred`, never treated
-as empty/compliant evidence. Semantic PDF interpretation, OCR, multilingual authorization,
-historical identity reconstruction, temporal state selection, policy application, dependency-aware
-remediation planning, and actual predictions remain future work. The next phase should implement
-authorization and identity resolution, then evidence-backed temporal reconstruction and policy
-decisions, with independent sample predictions scored by the existing harness.
+as empty/compliant evidence. Semantic PDF interpretation, OCR, temporal state selection, policy
+application, dependency-aware remediation planning, and actual predictions remain future work.
+
+## Phase 2: intent, historical identity, and evidence correlation
+
+Phase 2 runs offline with the existing Python 3.12 dependencies. It produces typed evidence
+bundles for later reconstruction, with no deletion-state verdicts or root `output.csv`.
+
+```text
+python code/main.py phase2
+python code/main.py phase2 --samples
+python code/main.py phase2 --case-id case_33
+python code/main.py phase2 --samples --case-id case_02
+```
+
+Aggregate diagnostics contain distributions, counts, and case IDs without raw personal
+information. A single-case command intentionally prints the detailed bundle and its fictional
+source records. `--dataset PATH` works with these commands. Existing `inspect` and
+`validate-output` commands retain their Phase 1 behavior.
+
+- `intent.py`: deterministic action/object and follow-up verification rules, explicit negation,
+  cancellation, marketing scope, access/export/correction/support exclusions, and conservative
+  handling of hypothetical or quoted instructions. English, Spanish, French, Portuguese,
+  Japanese, and Korean have practical rule coverage. Unsupported or ambiguous requests return
+  `UNCERTAIN` with a fallback recommendation; confidence describes rule certainty, not a
+  calibrated probability. Workflow status never determines intent. Future providers can consume
+  the same `IntentResult`; no external provider is implemented or called.
+- `identity.py`: reusable exact ownership indexes over snapshots and both audit-change values.
+  `IdentityResolver.resolve(request)` returns `RESOLVED`, `AMBIGUOUS`, or `UNRESOLVED`, with
+  candidates and aliases retaining original values, field, source, audit ID, event time,
+  known validity boundaries, and active-at-cutoff status. Only facts available by `audit_at`
+  participate. A future snapshot is excluded rather than assumed valid earlier. Old values
+  prove an earlier relationship only once that change is available. Incomplete history may
+  therefore remain unresolved. Names never establish ownership; hashes are never computed.
+  Shared historical aliases remain collision risks even after reassignment.
+- `correlation.py`: exact identifier anchors, one file/service-scoped trace hop, one explicitly
+  supported resource-reference hop, then terminal collection of observations for established
+  resources. Each accepted link retains the full chain of evidence IDs and observation locators.
+  Resource joins require a matching system and resource ID. Unknown systems, conflicting
+  subjects, shared aliases, and contaminated traces remain explicit ambiguities or potential
+  associations. There is no expansion by whole file, system alone, name, or newly found alias.
+  SQL table/replica names, collections, payloads, timestamps, and source provenance survive intact.
+- `phase2_models.py`, `phase2.py`: strict Pydantic bundles and reusable `Phase2Analyzer`.
+  Bundles contain intent, resolved identity, aliases, confirmed/potential observations, resource
+  references, evidence IDs, ambiguities, and available deferred file metadata. Unrelated
+  observations are omitted and counted; `association_for` can query their explicit `UNRELATED`
+  classification. All source observations stay in the shared index. Each confirmed resource
+  is an association, not proof that it currently contains prohibited data.
+
+Deferred images form an **unassigned candidate pool**, filtered by capture time. Their content
+and subject have not been interpreted. Having available deferred files does not establish that
+they concern a particular case. Parsed PDFs/text without grounded identifiers or supported
+resource relationships can also need further interpretation. Mixed-subject records are handled
+conservatively and can suppress valid links until stronger evidence exists; bounded expansion
+can miss longer relationship chains. No absent row, workflow claim, or retrieval count establishes
+deletion compliance.
+
+The full run resolves all 518 request identities and classifies 508 deletion requests and 10
+non-deletion requests, with no uncertain intents on this corpus. These are diagnostic results,
+not accuracy measurements. The current test and diagnostic results, limitations, and preparation
+for Phase 3 are documented in [`code/evaluation/evaluation_report.md`](code/evaluation/evaluation_report.md).
 
 ---
 

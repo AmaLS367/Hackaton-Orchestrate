@@ -1,4 +1,4 @@
-# Phase 1 foundation evaluation
+# Offline pipeline evaluation: Phases 1 and 2
 
 No independent audit predictions or submission output have been produced. Case-level
 deletion-status accuracy, step accuracy, field accuracy, sequence accuracy, and exact-case
@@ -12,7 +12,121 @@ Validation used Python 3.12 with Pydantic v2, pytest, and pypdf. The complete co
 518 evaluation requests and 94 evidence files: 83 parsed and 11 images deferred. It yields
 9,690 indexed observations, including identity history and activity claims. SHA-256 checks
 confirm all 103 dataset files remain unchanged. No root prediction output was created.
-The final `python -m pytest -q` run passed **96 tests**.
+The Phase 1 baseline `python -m pytest -q` run passed **96 tests**.
+
+## Phase 2 evaluation
+
+Phase 2 adds deterministic intent classification, historical identity resolution, bounded
+evidence correlation, and strict case evidence bundles. It does not predict deletion states,
+apply policy, plan remediation, or generate `output.csv`. All accuracy metrics above remain
+unmeasured. Sample intent tests interpret request text directly; sample answers are not used
+by any production component.
+
+Validation on Python 3.12.10:
+
+```text
+python -m pytest -q
+python code/main.py inspect
+python code/main.py inspect --samples
+python code/evaluation/main.py --check-reference
+python code/main.py phase2
+python code/main.py phase2 --samples
+python code/main.py phase2 --samples --case-id case_02
+```
+
+The complete suite passes **225 tests, 0 failures**, including all 96 existing tests.
+Inspection retains 9,690 observations, 83 parsed files, and 11 deferred images. Reference
+validation still accepts exactly 32 sample rows without claiming prediction accuracy.
+The single-case diagnostic emits a typed bundle, including cases without supported evidence
+associations. Aggregate commands emit counts and case IDs without raw personal information.
+
+Full-dataset and sample diagnostics:
+
+| Metric | 518 requests | 32 sample requests |
+| --- | ---: | ---: |
+| DELETE_INTENT | 508 | 32 |
+| NO_DELETE_INTENT | 10 | 0 |
+| UNCERTAIN | 0 | 0 |
+| Resolved identities | 518 | 32 |
+| Ambiguous / unresolved identities | 0 / 0 | 0 / 0 |
+| Cases with confirmed evidence associations | 509 | 29 |
+| Cases with potential associations / explicit ambiguities | 69 | 4 |
+| Cases without confirmed associations | 9 | 3 |
+| Confirmed observation associations across cases | 2,857 | 172 |
+| Distinct confirmed observations | 2,856 | 172 |
+| Distinct system/resource pairs | 1,247 | 78 |
+| Available unassigned deferred files | 11 | 11 |
+| Cases with available unassigned deferred files | 488 | 32 |
+| Cases flagged for additional interpretation | 488 | 32 |
+
+All 508 authorized full-dataset requests have at least one confirmed observation association.
+The nine full-dataset requests without such associations are non-deletion requests.
+The one repeated observation association concerns two requests for the same resolved user;
+it does not merge two users. Potential associations coexist with confirmed links and are
+excluded from the confirmed resource totals. The CLI lists potentially ambiguous case IDs.
+
+Additional-interpretation flags include unresolved identities, uncertain intent, explicit
+ambiguities, missing associations, or an available deferred file pool. The 488 flags do
+**not** imply that 488 cases concern those images: no image has a confirmed subject or
+interpreted content. No retrieval statistic measures record-discovery completeness or
+deletion-state accuracy.
+
+### Phase 2 regression cases and architectural decisions
+
+- `test_intent.py` exercises account/personal-data deletion, prior-request verification,
+  English/Spanish/French and recurring Portuguese/Japanese/Korean expressions, negation,
+  cancellation, marketing scope, access/export/correction/support, quoted/hypothetical
+  instructions, conflicting clauses, and fallback recommendations.
+- `test_identity.py` constructs consecutive email changes, old/new phone and supplied-hash
+  aliases, timestamped provenance, unknown emails, collisions, discontinuous histories,
+  simultaneous conflicting updates, future changes, and future snapshots. Indexes are built
+  once; original values and known interval boundaries are retained. A snapshot cannot prove
+  that its values existed earlier. Names never resolve identity, and no hash is derived.
+- `test_correlation.py` constructs direct identifiers, historical aliases, scoped two-event
+  traces, trace reuse, JSON/SQL rows and replicas, unknown systems, foreign subjects, similar
+  identifiers, future/untimed observations, explicit resource references, terminal expansion,
+  and deferred images. Every confirmed association retains its observation locator and chain.
+  Multiple retrieval paths deduplicate associations without dropping versions or replicas.
+- `test_phase2.py` processes all 518 requests and the 32 public sample requests, validates
+  cutoffs and complete supporting chains, round-trips typed bundles, verifies deterministic
+  output and no analysis-time file reads, and exercises CLI diagnostics. Source observations
+  and resource metadata are reused from Phase 1. No new dependency or external AI call is needed.
+
+The implementation separates identity association from state interpretation. A resource link
+proves an association only; activity results and negative lookup claims remain source payloads.
+Expansion is limited to exact identity anchors, one scoped trace hop, one supported explicit
+resource-reference hop, and terminal collection for established system/resource pairs. It never
+propagates through new subjects, whole-file membership, names, or system IDs alone.
+
+### Phase 2 failures corrected and remaining risks
+
+Early tests exposed Unicode decomposition breaking Korean phrase matching and a missing
+remaining-personal-data expression. Normalization now recomposes Hangul, and action/object
+rules cover those requests. Additional regressions guard cancellation, negated desire,
+marketing-only deletion, hypothetical questions, multiple subjects in one record, and
+unrecognized subject references. Conflicting aliases and trace reuse remain potential
+associations rather than becoming ownership proof.
+
+Remaining limitations:
+
+- Rules provide practical language coverage, not a general semantic parser. Unusual idioms,
+  indirect speech, or untested negation scope can still be misclassified; unmatched requests
+  stay `UNCERTAIN`. Rule confidence is not measured statistical accuracy.
+- Historical resolution uses only visible facts. Missing earlier snapshots/history can cause
+  unresolved identities or unknown intervals. Reassigned/shared aliases and mixed-subject
+  records are handled conservatively and can suppress otherwise valid evidence links.
+- Longer relationship chains, unscoped resource references, unsupported free-text links,
+  and unknown systems need additional evidence. No prefix-based system guessing occurs.
+- Eleven images remain deferred. Parsed PDF/text lines without explicit identifiers or
+  supported links can also remain unassociated. No evidence is invented for missing resources.
+- Current/previous alias status is an identity-history fact, not a reconstruction of resource
+  state. Resource versions and replicas are preserved for the future temporal engine.
+
+Preparation for Phase 3: review potential associations and unknown systems; extract and
+correlate deferred document/image facts with their original locators; then design temporal
+resource reconstruction over these bundles, keeping claims separate from observed state.
+Policy evaluation and remediation planning require their own later implementation and
+independent prediction evaluation. Phase 3 has not been implemented here.
 
 ## Local metric definitions
 
