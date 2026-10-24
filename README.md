@@ -10,6 +10,89 @@ For each request, the agent must first determine whether deletion was actually r
 
 Read [`problem_statement.md`](./problem_statement.md) for the complete challenge contract.
 
+## Phase 1 implementation
+
+The offline foundations are implemented. There is **no audit prediction engine yet**:
+the CLI inspects inputs and validates independently supplied output; it does not create
+placeholder answers or a root `output.csv`. Dataset files are read only.
+
+### Install and test
+
+Use Python **3.12**. From the repository root, on Windows PowerShell:
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r code/requirements.txt
+python -m pytest -q
+python code/main.py inspect
+python code/evaluation/main.py --check-reference
+```
+
+On macOS/Linux, create the environment with `python3.12 -m venv .venv`, activate it
+with `source .venv/bin/activate`, then run the same `python` commands above.
+Installation requires obtaining the dependencies; all subsequent ingestion, validation,
+evaluation, and tests run offline without credentials or an external AI service.
+
+To score an independently generated **sample** prediction file:
+
+```text
+python code/evaluation/main.py --predictions path/to/sample_predictions.csv
+```
+
+Missing sample cases count as errors; unknown or duplicate case IDs are rejected.
+`--check-reference` checks the 32 public sample rows against the schema and request IDs;
+it does not measure prediction accuracy. The scorer refuses the reference file itself
+as the prediction input. Only the testing-only `code/evaluation/` package reads sample answers.
+
+To check a future full-dataset output (exact request coverage, ordering, schema, and citation times):
+
+```text
+python code/main.py validate-output --predictions output.csv
+```
+
+Add `--samples` for a complete sample prediction file. Default dataset paths are resolved
+relative to the repository, independently of the working directory. `--dataset PATH`
+can select another participant dataset directory. Run pytest from the repository root.
+
+### Architecture and extension points
+
+- `code/ghost_audit/models.py`, `time.py`, `csvio.py`: strict Pydantic v2 input contracts,
+  exact CSV headers, unique row IDs, and timezone-aware timestamps normalized to UTC.
+- `extraction.py`, `sql.py`, `ingestion.py`: parse JSON, SQL, logs, text, PDFs, and CSV inputs
+  once per dataset load. SQL runs only in memory with restricted commands and an instruction
+  budget. Empty tables, replica names, embedded JSON, and original field values are preserved.
+- Every observation carries its participant evidence ID, file path, SHA-256 digest,
+  JSON path/table row/text line/PDF page locator, manifest origin/capture time, and source
+  timestamps. Explicit systems and collection names remain attached to resource references.
+  Unknown systems remain unknown; resource-ID prefixes are not used to guess them.
+- `index.py`: reusable indexes for identifier values (including historical CSV changes),
+  resources, systems, evidence IDs, and file/service-scoped log traces. Lookup performs
+  no file parsing. Email matching is case-insensitive; phone matching removes presentation
+  punctuation. Retrieval produces candidates, not confirmed identity or state decisions.
+- Cutoff filtering requires the manifest capture time and all applicable enclosing/record
+  source timestamps to be at or before `audit_at`. Nested snapshots keep their own scopes.
+  Expiration, retention, and scheduled deadlines remain business facts and do not delay
+  evidence availability. Activity results are tagged as claims. No state is inferred from
+  absence of a row or from an operation result.
+- `output.py`: strict operation/phase/state combinations, citation placement, nonempty
+  authorized outputs, exact request coverage, duplicate rejection, and deterministic CSV/JSON
+  serialization. `canonical_steps` explicitly sorts by the official operation order, then
+  system/resource, and renumbers. Readers reject incorrect order rather than silently fixing it.
+  Citation checks establish existence/availability, not whether the evidence proves a verdict.
+- `code/evaluation/scoring.py`: isolated local sample metrics and custom test cases.
+  `code/evaluation/evaluation_report.md` defines their formulas and current limitations.
+- `llm.py`: a small provider-agnostic protocol with response and token-usage metadata.
+  Future Gemini/free-provider implementations can conform to it. No provider SDK, adapter,
+  paid account, API key, or remote model call is part of Phase 1.
+
+Images and PDF pages without extractable text are explicitly marked `deferred`, never treated
+as empty/compliant evidence. Semantic PDF interpretation, OCR, multilingual authorization,
+historical identity reconstruction, temporal state selection, policy application, dependency-aware
+remediation planning, and actual predictions remain future work. The next phase should implement
+authorization and identity resolution, then evidence-backed temporal reconstruction and policy
+decisions, with independent sample predictions scored by the existing harness.
+
 ---
 
 ## Quick Start
@@ -31,7 +114,7 @@ Your solution must:
 - Generate one prediction row for every request in `dataset/deletion_requests.csv`
 - Write the final predictions to `output.csv` in the repository root
 
-Run the starter Python entry point with:
+Run the Phase 1 inspection entry point with:
 
 ```bash
 python3 code/main.py
@@ -131,13 +214,13 @@ To package `code.zip` from the repository root without bundling the dataset:
 **macOS / Linux:**
 
 ```bash
-zip -r code.zip README.md code -x "*/__pycache__/*" "*/.venv/*" "*/venv/*" "*/node_modules/*" "*/.git/*" "*/.DS_Store"
+zip -r code.zip README.md pyproject.toml code -x "*/__pycache__/*" "*/.venv/*" "*/venv/*" "*/node_modules/*" "*/.git/*" "*/.DS_Store"
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-Compress-Archive -Path README.md, code -DestinationPath code.zip -Force
+Compress-Archive -Path README.md, pyproject.toml, code -DestinationPath code.zip -Force
 ```
 
 When packaging `code.zip`:
