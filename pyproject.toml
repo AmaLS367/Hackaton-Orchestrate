@@ -1,3 +1,24 @@
+[project]
+name = "ghost-audit"
+version = "0.1.0"
+description = "Ghost Data Still Exists deletion-audit agent (HackerRank Orchestrate October 2026)"
+readme = "README.md"
+requires-python = ">=3.12"
+# Keep in sync with code/requirements.txt (pip fallback).
+dependencies = [
+    "pydantic>=2.10,<3",
+    "pypdf>=5,<7",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8,<10",
+]
+
+[tool.uv]
+# Scripts run from code/ via pythonpath; the project itself is never installed.
+package = false
+
 [tool.pytest.ini_options]
 testpaths = ["code/tests"]
 pythonpath = ["code"]

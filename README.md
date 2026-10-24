@@ -65,7 +65,23 @@ No external model is called at runtime; Gemini was not configured (no key) and w
 
 ### Install and test
 
-Use Python **3.12**. From the repository root, on Windows PowerShell:
+Use Python **3.12**. [uv](https://docs.astral.sh/uv/) is the preferred environment
+manager; `pyproject.toml`, `uv.lock`, and `.python-version` pin a reproducible 3.12
+environment. From the repository root (any OS):
+
+```text
+uv sync
+uv run python -m pytest -q
+uv run python code/main.py
+uv run python code/evaluation/main.py --run
+```
+
+`uv sync` creates `.venv` with the locked runtime dependencies plus the `dev` group
+(pytest). The project is not installed as a package; scripts import `ghost_audit` from
+`code/` exactly as with pip. uv is optional: `code/requirements.txt` remains the
+pip-compatible fallback and must be kept in sync with `pyproject.toml`.
+
+**pip fallback.** On Windows PowerShell:
 
 ```powershell
 py -3.12 -m venv .venv
@@ -491,17 +507,18 @@ To package `code.zip` from the repository root without bundling the dataset:
 **macOS / Linux:**
 
 ```bash
-zip -r code.zip README.md pyproject.toml code -x "*/__pycache__/*" "*/.venv/*" "*/venv/*" "*/node_modules/*" "*/.git/*" "*/.DS_Store"
+zip -r code.zip README.md pyproject.toml uv.lock .python-version code -x "*/__pycache__/*" "*/.venv/*" "*/venv/*" "*/node_modules/*" "*/.git/*" "*/.DS_Store"
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-Compress-Archive -Path README.md, pyproject.toml, code -DestinationPath code.zip -Force
+Compress-Archive -Path README.md, pyproject.toml, uv.lock, .python-version, code -DestinationPath code.zip -Force
 ```
 
 When packaging `code.zip`:
 
+- Include `uv.lock` and `.python-version` alongside `pyproject.toml` so `uv sync` reproduces the locked environment; `code/requirements.txt` (bundled with `code`) lets evaluators without uv install with pip.
 - Keep your evaluation reports in `code/evaluation/` so they are bundled automatically with `code` (or add `evaluation` to the archive command above if you placed them in a top-level `evaluation/` directory).
 - Do **not** include `dataset/`, virtual environments (`.venv`, `venv`, `node_modules`), or build caches (`__pycache__`). On Windows, keep `.venv` at the repository root (outside `code/`) and remove any `code/__pycache__` folders before running `Compress-Archive`.
 - Do **not** include nested archives (`.zip`, `.tar`, `.gz`, `.tgz`, `.7z`, `.rar`) inside `code.zip` — submissions containing nested archive files will be rejected.
