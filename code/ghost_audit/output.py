@@ -144,13 +144,21 @@ def omitted_from_listing(evidence: EvidenceIndex, evidence_id: str, system_id: s
     """The cited file holds a complete listing of the system's collection, captured by
     the cutoff, and that listing does not contain the resource."""
     from .temporal import coverage_surfaces
+    from .temporal_adapters import logical_collection
 
     surfaces = _LISTINGS.get(id(evidence))
     if surfaces is None or surfaces.get('index') is not evidence:
         surfaces = _LISTINGS[id(evidence)] = {'index': evidence, 'surfaces': coverage_surfaces(evidence.observations)}
+    collections = {logical_collection(r) for o in evidence.observations for r in o.resources
+                   if r.system_id == system_id and r.resource_id == resource_id
+                   and o.available_at is not None and o.available_at <= cutoff
+                   and r.collection}
+    if len(collections) != 1:
+        return False
     return any(surface.provenance.evidence_id == evidence_id and at is not None and at <= cutoff
                and resource_id not in ids
-               for (system, _), values in surfaces['surfaces'].items() if system == system_id
+               for (system, collection), values in surfaces['surfaces'].items()
+               if system == system_id and collection in collections
                for at, surface, ids in values)
 
 

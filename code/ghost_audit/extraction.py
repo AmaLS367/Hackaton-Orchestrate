@@ -127,6 +127,9 @@ def parse_json(value: JsonValue, context: ExtractionContext,
     observations = []
     # Preserve envelope metadata without indexing every unrelated record together.
     scalars = {k: v for k, v in value.items() if not isinstance(v, (dict, list))}
+    # Scope/pagination metadata must survive on its listing envelope, including
+    # structured filters. Dropping it could turn a partial export into absence proof.
+    scalars.update({k: value[k] for k in ('filter', 'filters', 'where') if k in value})
     if scalars:
         observations.append(context.observation(scalars, locator))
     for key, child in value.items():

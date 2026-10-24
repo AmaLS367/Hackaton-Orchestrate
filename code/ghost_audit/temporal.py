@@ -264,13 +264,16 @@ class TemporalStateEngine:
                     if fact.support == 'PROVEN' and fact.record_state != 'UNKNOWN' and fact.observed_at <= cutoff:
                         facts.append(fact)
         if facts:
-            at = max(f.observed_at for f in facts)
-            latest = [f for f in facts if f.observed_at == at]
-            return min((f.link for f in latest), key=lambda link: (link.evidence_id, link.locator)) if all(
-                f.record_state == 'ABSENT' for f in latest) else None
+            scopes = defaultdict(list)
+            for fact in facts:
+                scopes[scope_key(fact.scope)].append(fact)
+            selections = [select_state(values, 'record') for values in scopes.values()]
+            return min((link for state in selections for link in state.supporting_evidence),
+                       key=lambda link: (link.evidence_id, link.locator)) if all(
+                state.state == 'ABSENT' and state.support == 'PROVEN' for state in selections) else None
         best = None
-        for (system, _), values in self.surfaces.items():
-            if system == ref.system_id:
+        for (system, collection), values in self.surfaces.items():
+            if system == ref.system_id and collection == logical_collection(ref):
                 for at, surface, ids in values:
                     if at is not None and at <= cutoff and self._visible(surface, cutoff) and (
                             best is None or at > best[0]):
@@ -333,8 +336,11 @@ class TemporalStateEngine:
                     f.support == 'PROVEN' and (f.record_state, f.flow_state, f.restore_state) != ('UNKNOWN',) * 3
                     for f in facts):
                 continue
-            collections = ({f.scope.collection for f in facts if f.scope.collection}
-                           or {c for c, s in COLLECTION_SYSTEMS.items() if s == system})
+            collections = {f.scope.collection for f in confirmed if f.scope.collection}
+            # A listing of one collection cannot prove absence from another, or
+            # resolve a resource whose collection is unknown.
+            if len(collections) != 1:
+                continue
             best = None
             for collection in sorted(collections):
                 for at, surface, ids in self.surfaces.get((system, collection), ()):
@@ -366,6 +372,16 @@ def known_collections(bundle: CaseEvidenceBundle) -> dict[tuple, str]:
                 if r.system_id and r.collection:
                     found[(r.system_id, r.resource_id)].add(logical_collection(r))
     return {key: next(iter(values)) for key, values in found.items() if len(values) == 1}
+
+
+def complete_listing(payload):
+    """An explicit completeness assertion for an unfiltered collection.
+
+    A schema, row_count, empty records array, or snapshot label alone is insufficient.
+    """
+    return (payload.get('complete_listing') is True
+            and not any(payload.get(k) for k in ('truncated', 'partial', 'next_page', 'next_cursor',
+                                                'filter', 'filters', 'where', 'subject_selector')))
 
 
 def coverage_surfaces(observations) -> dict[tuple, list]:
@@ -400,6 +416,8 @@ def coverage_surfaces(observations) -> dict[tuple, list]:
             members[(evidence, record[1])].update(r.resource_id for r in o.resources)
     surfaces = defaultdict(list)
     for (evidence, table), schema in schemas.items():
+        if not complete_listing(schema.payload):
+            continue
         listed = dict(rows.get((evidence, table), {}))
         family = REPLICA_SUFFIX.sub('', table)
         if family in TABLE_SYSTEMS:
@@ -408,6 +426,8 @@ def coverage_surfaces(observations) -> dict[tuple, list]:
             surfaces[key].append((observation_time(schema), schema, frozenset(ids)))
     for key, envelope in envelopes.items():
         p = envelope.payload
+        if not complete_listing(p):
+            continue
         system = SYSTEM_ALIASES.get(p['data_store'], p['data_store'])
         surfaces[(system, p['collection'])].append(
             (observation_time(envelope), envelope, frozenset(members.get(key, ()))))

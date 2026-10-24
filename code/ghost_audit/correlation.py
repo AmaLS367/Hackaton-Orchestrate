@@ -110,6 +110,10 @@ class EvidenceCorrelator:
             for k in self.by_scoped_resource.get((resource.system_id, resource.resource_id), ()):
                 if not visible(k):
                     continue
+                if observations[k].payload.get('ocr_identity_unverified'):
+                    # An OCR candidate cannot establish a historical ownership
+                    # transition that vetoes an independently linked extraction.
+                    continue
                 if any(r.collection == resource.collection or not r.collection or not resource.collection
                        for r in observations[k].resources
                        if r.system_id == resource.system_id and r.resource_id == resource.resource_id):
@@ -168,10 +172,14 @@ class EvidenceCorrelator:
             if visible(i):
                 earlier = prior_audit is not None and event_time(i) <= prior_audit
                 add(i, 'DIRECT_IDENTIFIER', matched=self.tokens[i] & alias_map.keys(),
-                    forced_reason='attributed_to_earlier_request_of_subject' if earlier else None)
+                    forced_reason=('attributed_to_earlier_request_of_subject' if earlier else
+                                   'ocr_identity_requires_independent_link' if
+                                   observations[i].payload.get('ocr_identity_unverified') else None))
         for i in ordered(workflow_seeds):
             if visible(i):
-                add(i, 'WORKFLOW_BATCH')
+                # Timing/result consistency produces search candidates, not ownership.
+                # Independent identity anchors may promote the same resource later.
+                add(i, 'WORKFLOW_BATCH', forced_reason='workflow_batch_ownership_unproven')
 
         # Only direct anchors may seed a trace. Detect conflicting subjects over
         # the entire visible scoped trace before accepting any trace-only result.

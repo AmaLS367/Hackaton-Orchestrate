@@ -18,7 +18,7 @@ from .models import (
     Activity, DeletionRequest, DeletionRule, EvidenceDocument, EvidenceFile, Identity,
     IdentityChange, Observation, Provenance, ResourceRef,
 )
-from .ocr import image_text
+from .ocr import image_panels, image_text
 from .sql import parse_sql
 
 # "Data catalog linked export_1 (NST-...) to ..." / "Attachment catalog confirmed object_1 (object_1.pdf) ..."
@@ -73,6 +73,8 @@ def document_observations(text: str, context: ExtractionContext, catalog: dict[s
         emails = sorted(set(EMAIL_TOKEN.findall(scoped)))
         users = sorted(set(USER_TOKEN.findall(scoped)))
         payload = {'resource_id': resource, 'document_reference': reference, 'document_text': scoped}
+        if catalogued_only:
+            payload['ocr_identity_unverified'] = True
         if len(emails) == 1:
             payload['email'] = emails[0]
         if len(users) == 1:
@@ -121,8 +123,24 @@ def parse_document(dataset: Path, manifest: EvidenceFile,
             # Raw OCR is an unverified extraction: only catalogued resources become
             # observations, and identifiers must still match exactly downstream.
             observations = document_observations(text, context, catalog, catalogued_only=True)
+            for reference, panel in image_panels(path, digest):
+                if reference not in catalog:
+                    continue
+                # A spatially isolated detail panel can link fields on different
+                # lines to its exact title; OCR identifiers still need an independent
+                # structured identity/resource anchor in the correlator.
+                for observation in document_observations(panel, context, {reference: catalog[reference]},
+                                                         catalogued_only=False):
+                    if observation.payload['document_reference'] != reference:
+                        continue
+                    observations.append(observation.model_copy(update={
+                        'payload': {**observation.payload, 'ocr_identity_unverified': True,
+                                    'ocr_method': 'tesseract_psm11_spatial_detail_panel'},
+                        'provenance': observation.provenance.model_copy(update={
+                            'locator': observation.provenance.locator + ':ocr-panel'})}))
             status = "parsed" if observations else "deferred"
-            notes.append("Tesseract OCR text; resources limited to catalogued references.")
+            notes.append("Tesseract OCR (default + PSM 11 spatial panels); catalogued resources only; "
+                         "identifiers require independent linkage.")
     else:
         text = content.decode("utf-8-sig")
         if suffix == ".json":

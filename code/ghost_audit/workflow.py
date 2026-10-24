@@ -1,7 +1,7 @@
-"""Attribute deletion-worker events to the request whose workflow batch produced them.
+"""Search for candidate deletion-worker events near a request's reported workflow.
 
 The workflow processes a request's resources shortly before it reports the request's
-status. Worker events carry no subject, so attribution is structural and conservative:
+status in this dataset. These are retrieval heuristics, not a supplied contract:
 
 - an event belongs to a request only when exactly one authorized request's batch window
   contains it after exact-identity exclusions visible at that request's audit time;
@@ -10,7 +10,8 @@ status. Worker events carry no subject, so attribution is structural and conserv
   assignments eliminate that profile from competing requests;
 - requests from both participant request files compete, because they share the stream.
 
-Attribution establishes which resource the workflow targeted, never its state.
+Timing and result consistency establish neither subject ownership nor state.
+The correlator keeps these candidates POTENTIAL until an independent link exists.
 """
 
 from collections import defaultdict

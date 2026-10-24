@@ -57,10 +57,11 @@ def ctx(file, captured):
                                           origin='fixture_store', captured_at=captured), 'c' * 64)
 
 
-def snapshot(file, captured, sections):
+def snapshot(file, captured, sections, *, complete=False):
     """sections: [(data_store, collection, inner_captured_at, [records])]."""
     return parse_json({'exported_at': captured, 'snapshots': [
-        {'captured_at': at, 'data_store': store, 'collection': coll, 'records': records}
+        {'captured_at': at, 'data_store': store, 'collection': coll, 'records': records,
+         'complete_listing': complete}
         for store, coll, at, records in sections]}, ctx(file, captured))
 
 
@@ -97,8 +98,8 @@ def steps(case):
     return [(s.phase[0], s.operation, s.resource_id, s.evidence_id) for s in case.prediction.steps]
 
 
-def test_primary_profile_attributed_by_result_status_consistency(rules):
-    # Two requests report together; only the status-consistent profile belongs to each.
+def test_result_status_consistency_is_only_a_candidate_search(rules):
+    # The window/status heuristic cannot prove ownership of either primary profile.
     a, b = request('case_a', 'a@example.test', 'COMPLETE'), request('case_b', 'b@example.test', 'NOT_STARTED')
     acts = [worker('act_1', '2026-03-02T11:00:00Z', 'account_1', result='SUCCESS'),
             worker('act_2', '2026-03-02T11:10:00Z', 'account_2', result='FAILED')]
@@ -106,20 +107,20 @@ def test_primary_profile_attributed_by_result_status_consistency(rules):
            *snapshot('audits', LISTING, [audit_record('audit_a', 'user_a'), audit_record('audit_b', 'user_b')])]
     run = predict(build(rules, [a, b], obs, acts))
     by = {c.case_id: c for c in run.cases}
-    assert ('V', 'VERIFY_RECORD_ABSENT', 'account_1', 'export') in steps(by['case_a'])
-    assert ('V', 'VERIFY_RECORD_ABSENT', 'account_2', 'export') in steps(by['case_b'])
-    assert by['case_a'].decision == by['case_b'].decision == 'COMPLETE'
+    assert by['case_a'].prediction is by['case_b'].prediction is None
+    assert all(x.compliance != 'COMPLIANT' for c in by.values() for x in c.assessments
+               if x.scope.system_id == 'account_service')
 
 
-def test_ambiguous_profiles_all_absent_verify_deletion_without_naming_it(rules):
+def test_ambiguous_profiles_all_absent_do_not_prove_search_coverage(rules):
     a, c = request('case_a', 'a@example.test'), request('case_c', 'c@example.test')
     acts = [worker('act_1', '2026-03-02T11:00:00Z', 'account_1'), worker('act_2', '2026-03-02T11:10:00Z', 'account_2')]
     listing = ('account_service', 'customer_profiles', LISTING, [{'resource_id': 'account_9', 'email': None}])
     obs = snapshot('state', LISTING, [listing, audit_record('audit_a', 'user_a'), audit_record('audit_c', 'user_c')])
     run = predict(build(rules, [a, c], obs, acts))
     case = next(x for x in run.cases if x.case_id == 'case_a')
-    assert case.decision == 'COMPLETE'
-    assert steps(case) == [('V', 'VERIFY_RECORD_PRESENT', 'audit_a', 'state')]
+    assert case.prediction is None
+    assert 'no_verified_deletion_treatment' in case.blockers
     # If one candidate is still listed, the subject's profile may survive: abstain.
     listing = ('account_service', 'customer_profiles', LISTING, [{'resource_id': 'account_2', 'email': None}])
     obs = snapshot('state', LISTING, [listing, audit_record('audit_a', 'user_a'), audit_record('audit_c', 'user_c')])
@@ -166,7 +167,11 @@ def test_complete_listing_proves_absence_and_validator_accepts_coverage(rules):
     a = request('case_a', 'a@example.test')
     acts = [worker('act_1', '2026-03-02T11:00:00Z', 'account_1')]
     listing = ('account_service', 'customer_profiles', LISTING, [{'resource_id': 'account_9', 'email': None}])
-    data = build(rules, [a], snapshot('state', LISTING, [listing, audit_record('audit_a', 'user_a')]), acts)
+    anchor = parse_json({'resource_id': 'account_1', 'subject_reference': 'user_a',
+        'event': 'catalog_entry', 'system': 'account_service', 'collection': 'customer_profiles'},
+        ctx('anchor', REPORTED))
+    data = build(rules, [a], [*anchor, *snapshot('state', LISTING,
+        [listing, audit_record('audit_a', 'user_a')], complete=True)], acts)
     run = predict(data)
     assert steps(run.cases[0]) == [('V', 'VERIFY_RECORD_ABSENT', 'account_1', 'state'),
                                    ('V', 'VERIFY_RECORD_PRESENT', 'audit_a', 'state')]
@@ -182,12 +187,13 @@ def test_complete_listing_proves_absence_and_validator_accepts_coverage(rules):
 def test_explicit_read_outranks_listing_and_listed_record_remains(rules):
     a = request('case_a', 'a@example.test')
     acts = [worker('act_1', '2026-03-02T11:00:00Z', 'account_1')]
-    read = lookups('read', '2026-03-04T10:00:00Z', [('account_1', 404, None)])
+    read = lookups('read', '2026-03-04T10:00:00Z', [('account_1', 404, {'email': 'a@example.test'})])
     listing = ('account_service', 'customer_profiles', LISTING, [{'resource_id': 'account_9', 'email': None}])
     obs = [*read, *snapshot('state', LISTING, [listing, audit_record('audit_a', 'user_a')])]
     assert ('V', 'VERIFY_RECORD_ABSENT', 'account_1', 'read') in steps(predict(build(rules, [a], obs, acts)).cases[0])
     # Still listed (identifiers nulled or not): the profile row remains, so DELETE is unmet.
-    listing = ('account_service', 'customer_profiles', LISTING, [{'resource_id': 'account_1', 'email': None}])
+    listing = ('account_service', 'customer_profiles', LISTING,
+               [{'resource_id': 'account_1', 'subject_reference': 'user_a', 'email': None}])
     obs = snapshot('state', LISTING, [listing, audit_record('audit_a', 'user_a')])
     case = predict(build(rules, [a], obs, acts)).cases[0]
     assert ('F', 'REPORT_REMAINING_RECORD', 'account_1', 'state') in steps(case)
@@ -217,6 +223,7 @@ def test_backup_has_only_a_restore_obligation(rules):
 def test_worker_delete_types_an_otherwise_untyped_support_record(rules):
     a = request('case_a', 'a@example.test')
     row = parse_json({'resource_id': 'support_1', 'event': 'contact_query_completed', 'rows': 1,
+                      'subject_only': True,
                       'lookup_key': 'a@example.test', 'observed_at': LISTING},
                      ExtractionContext(EvidenceFile(file_id='log', file_path='evidence/log.json', origin='x',
                                                     captured_at=LISTING), 'e' * 64, system='support_replica'))

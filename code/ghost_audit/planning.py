@@ -73,11 +73,13 @@ def plan_case(bundle, assessments):
         # subject's confirmed records and stay diagnostic (see `unresolved`).
         if not valid or any(a.compliance != 'COMPLIANT' for a in assessments):
             blockers.append('insufficient_evidence_for_complete_or_incomplete')
-        # Retention or process safety alone never proves deletion. An ambiguous primary
-        # profile counts only when every candidate the workflow could have targeted is
-        # proven absent; it is then verified, but cannot be named in a step.
+        # A timing window is not an exhaustive inventory of the subject's accounts.
+        # Absence of every candidate cannot verify an unexamined/missing candidate.
+        if bundle.primary_profile_absence or any(
+                u.reason == 'primary_profile_ambiguous' for u in bundle.unresolved_states):
+            blockers.append('primary_profile_ownership_or_search_coverage_unproven')
         if not any(a.dimension == 'record' and a.required_action in {'DELETE', 'REDACT', 'ANONYMIZE'}
-                   and a.compliance == 'COMPLIANT' for a in valid) and not bundle.primary_profile_absence:
+                   and a.compliance == 'COMPLIANT' for a in valid):
             blockers.append('no_verified_deletion_treatment')
     if blockers:
         return CaseDecision(case_id=bundle.case_id, decision='UNDECIDABLE', prediction=None,
@@ -106,7 +108,7 @@ def plan_case(bundle, assessments):
     steps = deduplicate(steps)
     # The problem statement fixes the order (operation, system, resource); flows and
     # restores already precede every record change. Explicit source links are recorded.
-    unresolved.extend(dependency_conflicts(bundle, steps))
+    blockers.extend(dependency_conflicts(bundle, steps))
     if blockers:
         return CaseDecision(case_id=bundle.case_id, decision='UNDECIDABLE', prediction=None,
             assessments=assessments, unresolved=sorted(set(unresolved)), blockers=sorted(set(blockers)))

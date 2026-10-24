@@ -151,32 +151,19 @@ def coverage(fields, *, anonymize=False, tombstone=False):
     return all(names & group for group in groups)
 
 
-def default_condition_reasons(category, a) -> list[str]:
-    """Diagnostics naming a rule condition applied without an explicit supplied fact."""
-    if category == 'SECURITY_AUDIT_LOG' and not any(a.get(k) for k in ('retention_until', 'retained_until')):
-        return ['retention_period_not_supplied_record_preserved']
-    if category == 'SUPPORT_MESSAGE' and boolean(a.get('shared_context')) is None:
-        return ['shared_context_assumed_for_support_conversation']
-    if category == 'SUPPORT_ATTACHMENT' and boolean(a.get('subject_only')) is None:
-        return ['attachment_subject_only_by_confirmed_association']
-    return []
-
-
 class PolicyEvaluator:
     def __init__(self, rules: list[DeletionRule]):
         self.rules = defaultdict(list)
         for rule in sorted(rules, key=lambda r: r.rule_id):
             self.rules[rule.data_category].append(rule)
 
-    def category(self, history, observations):
+    def category(self, history, observations, *, fallback=True):
         """Record type from explicit evidence of the resource (any confirmed observation,
         including linkage-only rows), most specific signal first."""
         system = history.scope.system_id
         typed = [o for o in observations if o.record_type in self.rules or o.record_type == 'DATA_FLOW']
         explicit = {o.record_type for o in latest(typed)}
         schemas = {COLLECTION_CATEGORIES.get((system, o.scope.collection)) for o in observations} - {None}
-        schemas |= {COLLECTION_CATEGORIES[(system, history.scope.collection)]} if (
-            system, history.scope.collection) in COLLECTION_CATEGORIES else set()
         if explicit == {'ACCOUNT_TOMBSTONE'} and schemas == {'USER_PROFILE'} and any(
                 str(o.attributes.get('account_status', '')).upper() == 'DELETED' for o in latest(typed)):
             # A current explicitly typed tombstone may occupy a former profile row.
@@ -208,13 +195,12 @@ class PolicyEvaluator:
                               if o.category == 'OPERATION_CLAIM'}
                 if operations & {'DELETE_RECORD'} and not operations & {'REDACT_RECORD'}:
                     explicit.add('SUPPORT_ATTACHMENT')
-        if not explicit and system in SYSTEM_CATEGORIES:
+        if not explicit and fallback and system in SYSTEM_CATEGORIES:
             explicit.add(SYSTEM_CATEGORIES[system])
         return next(iter(explicit)) if len(explicit) == 1 else None
 
-    def condition(self, kind, obs, history, bundle, defaults=True):
-        """True/False from explicit facts; with defaults, the documented fallback
-        for a condition no participant field states (see default_condition_reasons)."""
+    def condition(self, kind, obs, history, bundle):
+        """True/False from supplied facts; omitted conditions remain unknown."""
         a = attributes(obs)
         fields = [f for o in obs for f in o.fields]
         if kind == 'always':
@@ -223,17 +209,12 @@ class PolicyEvaluator:
             value = boolean(a.get('shared_context'))
             if value is not None:
                 return value
-            # A support conversation is a two-party customer/agent exchange. Rule 05 is
-            # the only treatment defined for the category, and it preserves the record;
-            # only an explicit statement can show the context is absent.
-            return True if defaults else None
+            return None
         if kind == 'subject_only':
             value = boolean(a.get('subject_only'))
             if value is not None:
                 return value
-            # Confirmed association already excludes any other identified subject in
-            # the attachment; an explicit flag can still override.
-            return True if defaults else None
+            return None
         if kind == 'attributable':
             if exposed(fields, bundle.identity, stable=True) or str(a.get('result', '')).upper() == 'IDENTIFIABLE':
                 return True
@@ -259,10 +240,9 @@ class PolicyEvaluator:
                 return None
             if kind == 'hold' and boolean(a.get('hold_active')) is not None:
                 return boolean(a.get('hold_active'))
-            # Many exports omit expiry. With no supplied deadline or released flag the
-            # record is never shown to be outside retention/hold, and no rule permits
-            # deleting it; preserve it (reason recorded by the evaluator).
-            return True if defaults else None
+            # Preservation is safe, but no supplied deadline/hold means applicability
+            # cannot be asserted as current compliance.
+            return None
         if kind == 'blockable':
             return True if history.restore.support == 'PROVEN' or boolean(a.get('restore_blockable')) is True else None
         if kind == 'tombstone':
@@ -275,21 +255,26 @@ class PolicyEvaluator:
 
     def applicable(self, rule, selected, observations, history, bundle):
         kind = CONDITIONS.get(rule.condition)
-        current = self.condition(kind, selected, history, bundle, defaults=False)
+        current = self.condition(kind, selected, history, bundle)
         if current is not None:
             return current, links_sorted(o.link for o in selected)
+        condition_fields = {'shared': {'shared_context'}, 'subject_only': {'subject_only'},
+                            'retention': {'retention_until', 'retained_until'},
+                            'hold': {'hold_active', 'legal_hold_until', 'retained_until'}}
+        if any(key in o.attributes for o in selected for key in condition_fields.get(kind, ())):
+            # Malformed or contradictory current facts cannot be replaced with a
+            # convenient historical condition.
+            return None, []
         # Missing fields on a later read do not revoke a previously established
         # shared-context/retention obligation. Re-evaluate each historical fact
         # against the case cutoff, never combine old fields into a clean-state proof.
         times = sorted({o.observed_at for o in observations}, reverse=True)
         for at in times:
             earlier = [o for o in observations if o.observed_at == at]
-            value = self.condition(kind, earlier, history, bundle, defaults=False)
+            value = self.condition(kind, earlier, history, bundle)
             if value is not None:
                 return value, links_sorted(o.link for o in earlier)
-        # No explicit fact anywhere: the documented fallback, cited to the current read.
-        value = self.condition(kind, selected, history, bundle)
-        return (value, links_sorted(o.link for o in selected)) if value is not None else (None, [])
+        return None, []
 
     def evaluate(self, bundle: CaseStateBundle) -> list[PolicyAssessment]:
         results = []
@@ -309,11 +294,17 @@ class PolicyEvaluator:
             if newest is None:
                 results.append(self.unobserved(histories[0], category, confirmed, bundle))
                 continue
-            # The most recent supported surface decides; an older replica or export of the
-            # same record cannot outlive a newer read. Simultaneous surfaces all count.
+            # Time orders observations within a physical scope. A read of another
+            # surface cannot establish that this copy received deletion treatment.
             for h in histories:
-                if freshness[id(h)] == newest:
-                    results.extend(self.assess(h, category, supported[id(h)], bundle))
+                local = [o for o in h.observations if o.association == 'CONFIRMED' and o.association_links]
+                local_category = (self.category(h, local, fallback=False) or category) if local else None
+                if freshness[id(h)] is not None:
+                    results.extend(self.assess(h, local_category, supported[id(h)], bundle))
+                elif any(o.association == 'CONFIRMED' and o.association_links
+                         and o.category in {'SNAPSHOT', 'SNAPSHOT_GAP', 'DOCUMENT', 'RESOURCE_READBACK'}
+                         for o in h.observations):
+                    results.append(self.unobserved(h, local_category, local, bundle))
         return results
 
     def unobserved(self, h, category, confirmed, bundle) -> PolicyAssessment:
@@ -359,12 +350,11 @@ class PolicyEvaluator:
         base = dict(scope=h.scope, dimension='record', category=category, rule_id=rule.rule_id,
                     required_action=rule.required_action, required_state=FINAL_STATES[rule.required_action],
                     observed_state=h.record.state, condition_evidence=condition_evidence)
-        defaults = default_condition_reasons(category, attributes(selected or observations))
         if h.record.support != 'PROVEN' or not selected:
-            return [PolicyAssessment(**base, compliance='UNKNOWN', reasons=['record_state_unproven', *defaults])]
+            return [PolicyAssessment(**base, compliance='UNKNOWN', reasons=['record_state_unproven'])]
         compliance, reasons = self.record_compliance(h, selected, rule, bundle)
         return [PolicyAssessment(**base, compliance=compliance,
-                                 evidence=links_sorted(o.link for o in selected), reasons=[*reasons, *defaults])]
+                                 evidence=links_sorted(o.link for o in selected), reasons=reasons)]
 
     @staticmethod
     def process(h, dimension, category):
@@ -401,15 +391,14 @@ class PolicyEvaluator:
             return 'VIOLATION', []
         # No identifier is exposed; observed null/redacted identifier fields are the
         # treatment itself. A record showing no identifier slot at all proves nothing.
-        treated = any(f.representation != 'VALUE' and f.path.rsplit('.', 1)[-1] in IDENTIFYING for f in fields)
         if action == 'ANONYMIZE':
-            if state == 'ANONYMIZED' or coverage(fields, anonymize=True) or treated:
+            if state == 'ANONYMIZED' or coverage(fields, anonymize=True):
                 return 'COMPLIANT', []
             return 'UNKNOWN', ['anonymization_field_coverage_insufficient']
         tombstone = rule.data_category == 'ACCOUNT_TOMBSTONE'
         if tombstone and not any(f.role == 'STABLE_REFERENCE' and f.value == bundle.identity.user_id for f in fields):
             return 'UNKNOWN', ['permitted_stable_reference_unproven']
-        if state == 'REDACTED' or coverage(fields, tombstone=tombstone) or treated or (
+        if state == 'REDACTED' or coverage(fields, tombstone=tombstone) or (
                 rule.data_category == 'EMAIL_DELIVERY_LOG' and any('email' in f.path for f in fields)):
             return 'COMPLIANT', []
         return 'UNKNOWN', ['redaction_field_coverage_insufficient']

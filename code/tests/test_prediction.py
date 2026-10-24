@@ -42,9 +42,12 @@ def dataset(rules, *observations, text='Please delete my account and all persona
         reported_status='COMPLETE', reported_at=EARLY, audit_at=CUTOFF, request_text=text)
     identity = Identity(user_id='subject_x', name='Synthetic Subject', email='subject@example.test',
         phone='+10000000001', email_hash='synthetic_hash', updated_at='2025-12-01T00:00:00Z')
+    sources = {o.provenance.evidence_id: o for o in observations}
     documents = [EvidenceDocument(manifest=EvidenceFile(file_id=o.provenance.evidence_id,
         file_path=o.provenance.file_path, origin=o.provenance.origin, captured_at=o.provenance.captured_at),
-        sha256=o.provenance.sha256, status='parsed', observations=[o]) for o in observations]
+        sha256=o.provenance.sha256, status='parsed', observations=[
+            item for item in observations if item.provenance.evidence_id == o.provenance.evidence_id])
+        for o in sources.values()]
     return Dataset([request], [identity], [], [], rules, documents, list(observations))
 
 
@@ -92,12 +95,11 @@ def test_subject_only_attachment_and_unknown_condition(rules):
     row = observation(category='SUPPORT_ATTACHMENT', system='support_platform', collection='ticket_attachments',
                       subject_only=True)
     assert 'DELETE_RECORD' in operations(decision(rules, row))
-    # Without an explicit flag, confirmed association (no other identified subject)
-    # establishes the condition, and the default is named in the assessment.
+    # Association does not establish exclusive ownership of an attachment.
     unflagged = decision(rules, observation(category='SUPPORT_ATTACHMENT', system='support_platform',
                                             collection='ticket_attachments'))
-    assert 'DELETE_RECORD' in operations(unflagged)
-    assert 'attachment_subject_only_by_confirmed_association' in unflagged.assessments[0].reasons
+    assert unflagged.prediction is None
+    assert 'policy_condition_unestablished_or_ambiguous' in unflagged.assessments[0].reasons
     shared = observation(category='SUPPORT_ATTACHMENT', system='support_platform', collection='ticket_attachments',
                          subject_only=False)
     result = decision(rules, shared)
@@ -122,10 +124,10 @@ def test_compliant_analytics_requires_sufficient_field_coverage(rules):
     assert result.decision == 'COMPLETE'
     assert operations(result) == ['VERIFY_RECORD_ANONYMIZED']
     assert result.prediction.steps[0].evidence_id == 'clean'
-    # Observed nulled identifier slots with no exposed value are the treatment itself.
+    # Omitted identifier slots cannot be assumed clean.
     partial = observation(category='ANALYTICS_PROFILE', system='analytics_platform', file='clean', at=LATE,
         collection='customer_analytics_profiles', user_id=None, email=None)
-    assert decision(rules, anchor, partial).decision == 'COMPLETE'
+    assert decision(rules, anchor, partial).prediction is None
     # Any remaining identifier value keeps it attributable.
     linked = observation(category='ANALYTICS_PROFILE', system='analytics_platform', file='clean', at=LATE,
         collection='customer_analytics_profiles', email=None, phone=None, email_hash=None)
@@ -296,16 +298,16 @@ def test_explicit_downstream_dependency_and_unrepresentable_order(rules):
     downstream = observation('z-downstream', file='copy', source_resource_id='a-source',
                              source_system_id='account_service')
     result = decision(rules, source, downstream)
-    # The problem statement fixes the order; the explicit dependency stays diagnostic.
-    assert [s.resource_id for s in result.prediction.steps if s.phase == 'REMEDIATION'] == ['a-source', 'z-downstream']
-    assert any('cleanup_dependency_conflicts_with_official_order' in u for u in result.unresolved)
+    # An unrepresentable dependency cannot be published as a safe ordered plan.
+    assert result.prediction is None
+    assert any('cleanup_dependency_conflicts_with_official_order' in u for u in result.blockers)
 
 
 def test_cleanup_dependency_without_system_uses_only_unambiguous_planned_resource(rules):
     result = decision(rules, observation('a-source'), observation('z-downstream', file='copy',
                       source_resource_id='a-source'))
-    assert result.decision == 'INCOMPLETE'
-    assert any('cleanup_dependency_conflicts_with_official_order' in u for u in result.unresolved)
+    assert result.prediction is None
+    assert any('cleanup_dependency_conflicts_with_official_order' in u for u in result.blockers)
 
 
 def test_valid_evidence_cutoff_and_no_future_state_override(rules):
