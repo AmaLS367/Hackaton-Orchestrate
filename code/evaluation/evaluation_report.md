@@ -34,7 +34,7 @@ python code/main.py phase2 --samples
 python code/main.py phase2 --samples --case-id case_02
 ```
 
-The complete suite passes **225 tests, 0 failures**, including all 96 existing tests.
+The stabilized complete suite passes **293 tests, 0 failures**, including all 225 pre-stabilization tests.
 Inspection retains 9,690 observations, 83 parsed files, and 11 deferred images. Reference
 validation still accepts exactly 32 sample rows without claiming prediction accuracy.
 The single-case diagnostic emits a typed bundle, including cases without supported evidence
@@ -50,14 +50,14 @@ Full-dataset and sample diagnostics:
 | Resolved identities | 518 | 32 |
 | Ambiguous / unresolved identities | 0 / 0 | 0 / 0 |
 | Cases with confirmed evidence associations | 509 | 29 |
-| Cases with potential associations / explicit ambiguities | 69 | 4 |
+| Cases with potential associations | 421 | 25 |
 | Cases without confirmed associations | 9 | 3 |
-| Confirmed observation associations across cases | 2,857 | 172 |
-| Distinct confirmed observations | 2,856 | 172 |
+| Confirmed observation associations across cases | 2,100 | 122 |
+| Distinct confirmed observations | 2,099 | 122 |
 | Distinct system/resource pairs | 1,247 | 78 |
 | Available unassigned deferred files | 11 | 11 |
 | Cases with available unassigned deferred files | 488 | 32 |
-| Cases flagged for additional interpretation | 488 | 32 |
+| Cases flagged for additional interpretation | 514 | 32 |
 
 All 508 authorized full-dataset requests have at least one confirmed observation association.
 The nine full-dataset requests without such associations are non-deletion requests.
@@ -66,8 +66,9 @@ it does not merge two users. Potential associations coexist with confirmed links
 excluded from the confirmed resource totals. The CLI lists potentially ambiguous case IDs.
 
 Additional-interpretation flags include unresolved identities, uncertain intent, explicit
-ambiguities, missing associations, or an available deferred file pool. The 488 flags do
-**not** imply that 488 cases concern those images: no image has a confirmed subject or
+ambiguities, missing associations, or an available deferred file pool. Of the 514 flagged
+full-dataset cases, 488 have available deferred files. These flags do
+**not** establish that any case concerns those images: no image has a confirmed subject or
 interpreted content. No retrieval statistic measures record-discovery completeness or
 deletion-state accuracy.
 
@@ -95,10 +96,54 @@ deletion-state accuracy.
 The implementation separates identity association from state interpretation. A resource link
 proves an association only; activity results and negative lookup claims remain source payloads.
 Expansion is limited to exact identity anchors, one scoped trace hop, one supported explicit
-resource-reference hop, and terminal collection for established system/resource pairs. It never
+resource-reference hop, and terminal collection for established system/resource/collection scopes. It never
 propagates through new subjects, whole-file membership, names, or system IDs alone.
 
 ### Phase 2 failures corrected and remaining risks
+
+Critical stabilization against reviewed commit `4ff1455e2ba7959597606d614cc4f3ab30e33d49`:
+
+- P0-01: subject extraction now covers `lookup_key`, `match_key`, nested identity fields,
+  and mixed-subject prose. Unknown foreign subjects contaminate the entire visible scoped trace.
+  Trace-only candidates stay potential, and only independently confirmed paths can seed further
+  expansion. Direct evidence survives contamination elsewhere in the trace. Typed resource names,
+  record categories, JSON field names, and integrity hashes are not mistaken for extra people.
+- P0-02: automatic joins require known compatible logical collections. Replica physical tables
+  and provenance stay separate. Explicit references with reused IDs require unambiguous collection
+  scope; repeating the anchor's own ID cannot establish a cross-collection relationship. Foreign
+  ownership claims stop propagation through an interval, including anonymous observations between
+  a foreign owner's last claim and the subject's subsequent ownership. Future claims remain excluded.
+- P1-01: English past-tense negation, French `ne ... plus`, Spanish past negation, contradictory
+  clauses, and deletion pending future approval have parameterized regressions. Independent valid
+  authorizations continue to pass; ordinary scheduling after an export is not future approval.
+- P1-02: an explicit personal deletion history and affirmative residual-data audit request cover
+  backups, replicas, archives, search indexes, and restored records in either sentence order.
+  Policy questions, third-party history, and negated verification do not authorize this audit.
+- P1-03: related references prefer `related_system`; documented `relationship_direction` or
+  `direction` values `upstream` / `downstream` select `source_system` / `target_system`. Missing or
+  unrecognized directions remain unscoped potential links, retaining their original supporting chain.
+
+The full baseline was reproduced before edits: 518 resolved identities, 508 `DELETE_INTENT`,
+10 `NO_DELETE_INTENT`, and 2,857 confirmed observation associations. Identity and intent counts
+are unchanged. Comparing evidence ID and locator per case shows **905 formerly confirmed joins
+downgraded to potential because collection metadata is missing**, plus **148 newly confirmed
+direct associations** where null/redacted subject fields previously caused spurious conflicts.
+The resulting total is `2857 - 905 + 148 = 2100`. No formerly confirmed observation disappears
+from its case bundle, and distinct system/resource pairs remain 1,247. The sample total changes
+from 172 to 122. Cases with confirmed evidence remain 509 overall / 29 samples.
+
+These changes remove unsupported confirmations; they do not establish how many prior links were
+actually false positives, nor measure canonical answer accuracy. Missing collection metadata can
+suppress genuine associations. Counts are observed diagnostics, never labels or thresholds.
+
+The 68 added regressions cover unknown and mixed trace subjects, independent direct anchors,
+future trace conflicts, cross-collection and unknown-collection collisions, physical replicas,
+time-dependent ownership changes, directed and ambiguous related resources, repeated anchor IDs,
+input-order permutations including complete provenance chains, and the intent cases above.
+The complete pytest suite and both Phase 2 CLI runs pass on Python 3.12.10. Phase 1 `inspect`,
+`inspect --samples`, and public sample schema validation (`--check-reference`) also pass.
+Official datasets and `AGENTS.md` are unchanged. No dependencies, external AI calls, or Phase 3
+implementation were added. Identity CSV row locators and expanded diagnostics remain deferred.
 
 Early tests exposed Unicode decomposition breaking Korean phrase matching and a missing
 remaining-personal-data expression. Normalization now recomposes Hangul, and action/object
@@ -116,7 +161,9 @@ Remaining limitations:
   unresolved identities or unknown intervals. Reassigned/shared aliases and mixed-subject
   records are handled conservatively and can suppress otherwise valid evidence links.
 - Longer relationship chains, unscoped resource references, unsupported free-text links,
-  and unknown systems need additional evidence. No prefix-based system guessing occurs.
+  unknown systems or logical collections, and ambiguous ownership intervals need additional
+  evidence. No prefix-based system guessing occurs. Ownership guards concern association only,
+  not a full temporal reconstruction of record state.
 - Eleven images remain deferred. Parsed PDF/text lines without explicit identifiers or
   supported links can also remain unassociated. No evidence is invented for missing resources.
 - Current/previous alias status is an identity-history fact, not a reconstruction of resource

@@ -3,10 +3,11 @@
 Never expand by file, system alone, name, or a newly encountered person's alias.
 """
 
+import re
 from collections import defaultdict
 
 from .identity import IdentityResolver
-from .index import EvidenceIndex, identifier_values
+from .index import EvidenceIndex, identifier_values, normalize_identifier
 from .models import Observation, ResourceRef
 from .phase2_models import (
     AssociatedObservation, AssociatedResource, CorrelationLink, ObservationLink,
@@ -17,8 +18,14 @@ from .time import parse_timestamp
 RESOURCE_FIELDS = {'source_resource_id', 'target_resource_id', 'related_resource_id'}
 SUBJECT_FIELDS = {'user_id', 'customer_reference', 'subject_reference', 'subject_ref',
                   'subject_key', 'owner_key', 'subject_selector'}
+LOOKUP_FIELDS = {'lookup_key', 'match_key'}
 PII_FIELDS = {'email', 'phone', 'email_hash', 'customer_email', 'requester_email',
               'owner_email', 'customer_phone', 'requester_phone', 'owner_phone'}
+SUBJECT_TOKEN = re.compile(
+    r"[\w.+%'-]+@[\w.-]+\.[A-Za-z]{2,}|(?<!\w)\+\d[\d ()-]{6,}\d(?!\w)|\buser_[\w]+\b(?!\\?[\"']?\s*[:=])",
+    re.IGNORECASE,
+)
+EMPTY_SELECTORS = {'null', 'none', 'redacted', '[redacted]', 'anonymous', 'anonymized'}
 
 
 def reference_key(resource: ResourceRef) -> tuple:
@@ -31,6 +38,7 @@ class EvidenceCorrelator:
         self.index, self.resolver = index, resolver
         self.tokens = [identifier_values(o.payload) | identifier_values(o.raw_text)
                        for o in index.observations]
+        self.subjects = [self._subject_identifiers(o) for o in index.observations]
         self.by_scoped_resource = defaultdict(set)
         for i, item in enumerate(index.observations):
             for r in item.resources:
@@ -49,6 +57,13 @@ class EvidenceCorrelator:
         accepted: dict[int, AssociatedObservation] = {}
         issues = set()
         owner_cache = {}
+        conflict_cache = {}
+        grounded_links = defaultdict(list)
+
+        def ordered(indices):
+            return sorted(indices, key=lambda i: (
+                observations[i].provenance.file_path, observations[i].provenance.evidence_id,
+                observations[i].provenance.locator, observations[i].model_dump_json()))
 
         def visible(i):
             time = observations[i].available_at
@@ -60,22 +75,44 @@ class EvidenceCorrelator:
             return owner_cache[value]
 
         def conflict(i):
+            if i in conflict_cache:
+                return conflict_cache[i]
             # Co-occurrence is not proof that every resource belongs to the subject.
             if any(owners(t) - {user} for t in self.tokens[i]):
-                return 'multiple_or_foreign_subjects'
-            def foreign_fields(value):
-                if isinstance(value, dict):
-                    for key, child in value.items():
-                        if key in SUBJECT_FIELDS | PII_FIELDS and isinstance(child, str) and child.strip():
-                            tokens = identifier_values(child)
-                            if not (tokens & alias_map.keys()) and not any(owners(t) == {user} for t in tokens):
-                                return True
-                        if foreign_fields(child):
-                            return True
-                elif isinstance(value, list):
-                    return any(foreign_fields(child) for child in value)
-                return False
-            return 'unsupported_subject_reference' if foreign_fields(observations[i].payload) else None
+                reason = 'multiple_or_foreign_subjects'
+            elif any(owners(t) != {user} for t in self.subjects[i]):
+                reason = 'unsupported_subject_reference'
+            else:
+                reason = None
+            conflict_cache[i] = reason
+            return reason
+
+        def event_time(i):
+            # Capture time gates availability; source time orders ownership facts.
+            return max((t.value for t in observations[i].provenance.timestamps
+                        if t.role == 'source'), default=observations[i].available_at)
+
+        def ownership_safe(parent, candidate, resource):
+            low, high = sorted((event_time(parent), event_time(candidate)))
+            latest_time, latest_conflicts = None, []
+            for k in self.by_scoped_resource.get((resource.system_id, resource.resource_id), ()):
+                if not visible(k):
+                    continue
+                if any(r.collection == resource.collection or not r.collection or not resource.collection
+                       for r in observations[k].resources
+                       if r.system_id == resource.system_id and r.resource_id == resource.resource_id):
+                    at, reason = event_time(k), conflict(k)
+                    if low <= at <= high and reason:
+                        return False
+                    if at <= event_time(candidate) and (
+                            reason or self.subjects[k] or self.tokens[k] & alias_map.keys()):
+                        if latest_time is None or at > latest_time:
+                            latest_time, latest_conflicts = at, [bool(reason)]
+                        elif at == latest_time:
+                            latest_conflicts.append(bool(reason))
+            # Do not backfill an anonymous row between a foreign owner's last
+            # claim and the subject's later independently established ownership.
+            return not any(latest_conflicts)
 
         def add(i, method, parents=(), matched=(), resource=None, forced_reason=None):
             if not visible(i):
@@ -84,7 +121,7 @@ class EvidenceCorrelator:
             status = 'POTENTIAL' if reason else 'CONFIRMED'
             refs = []
             for parent in parents:
-                for link in accepted[parent].links:
+                for link in grounded_links[parent]:
                     for ref in link.supporting_observations:
                         if ref not in refs:
                             refs.append(ref)
@@ -109,23 +146,25 @@ class EvidenceCorrelator:
             else:
                 accepted[i] = AssociatedObservation(observation=observations[i], association=status,
                                                      links=[link], reason=reason or 'grounded_link')
+            if status == 'CONFIRMED' and link not in grounded_links[i]:
+                grounded_links[i].append(link)
             if reason:
                 issues.add(reason)
 
         candidates = set().union(*(self.index.by_identifier.get(value, set()) for value in alias_map))
-        for i in sorted(candidates):
+        for i in ordered(candidates):
             if visible(i):
                 add(i, 'DIRECT_IDENTIFIER', matched=self.tokens[i] & alias_map.keys())
 
         # Only direct anchors may seed a trace. Detect conflicting subjects over
         # the entire visible scoped trace before accepting any trace-only result.
-        anchors = [i for i in sorted(accepted) if accepted[i].association == 'CONFIRMED']
+        anchors = [i for i in ordered(accepted) if accepted[i].association == 'CONFIRMED']
         trace_seeds = defaultdict(list)
         for i in anchors:
             if observations[i].trace_id:
                 trace_seeds[self.index.trace_key(observations[i])].append(i)
         for key, parents in trace_seeds.items():
-            scoped = sorted(i for i in self.index.by_trace[key] if visible(i))
+            scoped = ordered(i for i in self.index.by_trace[key] if visible(i))
             contaminated = any(conflict(i) for i in scoped)
             for i in scoped:
                 if i not in parents:
@@ -133,46 +172,113 @@ class EvidenceCorrelator:
                         forced_reason='ambiguous_trace_scope' if contaminated else None)
 
         # One hop through explicit, typed resource reference fields. Never recurse.
-        seeds = [i for i in sorted(accepted) if accepted[i].association == 'CONFIRMED']
+        seeds = [i for i in ordered(accepted) if accepted[i].association == 'CONFIRMED']
         for i in seeds:
             item = observations[i]
             for resource in self._explicit_references(item):
                 if resource.system_id is None:
                     issues.add('unscoped_explicit_resource_reference')
-                    continue
-                for j in sorted(self.by_scoped_resource.get((resource.system_id, resource.resource_id), ())):
-                    if j != i:
-                        add(j, 'EXPLICIT_RESOURCE_REFERENCE', parents=[i], resource=resource)
+                candidates = [j for j in self.index.by_resource.get(resource.resource_id, ())
+                              if j != i and visible(j) and any(
+                                  r.resource_id == resource.resource_id
+                                  and (resource.system_id is None or r.system_id == resource.system_id)
+                                  for r in observations[j].resources)]
+                scopes = {r.collection for j in candidates for r in observations[j].resources
+                          if r.resource_id == resource.resource_id and r.system_id == resource.system_id}
+                scopes.update(r.collection for r in item.resources
+                              if r.resource_id == resource.resource_id and r.system_id == resource.system_id)
+                for j in ordered(candidates):
+                    reason = None
+                    refs = [r for r in observations[j].resources if r.resource_id == resource.resource_id
+                            and (resource.system_id is None or r.system_id == resource.system_id)]
+                    if resource.system_id is None:
+                        reason = 'unscoped_explicit_resource_reference'
+                    elif resource.collection:
+                        if not any(r.collection == resource.collection for r in refs):
+                            reason = 'incompatible_resource_collection'
+                    elif len(scopes) > 1:
+                        reason = 'ambiguous_explicit_resource_collection'
+                    if not reason and not ownership_safe(i, j, resource):
+                        reason = 'resource_ownership_boundary'
+                    add(j, 'EXPLICIT_RESOURCE_REFERENCE', parents=[i], resource=resource,
+                        forced_reason=reason)
 
         # Collect all visible versions/replicas of established resources. New
         # resources/identities encountered here cannot trigger further expansion.
         resource_seeds = defaultdict(list)
-        for i in sorted(accepted):
+        for i in ordered(accepted):
             if accepted[i].association == 'CONFIRMED':
                 for r in observations[i].resources:
-                    resource_seeds[(r.system_id, r.resource_id)].append(i)
-        for (system, resource_id), parents in sorted(resource_seeds.items(), key=lambda p: (p[0][0] or '', p[0][1])):
-            for j in sorted(self.index.by_resource[resource_id]):
+                    resource_seeds[(r.system_id, r.resource_id, r.collection)].append(i)
+        for (system, resource_id, collection), parents in sorted(
+                resource_seeds.items(), key=lambda p: tuple(v or '' for v in p[0])):
+            resource = ResourceRef(resource_id=resource_id, system_id=system, collection=collection)
+            for j in ordered(self.index.by_resource[resource_id]):
                 if j in parents or not visible(j):
                     continue
                 refs = [r for r in observations[j].resources if r.resource_id == resource_id]
                 if any(r.system_id == system and system is not None for r in refs):
-                    add(j, 'RESOURCE', parents=parents,
-                        resource=ResourceRef(resource_id=resource_id, system_id=system))
+                    compatible = bool(collection) and any(
+                        r.system_id == system and r.collection == collection for r in refs)
+                    safe_parents = [p for p in parents if ownership_safe(p, j, resource)] if compatible else []
+                    reason = ('incompatible_resource_collection' if not compatible
+                              else 'resource_ownership_boundary' if not safe_parents else None)
+                    add(j, 'RESOURCE', parents=safe_parents or parents,
+                        resource=resource, forced_reason=reason)
                 elif system is None or any(r.system_id is None for r in refs):
                     add(j, 'RESOURCE', parents=parents, forced_reason='unscoped_resource_match')
         resources = {}
-        for i in sorted(accepted):
+        for i in ordered(accepted):
             if accepted[i].association != 'CONFIRMED':
                 continue
             for r in observations[i].resources:
                 if r.system_id is None:
                     issues.add('resource_system_unknown')
                 key = reference_key(r)
-                resources.setdefault(key, (r, []))[1].append(ObservationLink.of(observations[i]))
-        return ([accepted[i] for i in sorted(accepted)],
+                refs = resources.setdefault(key, (r, []))[1]
+                ref = ObservationLink.of(observations[i])
+                if ref not in refs:
+                    refs.append(ref)
+        return ([accepted[i] for i in ordered(accepted)],
                 [AssociatedResource(reference=r, supporting_observations=refs)
                  for _, (r, refs) in sorted(resources.items())], sorted(issues))
+
+    def _subject_identifiers(self, item):
+        """Extract each subject separately, including unknown subjects in prose.
+
+        Lookup selectors can also be resource IDs or null markers; those alone
+        do not assert ownership. Known aliases are checked separately in conflict.
+        """
+        result = set()
+        metadata = {normalize_identifier(value) for key, value in item.payload.items()
+                    if key in {'record_type', 'data_category', 'collection', 'collection_name'}
+                    and isinstance(value, str)}
+        metadata.update(normalize_identifier(r.resource_id) for r in item.resources)
+
+        def walk(value):
+            if isinstance(value, str):
+                result.update(normalize_identifier(t) for t in SUBJECT_TOKEN.findall(value)
+                              if normalize_identifier(t) not in metadata)
+            elif isinstance(value, dict):
+                for key, child in value.items():
+                    walk(child)
+                    field = key.casefold()
+                    if field in SUBJECT_FIELDS | PII_FIELDS | LOOKUP_FIELDS and isinstance(child, str):
+                        normalized = normalize_identifier(child)
+                        if not normalized or normalized in EMPTY_SELECTORS:
+                            continue
+                        atoms = {normalize_identifier(t) for t in SUBJECT_TOKEN.findall(child)}
+                        if field in LOOKUP_FIELDS and any(
+                                normalize_identifier(r.resource_id) == normalized for r in item.resources):
+                            continue
+                        result.update(atoms or {normalized})
+            elif isinstance(value, list):
+                for child in value:
+                    walk(child)
+
+        walk(item.payload)
+        walk(item.raw_text)
+        return result
 
     @staticmethod
     def _explicit_references(item: Observation):
@@ -183,11 +289,21 @@ class EvidenceCorrelator:
             if isinstance(value, dict):
                 for key, child in value.items():
                     if key in RESOURCE_FIELDS and isinstance(child, str) and child:
-                        side = 'target_system' if key == 'target_resource_id' else 'source_system'
-                        system = value.get(side) or value.get('system_id')
-                        if not system and len(item.system_ids) == 1:
+                        prefix = key.removesuffix('_resource_id')
+                        system = value.get(prefix + '_system')
+                        if prefix == 'related' and not system:
+                            # Direction is relative to the reporting relationship:
+                            # upstream -> source; downstream -> target. No guess
+                            # is made for absent or unrecognized direction values.
+                            direction = value.get('relationship_direction') or value.get('direction')
+                            side = {'upstream': 'source_system', 'downstream': 'target_system'}.get(direction)
+                            system = value.get(side) if side else None
+                        if prefix != 'related':
+                            system = system or value.get('system_id')
+                        if prefix != 'related' and not system and len(item.system_ids) == 1:
                             system = item.system_ids[0]
-                        result.append(ResourceRef(resource_id=child, system_id=system))
+                        collection = value.get(prefix + '_collection') or value.get(prefix + '_collection_name')
+                        result.append(ResourceRef(resource_id=child, system_id=system, collection=collection))
                     elif isinstance(child, (dict, list)):
                         walk(child)
             elif isinstance(value, list):

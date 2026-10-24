@@ -1,4 +1,4 @@
-# Phase 1 runtime usage
+# Phases 1 and 2 runtime usage
 
 No final full-dataset **prediction** run has occurred, and no `output.csv` has been
 generated. The Phase 1 full-corpus ingestion/checks are offline. This is a preliminary
@@ -23,3 +23,24 @@ Gemini/free-provider adapters should record actual provider/model names, calls, 
 pricing assumptions, and per-model/overall totals. Replace this preliminary report with
 measurements from the final run that actually produces the submission output; do not infer
 usage or prediction results from the foundation inspection run.
+
+## Phase 2 critical stabilization run
+
+The final stabilization diagnostics processed all 518 requests and the 32 public sample
+requests offline on Python 3.12.10. The full run resolves 518 identities, classifies
+508 deletion and 10 non-deletion intents, and produces 2,100 confirmed observation
+associations. It produces evidence bundles, not submission predictions or `output.csv`.
+
+| Runtime measure | Final full-dataset Phase 2 diagnostics |
+| --- | --- |
+| Model providers / names | None |
+| Model calls | 0 |
+| Input / output / total tokens | 0 / 0 / 0 |
+| Average total model tokens per request | 0 (518 requests) |
+| Estimated total / per-request model API cost | USD 0 / USD 0 |
+| Per-model totals | Not applicable |
+| Overall calls / tokens / estimated cost | 0 / 0 / USD 0 |
+
+The sample diagnostic run also uses zero model calls, tokens, and API cost. Development
+assistant usage remains outside solution-runtime accounting. This report still requires
+replacement with measured usage from the eventual run producing submission predictions.

@@ -98,3 +98,59 @@ def test_reported_status_does_not_authorize_deletion():
                               audit_at='2026-01-03T00:00:00Z',
                               reported_status='COMPLETE', request_text='Export my data please.')
     assert IntentClassifier().classify(request).decision == 'NO_DELETE_INTENT'
+
+
+@pytest.mark.parametrize('text, expected', [
+    ("I didn't ask you to delete my account.", 'NO_DELETE_INTENT'),
+    ('I did not request deletion of my account.', 'NO_DELETE_INTENT'),
+    ('Je ne veux plus supprimer mon compte.', 'NO_DELETE_INTENT'),
+    ('Je ne souhaite plus la suppression de mon compte.', 'NO_DELETE_INTENT'),
+    ('No pedi eliminar mi cuenta.', 'NO_DELETE_INTENT'),
+    ('Please delete my account only after I approve it.', 'UNCERTAIN'),
+    ('Delete my account if I give approval.', 'UNCERTAIN'),
+    ('Please delete my account once I confirm.', 'UNCERTAIN'),
+    ('Do not delete my account and please delete my account.', 'UNCERTAIN'),
+    ("I didn't ask you to delete my account, but please delete my account now.", 'UNCERTAIN'),
+    ('Je ne veux plus supprimer mon compte. Supprimez mon compte.', 'UNCERTAIN'),
+    ('Please delete my account after exporting my records.', 'DELETE_INTENT'),
+    ('Please delete my account. I approve this deletion.', 'DELETE_INTENT'),
+    ('Please delete my account, not my marketing subscription.', 'DELETE_INTENT'),
+    ('I did not ask for marketing emails. Please delete my account.', 'DELETE_INTENT'),
+])
+def test_negation_and_future_authorization(text, expected):
+    assert IntentClassifier().classify(text).decision == expected
+
+
+@pytest.mark.parametrize('residual', [
+    'leftover backups', 'remaining replicas', 'residual archives',
+    'leftover search indexes', 'restored records containing my personal information',
+])
+@pytest.mark.parametrize('history', [
+    'My account was deleted last month.',
+    'My personal data has already been erased.',
+])
+def test_historical_deletion_verification(history, residual):
+    assert IntentClassifier().classify(f'{history} Please check for {residual}.').decision == 'DELETE_INTENT'
+
+
+@pytest.mark.parametrize('text', [
+    'What is your deletion policy for backups?',
+    'Please check your account deletion policy for archives.',
+    'My account was deleted last month. What is your backup retention policy?',
+    'Please check for leftover backups.',
+    'My account was deleted last month. Please check the invoice total.',
+    'A customer account was deleted last month. Please check for leftover backups.',
+    'My account was deleted last month. Do not check for leftover backups.',
+])
+def test_generic_or_unauthorized_history_does_not_authorize_audit(text):
+    assert IntentClassifier().classify(text).decision != 'DELETE_INTENT'
+
+
+@pytest.mark.parametrize('text, expected', [
+    ('My account was deleted last month. Please check your backup deletion policy.', 'UNCERTAIN'),
+    ('My account was deleted last month. Check for leftover backups.', 'DELETE_INTENT'),
+    ('Please check for leftover backups. My account was deleted last month.', 'DELETE_INTENT'),
+    ('My account was deleted last month. Please check for leftover backups under your deletion policy.', 'DELETE_INTENT'),
+])
+def test_personal_residual_audit_is_distinct_from_policy_verification(text, expected):
+    assert IntentClassifier().classify(text).decision == expected

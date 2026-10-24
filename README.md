@@ -134,6 +134,9 @@ source records. `--dataset PATH` works with these commands. Existing `inspect` a
   `UNCERTAIN` with a fallback recommendation; confidence describes rule certainty, not a
   calibrated probability. Workflow status never determines intent. Future providers can consume
   the same `IntentResult`; no external provider is implemented or called.
+  Past-tense negation and future approval conditions are handled explicitly. A personal history
+  of deletion plus a request to check residual backups, replicas, archives, search indexes, or
+  restored records authorizes an audit; generic policy questions do not.
 - `identity.py`: reusable exact ownership indexes over snapshots and both audit-change values.
   `IdentityResolver.resolve(request)` returns `RESOLVED`, `AMBIGUOUS`, or `UNRESOLVED`, with
   candidates and aliases retaining original values, field, source, audit ID, event time,
@@ -145,9 +148,15 @@ source records. `--dataset PATH` works with these commands. Existing `inspect` a
 - `correlation.py`: exact identifier anchors, one file/service-scoped trace hop, one explicitly
   supported resource-reference hop, then terminal collection of observations for established
   resources. Each accepted link retains the full chain of evidence IDs and observation locators.
-  Resource joins require a matching system and resource ID. Unknown systems, conflicting
-  subjects, shared aliases, and contaminated traces remain explicit ambiguities or potential
-  associations. There is no expansion by whole file, system alone, name, or newly found alias.
+  Automatic resource joins require a matching system, resource ID, and known logical collection;
+  physical replica tables may differ. Unknown collections and ownership boundaries prevent
+  automatic confirmation. Explicit cross-collection links need independently scoped references;
+  ambiguous target collections stay potential. `related_system` takes precedence, while documented
+  `relationship_direction` (or `direction`) values `upstream` and `downstream` select source and
+  target systems respectively. An absent or unknown direction never defaults to the source.
+  Unknown subjects in lookup selectors or mixed prose contaminate trace-only links; independently
+  grounded direct links remain confirmed. Potential paths never seed confirmed expansion.
+  There is no expansion by whole file, system alone, name, or newly found alias.
   SQL table/replica names, collections, payloads, timestamps, and source provenance survive intact.
 - `phase2_models.py`, `phase2.py`: strict Pydantic bundles and reusable `Phase2Analyzer`.
   Bundles contain intent, resolved identity, aliases, confirmed/potential observations, resource
@@ -166,7 +175,10 @@ deletion compliance.
 
 The full run resolves all 518 request identities and classifies 508 deletion requests and 10
 non-deletion requests, with no uncertain intents on this corpus. These are diagnostic results,
-not accuracy measurements. The current test and diagnostic results, limitations, and preparation
+not accuracy measurements. Stabilization passes 293 tests and yields 2,100 confirmed observation
+associations (previously 2,857): 905 joins lacking collection proof are downgraded, while 148
+independently identified records with null/redacted subject fields are recovered. The current
+test and diagnostic results, limitations, and preparation
 for Phase 3 are documented in [`code/evaluation/evaluation_report.md`](code/evaluation/evaluation_report.md).
 
 ---

@@ -34,17 +34,18 @@ DELETE_RULES = (
     ('ko_explicit', r'계정의 영구 삭제를 요청합니다'),
 )
 NEGATIVE = (
+    r"\b(?:did not|didn't|have not|haven't|never)\s+(?:ask(?:ed)?|request(?:ed)?|authorize(?:d)?|consent(?:ed)?)\b[^.!?;]{0,45}\b(?:delet\w*|eras\w*|remov\w*|clos\w*)\b",
     r"\b(?:do not|don't|never|not to)\s+(?:permanently\s+)?(?:delete|erase|remove|close)\s+(?:(?:my|the|this|an)\s+)?(?:(?:remaining|all)\s+)?(?:account|personal data|data|profile|anything)\b",
     r"\b(?:do not|don't)\s+(?:want|wish|need|authorize|consent)\b[^.!?;]{0,35}\b(?:delet\w*|eras\w*|remov\w*|clos\w*)\b",
     r"\b(?:not requesting|not asking for|no longer want|do not process|don't process)\b[^.!?;]{0,50}\b(?:delet\w*|eras\w*|remov\w*|clos\w*)\b",
     r"\b(?:not a request to (?:erase|delete)|keep my account|do not authorize deletion)\b",
     r'\b(?:cancel|withdraw|revoke)\b[^.!?;]{0,35}\b(?:deletion|erasure)\b',
     r'\bno\s+(?:borres|elimine[ns]?|borrar|eliminar)\s+(?:(?:mi|la|mis)\s+)?(?:cuenta|datos)\b',
-    r'\bno (?:quiero|deseo|solicito)\b[^.!?;]{0,30}\b(?:eliminar|borrar|eliminacion)\b',
+    r'\bno (?:quiero|deseo|solicito|pedi|solicite)\b[^.!?;]{0,30}\b(?:eliminar|borrar|eliminacion)\b',
     r'\b(?:conservar|mantener) mi cuenta\b',
     r"\bne\s+(?:supprimez|supprimer|effacez)[^.!?;]{0,15}\bpas\b",
     r'\bne pas\s+(?:supprimer|effacer)\b',
-    r'\bne (?:souhaite|veux|demande) pas\b[^.!?;]{0,30}\b(?:supprimer|effacer|suppression)\b',
+    r'\bne (?:souhaite|veux|demande) (?:pas|plus)\b[^.!?;]{0,30}\b(?:supprimer|effacer|suppression)\b',
     r"\b(?:annuler|annulez|d'annuler)\b[^.!?;]{0,35}\bsuppression\b",
     r'\b(?:gardez|conserver) mon compte\b',
     r'\bnao\s+(?:exclua|apague|elimine|solicito)\b',
@@ -64,14 +65,34 @@ class IntentClassifier:
         # Conditional/hypothetical and quoted instructions are not authorization.
         if re.search(r"\b(?:what (?:happens|would happen) if|should i|if i|might want|thinking (?:about|of)|how (?:do|can) i|how to (?:delete|erase|remove|close)|is it possible to|can i|do you|not sure|said to delete)\b", text) or re.search(r'["“][^"”]*(?:delete|erase)[^"”]*["”]', text):
             return self._result('UNCERTAIN', 'conditional_or_quoted')
+        if re.search(r'\b(?:delete|erase|remove|close|deletion)\b', text) and re.search(
+            r'\b(?:(?:only\s+)?(?:after|once|until|when|if)\s+(?:i|we)\s+(?:(?:explicitly|later)\s+)?(?:approve|confirm|authorize|consent)|(?:pending|subject to|after|upon)\s+(?:(?:my|our|further|explicit)\s+)*(?:approval|confirmation|authorization|consent))\b', text
+        ):
+            return self._result('UNCERTAIN', 'future_approval_required')
         negative = any(re.search(pattern, text) for pattern in NEGATIVE)
         marketing_only = re.search(r'\b(?:remove|delete|erase)\b[^.!?;]{0,65}\b(?:from|off)\b[^.!?;]{0,25}\b(?:marketing|mailing|promotional)\b', text)
         if marketing_only and not re.search(r'\b(?:delete|erase|close|remove) (?:my|this|the) account\b', text):
             return self._result('NO_DELETE_INTENT', 'marketing_scope_only')
         matches = [rule for rule, pattern in DELETE_RULES if re.search(pattern, text)]
+        # A policy question is not an instruction to investigate personal records.
+        if re.search(r'\b(?:policy|policies|retention policy)\b', text):
+            matches = [rule for rule in matches if rule not in {
+                'en_verify_deletion', 'en_verify_state', 'en_prior_deletion'}]
+        historical = re.search(
+            r'\bmy\s+(?:account|profile|personal (?:data|information))\s+(?:was|is|has (?:already )?been|had been)\s+(?:deleted|erased|removed|closed)\b', text)
+        if historical:
+            for clause in re.split(r'[.!?;]', text):
+                if re.search(r"\b(?:do not|don't|never|not to)\b", clause):
+                    continue
+                if re.search(r'\bpolic(?:y|ies)\b', clause) and not re.search(
+                        r'\b(?:leftover|remaining|residual|restored)\b', clause):
+                    continue
+                if re.search(r'(?:^\s*|\bplease\s+|\b(?:can|could) you\s+)(?:check|verify|audit|inspect|confirm)\b[^.!?;]{0,120}\b(?:backups?|replicas?|archives?|search index(?:es)?|restored records?|residual personal (?:data|information))\b', clause):
+                    matches.append('en_historical_residual_audit')
+                    break
         if negative:
             # Remove only negated clauses before looking for conflicting authorization.
-            clauses = re.split(r'[.!?;]|\bbut\b', text)
+            clauses = re.split(r'[.!?;]|\b(?:but|mais|pero)\b|\band\s+(?=(?:please\s+)?(?:delete|erase|remove|close)\b)', text)
             positive = any(any(re.search(p, clause) for _, p in DELETE_RULES)
                            for clause in clauses
                            if not any(re.search(p, clause) for p in NEGATIVE))

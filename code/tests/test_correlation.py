@@ -1,4 +1,7 @@
 from dataclasses import replace
+from itertools import permutations
+
+import pytest
 
 from ghost_audit.correlation import EvidenceCorrelator
 from ghost_audit.extraction import ExtractionContext, parse_json, parse_text
@@ -223,3 +226,196 @@ def test_registry_keeps_deferred_images_without_interpreted_facts():
     resolver = IdentityResolver([snapshot(at=T1)], [])
     assert EvidenceCorrelator(index, resolver).correlate(resolver.resolve('new@example.invalid', T3), parse_timestamp(T3))[0] == []
     assert registry.get('image').parsing_status == 'deferred'
+
+
+@pytest.mark.parametrize('field', ['lookup_key', 'match_key', 'subject_key'])
+@pytest.mark.parametrize('foreign', ['unknown@example.invalid', 'user_unknown'])
+def test_unknown_subject_contaminates_trace_without_erasing_direct_evidence(context, field, foreign):
+    scoped = replace(context, system='store', collection='profiles')
+    items = parse_json([
+        {'trace_id': 't1', 'lookup_key': 'new@example.invalid', 'resource_id': 'mine'},
+        {'trace_id': 't1', field: foreign},
+        {'trace_id': 't1', 'resource_id': 'record_b', 'target_resource_id': 'downstream'},
+        {'resource_id': 'record_b'},
+        {'resource_id': 'downstream'},
+    ], scoped)
+    result, resources, issues = correlate(items)
+    assert [o.observation.provenance.locator for o in confirmed(result)] == ['$[0]']
+    assert {r.reference.resource_id for r in resources} == {'mine'}
+    assert all(o.association == 'POTENTIAL' for o in result if o.observation.trace_id == 't1' and o.observation != items[0])
+    assert 'ambiguous_trace_scope' in issues
+    assert not any(o.observation == items[3] or o.observation == items[4] for o in result)
+
+
+@pytest.mark.parametrize('known_foreign', [False, True])
+def test_mixed_free_text_subjects_do_not_seed_confirmed_links(context, known_foreign):
+    identities = [snapshot(at=T1)]
+    if known_foreign:
+        identities.append(snapshot('user_two', 'other@example.invalid', T1, phone='+22222222222', email_hash='other_hash'))
+    items = parse_text('Contact new@example.invalid and other@example.invalid about this record.', context)
+    result, resources, _ = correlate(items, identities=identities)
+    assert result[0].association == 'POTENTIAL'
+    assert not resources
+
+
+def test_owned_aliases_in_lookup_fields_keep_trace_safe(context):
+    items = parse_json([
+        {'trace_id': 't1', 'lookup_key': 'old@example.invalid'},
+        {'trace_id': 't1', 'match_key': 'new@example.invalid'},
+        {'trace_id': 't1', 'resource_id': 'mine'},
+    ], replace(context, system='store'))
+    result, resources, issues = correlate(items, changes=[change('a', 'old@example.invalid', 'new@example.invalid', at=T1)])
+    assert len(confirmed(result)) == 3
+    assert {r.reference.resource_id for r in resources} == {'mine'}
+    assert not issues
+
+
+def test_future_trace_conflict_does_not_contaminate_visible_trace(context):
+    items = parse_json([
+        {'trace_id': 't1', 'lookup_key': 'new@example.invalid', 'updated_at': T1},
+        {'trace_id': 't1', 'lookup_key': 'unknown@example.invalid', 'updated_at': T4},
+        {'trace_id': 't1', 'resource_id': 'mine', 'updated_at': T2},
+    ], replace(context, system='store'))
+    result, _, issues = correlate(items, cutoff=T3)
+    assert len(confirmed(result)) == 2
+    assert not issues
+
+
+@pytest.mark.parametrize('anchor_collection, collection', [('profiles', 'exports'), ('profiles', None), (None, None)])
+def test_resource_join_requires_logical_collection_compatibility(context, anchor_collection, collection):
+    first = parse_json({'resource_id': '123', 'user_id': 'user_one'},
+                       replace(context, system='store', collection=anchor_collection))
+    other = parse_json({'resource_id': '123'}, replace(context, system='store', collection=collection), '$.other')
+    result, resources, _ = correlate([*first, *other])
+    assert len(confirmed(result)) == 1
+    assert {r.reference.collection for r in resources} == {anchor_collection}
+
+
+def test_independent_cross_collection_evidence_is_preserved(context):
+    items = parse_json([
+        {'resource_id': '123', 'collection': 'profiles', 'user_id': 'user_one'},
+        {'resource_id': '123', 'collection': 'exports', 'user_id': 'user_one'},
+    ], replace(context, system='store'))
+    assert len(confirmed(correlate(items)[0])) == 2
+
+
+@pytest.mark.parametrize('cutoff, expected', [(T2, {'$.mine', '$.before'}), (T3, {'$.mine', '$.before'}), (T4, {'$.mine', '$.before'})])
+def test_resource_reassignment_stops_ownership_propagation(context, cutoff, expected):
+    scoped = replace(context, system='store', collection='profiles',
+                     manifest=context.manifest.model_copy(update={'captured_at': parse_timestamp(T1)}))
+    items = []
+    for locator, at, owner in [('$.mine', T1, 'user_one'), ('$.before', T2, None),
+                               ('$.foreign', T3, 'user_two'), ('$.after', T4, None)]:
+        items += parse_json({'resource_id': '123', 'updated_at': at, 'user_id': owner}, scoped, locator)
+    identities = [snapshot(at=T1), snapshot('user_two', 'other@example.invalid', T1, phone='+22222222222', email_hash='other_hash')]
+    result, _, _ = correlate(items, identities=identities, cutoff=cutoff)
+    assert {o.observation.provenance.locator for o in confirmed(result)} == expected
+
+
+@pytest.mark.parametrize('fields, expected_system', [
+    ({'related_system': 'archive'}, 'archive'),
+    ({'related_system': 'archive', 'relationship_direction': 'downstream'}, 'archive'),
+    ({'relationship_direction': 'upstream'}, 'source'),
+    ({'relationship_direction': 'downstream'}, 'target'),
+    ({}, None),
+    ({'relationship_direction': 'unknown'}, None),
+])
+def test_related_resource_system_requires_explicit_direction(context, fields, expected_system):
+    anchor = parse_json({'resource_id': 'anchor', 'user_id': 'user_one', 'source_system': 'source',
+                         'target_system': 'target', 'related_resource_id': '123', **fields},
+                        replace(context, system='controller', collection='jobs'))
+    items = [*anchor]
+    for system in ['source', 'target', 'archive']:
+        items += parse_json({'resource_id': '123'}, replace(context, system=system, collection='records'), f'$.{system}')
+    result, resources, _ = correlate(items)
+    assert {r.reference.system_id for r in resources if r.reference.resource_id == '123'} == ({expected_system} if expected_system else set())
+    for item in result:
+        if item.observation.resources[0].resource_id == '123':
+            assert any(link.method == 'EXPLICIT_RESOURCE_REFERENCE' for link in item.links)
+            assert item.links[0].supporting_observations[0].locator == '$'
+
+
+def test_explicit_reference_needs_collection_when_id_collides(context):
+    items = parse_json({'resource_id': 'anchor', 'user_id': 'user_one', 'target_system': 'store',
+                        'target_resource_id': '123'}, replace(context, system='controller'))
+    for collection in ['profiles', 'exports']:
+        items += parse_json({'resource_id': '123'}, replace(context, system='store', collection=collection), f'$.{collection}')
+    assert len(confirmed(correlate(items)[0])) == 1
+    items[0] = items[0].model_copy(update={'payload': {**items[0].payload, 'target_collection': 'exports'}})
+    result, resources, _ = correlate(items)
+    assert len(confirmed(result)) == 2
+    assert {r.reference.collection for r in resources if r.reference.resource_id == '123'} == {'exports'}
+
+
+def test_repeating_anchor_resource_id_is_not_an_explicit_cross_collection_link(context):
+    items = parse_json({'resource_id': '123', 'user_id': 'user_one', 'source_system': 'store',
+                        'source_resource_id': '123'}, replace(context, system='store', collection='profiles'))
+    items += parse_json({'resource_id': '123'}, replace(context, system='store', collection='exports'), '$.export')
+    result, resources, _ = correlate(items)
+    assert len(confirmed(result)) == 1
+    assert {r.reference.collection for r in resources} == {'profiles'}
+
+
+def test_observation_permutations_preserve_associations_and_provenance(context):
+    items = parse_json([
+        {'trace_id': 't1', 'lookup_key': 'new@example.invalid', 'resource_id': 'a'},
+        {'trace_id': 't1', 'resource_id': 'b'},
+        {'resource_id': 'b'},
+        {'resource_id': 'a', 'collection': 'exports'},
+    ], replace(context, system='store', collection='profiles'))
+    expected = correlate(items)
+    for permuted in permutations(items):
+        assert correlate(permuted) == expected
+
+
+def test_structural_json_keys_and_integrity_seals_are_not_subjects(context):
+    items = parse_json({'resource_id': 'mine', 'user_id': 'user_one',
+                        'record_json': '{"user_id":"user_one"}',
+                        'integrity_seal': 'sha256:' + 'a' * 64}, context)
+    result, resources, _ = correlate(items)
+    assert len(confirmed(result)) == 1
+    assert {r.reference.resource_id for r in resources} == {'mine'}
+
+
+def test_serialized_subject_field_names_are_not_subject_identifiers(context):
+    items = parse_json({'resource_id': 'mine', 'user_id': 'user_one',
+                        'record_json': '{"user_reference":"user_one"}'}, context)
+    assert len(confirmed(correlate(items)[0])) == 1
+
+
+def test_structured_record_type_and_resource_names_are_not_extra_subjects(context):
+    items = parse_json({'resource_id': 'user_record', 'user_id': 'user_one',
+                        'record_type': 'USER_DOCUMENT', 'lookup_key': 'user_record',
+                        'text': 'USER_DOCUMENT user_record user_one'}, context)
+    assert len(confirmed(correlate(items)[0])) == 1
+
+
+def test_mixed_subjects_inside_one_lookup_field_are_ambiguous(context):
+    items = parse_json({'resource_id': 'mixed', 'lookup_key': 'new@example.invalid unknown@example.invalid'}, context)
+    result, resources, _ = correlate(items)
+    assert result[0].association == 'POTENTIAL'
+    assert not resources
+
+
+def test_future_resource_cannot_explain_unknown_trace_selector(context):
+    items = parse_json([
+        {'trace_id': 't1', 'lookup_key': 'new@example.invalid'},
+        {'trace_id': 't1', 'lookup_key': 'customer_unknown'},
+        {'trace_id': 't1', 'resource_id': 'unproven'},
+        {'resource_id': 'customer_unknown', 'updated_at': T4},
+    ], replace(context, system='store'))
+    result, resources, _ = correlate(items, cutoff=T3)
+    assert len(confirmed(result)) == 1
+    assert not resources
+
+
+def test_resource_can_return_to_original_owner_without_crossing_foreign_interval(context):
+    scoped = replace(context, system='store', collection='profiles',
+                     manifest=context.manifest.model_copy(update={'captured_at': parse_timestamp(T1)}))
+    items = []
+    for locator, at, owner in [('$.foreign', T1, 'user_two'), ('$.before', T2, None),
+                               ('$.mine', T3, 'user_one'), ('$.after', T4, None)]:
+        items += parse_json({'resource_id': '123', 'updated_at': at, 'user_id': owner}, scoped, locator)
+    result, _, _ = correlate(items)
+    # T2 still follows the foreign owner's claim; the T3 anchor cannot backfill it.
+    assert {o.observation.provenance.locator for o in confirmed(result)} == {'$.mine', '$.after'}
