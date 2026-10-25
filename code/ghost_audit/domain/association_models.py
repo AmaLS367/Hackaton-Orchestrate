@@ -8,8 +8,14 @@ from pydantic import Field
 from ghost_audit.domain.models import EvidenceEntry, Observation, ResourceRef, StrictModel
 from ghost_audit.domain.time import Timestamp
 
+CorrelationMethod = Literal[
+    "DIRECT_IDENTIFIER", "SCOPED_TRACE", "RESOURCE", "EXPLICIT_RESOURCE_REFERENCE", "WORKFLOW_BATCH"
+]
+
 
 class IntentResult(StrictModel):
+    """Deletion authorization and uncertainty, independent of workflow status."""
+
     decision: Literal["DELETE_INTENT", "NO_DELETE_INTENT", "UNCERTAIN"]
     reason_id: str
     confidence: Literal["HIGH", "LOW"]
@@ -17,6 +23,8 @@ class IntentResult(StrictModel):
 
 
 class IdentityAlias(StrictModel):
+    """An exact alias statement with source, interval bounds and cutoff activity."""
+
     field_name: Literal["user_id", "email", "phone", "email_hash", "name"]
     normalized_value: str
     original_value: str
@@ -30,6 +38,8 @@ class IdentityAlias(StrictModel):
 
 
 class ResolvedIdentity(StrictModel):
+    """Unique, ambiguous or unresolved ownership with its historical statements."""
+
     status: Literal["RESOLVED", "AMBIGUOUS", "UNRESOLVED"]
     user_id: str | None = None
     candidates: list[str] = Field(default_factory=list)
@@ -38,6 +48,8 @@ class ResolvedIdentity(StrictModel):
 
 
 class ObservationLink(StrictModel):
+    """A stable citation to one located observation within its source."""
+
     evidence_id: str
     file_path: str
     locator: str
@@ -49,13 +61,9 @@ class ObservationLink(StrictModel):
 
 
 class CorrelationLink(StrictModel):
-    method: Literal[
-        "DIRECT_IDENTIFIER",
-        "SCOPED_TRACE",
-        "RESOURCE",
-        "EXPLICIT_RESOURCE_REFERENCE",
-        "WORKFLOW_BATCH",
-    ]
+    """The grounded chain establishing an association and its ownership method."""
+
+    method: CorrelationMethod
     supporting_observations: list[ObservationLink]
     matched_identifiers: list[str] = Field(default_factory=list)
     alias_origins: list[IdentityAlias] = Field(default_factory=list)
@@ -63,6 +71,8 @@ class CorrelationLink(StrictModel):
 
 
 class AssociatedObservation(StrictModel):
+    """An observation with explicit confirmed, potential or unrelated ownership."""
+
     observation: Observation
     association: Literal["CONFIRMED", "POTENTIAL", "UNRELATED"]
     links: list[CorrelationLink] = Field(default_factory=list)
@@ -70,11 +80,15 @@ class AssociatedObservation(StrictModel):
 
 
 class AssociatedResource(StrictModel):
+    """A scoped resource and the observations that establish its association."""
+
     reference: ResourceRef
     supporting_observations: list[ObservationLink]
 
 
 class CaseEvidenceBundle(StrictModel):
+    """Case-local discovery results; associations are not compliance findings."""
+
     case_id: str
     audit_at: Timestamp
     intent: IntentResult

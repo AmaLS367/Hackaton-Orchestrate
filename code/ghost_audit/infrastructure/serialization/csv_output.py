@@ -5,22 +5,27 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from ghost_audit.infrastructure.serialization.csv_records import read_csv
+
+from ghost_audit.domain.citation_validation import validate_output
 from ghost_audit.domain.evidence_index import EvidenceIndex
 from ghost_audit.domain.models import DeletionRequest
-
 from ghost_audit.domain.output_contract import OUTPUT_COLUMNS, OutputRow
-from ghost_audit.domain.citation_validation import validate_output
+from ghost_audit.infrastructure.serialization.csv_records import read_csv
 
 
 def read_output(path: Path) -> list[OutputRow]:
+    """Read canonical official rows and reject malformed, duplicate or unsorted cases."""
     rows = []
     seen = set()
     for number, row in enumerate(read_csv(path, OUTPUT_COLUMNS), 2):
         try:
             steps = json.loads(row["steps_json"])
-            parsed = OutputRow(
-                case_id=row["case_id"], deletion_status=row["deletion_status"], steps=steps
+            parsed = OutputRow.model_validate(
+                {
+                    "case_id": row["case_id"],
+                    "deletion_status": row["deletion_status"],
+                    "steps": steps,
+                }
             )
         except (ValueError, TypeError) as exc:
             raise ValueError(f"{path.name}: invalid output row {number}") from exc

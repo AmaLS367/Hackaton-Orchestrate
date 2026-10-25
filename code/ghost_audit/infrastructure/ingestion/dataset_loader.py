@@ -1,9 +1,11 @@
 """Load only participant-facing CSVs and manifest evidence into domain inputs."""
 
 import hashlib
+from collections.abc import Sequence
 from pathlib import Path
-from ghost_audit.infrastructure.serialization.csv_records import load_models
-from ghost_audit.infrastructure.parsers.structured import timestamps
+from typing import Literal
+
+from ghost_audit.domain.dataset import Dataset
 from ghost_audit.domain.models import (
     Activity,
     DeletionRequest,
@@ -15,12 +17,19 @@ from ghost_audit.domain.models import (
     Provenance,
     ResourceRef,
 )
-
-from ghost_audit.domain.dataset import Dataset
 from ghost_audit.infrastructure.parsers.documents import catalog_references, parse_document
+from ghost_audit.infrastructure.parsers.structured import timestamps
+from ghost_audit.infrastructure.serialization.csv_records import load_models
 
 
-def row_observations(filename, rows, key, kind, time_field, digest) -> list[Observation]:
+def row_observations(
+    filename: str,
+    rows: Sequence[Identity | IdentityChange | Activity],
+    key: str,
+    kind: Literal["evidence", "activity_claim", "identity"],
+    time_field: str,
+    digest: str,
+) -> list[Observation]:
     """CSV rows (identities, identity changes, activity claims) as provenance-bearing observations."""
     observations = []
     for row_no, item in enumerate(rows, 2):
@@ -42,7 +51,7 @@ def row_observations(filename, rows, key, kind, time_field, digest) -> list[Obse
                 payload=payload,
                 system_ids=systems,
                 resources=[ResourceRef(resource_id=resource, system_id=item.target_system or None)]
-                if resource
+                if resource and isinstance(item, Activity)
                 else [],
             )
         )
@@ -69,6 +78,7 @@ def load_dataset(dataset: Path, *, samples: bool = False) -> Dataset:
     catalog = catalog_references(activities)
     documents = [parse_document(dataset, manifest, catalog) for manifest in manifests]
     observations = [item for document in documents for item in document.observations]
+    kind: Literal["evidence", "activity_claim", "identity"]
     for filename, rows, key, kind, time_field in (
         ("user_identities.csv", identities, "user_id", "identity", "updated_at"),
         ("user_audit_log.csv", changes, "audit_id", "identity", "event_time"),

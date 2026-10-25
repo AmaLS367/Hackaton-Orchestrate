@@ -1,11 +1,19 @@
 """Official row and step invariants and deterministic canonical ordering."""
 
-from typing import Literal
+from __future__ import annotations
+
+from typing import Literal, Self
+
 from pydantic import Field, model_validator
+
 from ghost_audit.domain.models import Identifier, StrictModel
 
+Phase = Literal["FINDING", "REMEDIATION", "VERIFICATION"]
+State = Literal["PRESENT", "ACTIVE", "DISABLED", "BLOCKED", "ABSENT", "REDACTED", "ANONYMIZED"]
+DeletionStatus = Literal["COMPLETE", "INCOMPLETE", "NOT_APPLICABLE"]
 
-OPERATIONS = {
+
+OPERATIONS: dict[Operation, tuple[Phase, State]] = {
     "REPORT_REMAINING_RECORD": ("FINDING", "PRESENT"),
     "REPORT_EXPOSED_PII": ("FINDING", "PRESENT"),
     "REPORT_ACTIVE_DATA_FLOW": ("FINDING", "ACTIVE"),
@@ -47,8 +55,10 @@ Operation = Literal[
 
 
 class OutputStep(StrictModel):
+    """Exactly the seven official step fields with a valid operation/state pair."""
+
     step_no: int = Field(ge=1)
-    phase: Literal["FINDING", "REMEDIATION", "VERIFICATION"]
+    phase: Phase
     system_id: Identifier
     resource_id: Identifier
     operation: Operation
@@ -56,7 +66,7 @@ class OutputStep(StrictModel):
     evidence_id: str
 
     @model_validator(mode="after")
-    def operation_contract(self):
+    def operation_contract(self) -> Self:
         if OPERATIONS.get(self.operation) != (self.phase, self.state):
             raise ValueError("invalid phase/operation/state combination")
         if self.evidence_id and not self.evidence_id.strip():
@@ -64,7 +74,7 @@ class OutputStep(StrictModel):
         return self
 
 
-def step_key(step: OutputStep):
+def step_key(step: OutputStep) -> tuple[int, str, str, str]:
     return OPERATION_ORDER[step.operation], step.system_id, step.resource_id, step.evidence_id
 
 
@@ -77,12 +87,14 @@ def canonical_steps(steps: list[OutputStep]) -> list[OutputStep]:
 
 
 class OutputRow(StrictModel):
+    """One official case result with consecutive, canonical and citation-safe steps."""
+
     case_id: Identifier
-    deletion_status: Literal["COMPLETE", "INCOMPLETE", "NOT_APPLICABLE"]
+    deletion_status: DeletionStatus
     steps: list[OutputStep]
 
     @model_validator(mode="after")
-    def row_contract(self):
+    def row_contract(self) -> Self:
         if self.deletion_status == "NOT_APPLICABLE":
             if self.steps:
                 raise ValueError("NOT_APPLICABLE requires []")
@@ -109,3 +121,29 @@ class OutputRow(StrictModel):
 
 
 OUTPUT_COLUMNS = ["case_id", "deletion_status", "steps_json"]
+
+
+REMEDIATION: dict[str, Operation] = {
+    "DELETE": "DELETE_RECORD",
+    "REDACT": "REDACT_RECORD",
+    "ANONYMIZE": "ANONYMIZE_RECORD",
+    "DISABLE": "DISABLE_DATA_FLOW",
+    "BLOCK": "BLOCK_RESTORE",
+}
+
+VERIFICATION: dict[str, Operation] = {
+    "DELETE": "VERIFY_RECORD_ABSENT",
+    "RETAIN": "VERIFY_RECORD_PRESENT",
+    "REDACT": "VERIFY_RECORD_REDACTED",
+    "ANONYMIZE": "VERIFY_RECORD_ANONYMIZED",
+    "DISABLE": "VERIFY_DATA_FLOW_DISABLED",
+    "BLOCK": "VERIFY_RESTORE_BLOCKED",
+}
+
+FINDINGS: dict[str, Operation] = {
+    "DELETE": "REPORT_REMAINING_RECORD",
+    "REDACT": "REPORT_EXPOSED_PII",
+    "ANONYMIZE": "REPORT_EXPOSED_PII",
+    "DISABLE": "REPORT_ACTIVE_DATA_FLOW",
+    "BLOCK": "REPORT_RESTORE_RISK",
+}

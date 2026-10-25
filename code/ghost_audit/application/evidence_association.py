@@ -1,18 +1,21 @@
 """Reusable Phase 2 services and privacy-conscious diagnostics."""
 
 from collections import Counter, defaultdict
+from datetime import datetime
 
+from ghost_audit.domain.association_models import AssociatedObservation, CaseEvidenceBundle
 from ghost_audit.domain.correlation import EvidenceCorrelator
-from ghost_audit.domain.identity import IdentityResolver
-from ghost_audit.domain.evidence_index import EvidenceIndex
 from ghost_audit.domain.dataset import Dataset
+from ghost_audit.domain.evidence_index import EvidenceIndex
+from ghost_audit.domain.identity import IdentityResolver
 from ghost_audit.domain.intent import IntentClassifier
 from ghost_audit.domain.models import DeletionRequest, Observation
-from ghost_audit.domain.association_models import AssociatedObservation, CaseEvidenceBundle
 from ghost_audit.domain.workflow_attribution import WorkflowAttribution
 
 
 class EvidenceAssociationService:
+    """Coordinate identity, bounded discovery and per-case evidence bundles."""
+
     def __init__(self, dataset: Dataset, index: EvidenceIndex | None = None):
         self.dataset = dataset
         self.index = (
@@ -31,7 +34,7 @@ class EvidenceAssociationService:
         for other in self.workflow.requests:
             self.by_subject[self.workflow.users[other.case_id]].append(other)
 
-    def prior_audit(self, request: DeletionRequest, user):
+    def prior_audit(self, request: DeletionRequest, user: str | None) -> datetime | None:
         """Latest audit of an earlier authorized request by the same subject."""
         earlier = [
             r.audit_at
@@ -81,7 +84,7 @@ class EvidenceAssociationService:
             resources=resources,
             supporting_evidence_ids=sorted(evidence_ids),
             deferred_evidence=deferred,
-            ambiguities=sorted(set([*identity.ambiguities, *ambiguities])),
+            ambiguities=sorted({*identity.ambiguities, *ambiguities}),
             limitations=[
                 "Associations do not establish record state or policy compliance.",
                 "Deferred files are an unassigned candidate pool; contents and subject are unknown.",
@@ -114,8 +117,12 @@ class EvidenceAssociationService:
 
 
 def diagnostics(bundles: list[CaseEvidenceBundle]) -> dict:
-    confirmed = lambda b: any(o.association == "CONFIRMED" for o in b.observations)
-    potential = lambda b: any(o.association == "POTENTIAL" for o in b.observations)
+    def confirmed(b):
+        return any(o.association == "CONFIRMED" for o in b.observations)
+
+    def potential(b):
+        return any(o.association == "POTENTIAL" for o in b.observations)
+
     additional = [
         b.case_id
         for b in bundles
@@ -125,8 +132,8 @@ def diagnostics(bundles: list[CaseEvidenceBundle]) -> dict:
         or not confirmed(b)
         or b.deferred_evidence
     ]
-    intent_counts = Counter(b.intent.decision for b in bundles)
-    identity_counts = Counter(b.identity.status for b in bundles)
+    intent_counts: Counter[str] = Counter(b.intent.decision for b in bundles)
+    identity_counts: Counter[str] = Counter(b.identity.status for b in bundles)
     return {
         "cases": len(bundles),
         "intent": {

@@ -3,9 +3,9 @@
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
-from ghost_audit.domain.evidence_index import EvidenceIndex
-from ghost_audit.domain.models import DeletionRequest
 
+from ghost_audit.domain.evidence_index import EvidenceIndex
+from ghost_audit.domain.models import DeletionRequest, Observation
 from ghost_audit.domain.output_contract import OutputRow, OutputStep
 
 
@@ -22,9 +22,6 @@ class CitationCheck:
     state_support: Literal["unverified"] = "unverified"
 
 
-_LISTINGS: dict[int, dict] = {}
-
-
 def omitted_from_listing(
     evidence: EvidenceIndex, evidence_id: str, system_id: str, resource_id: str, cutoff: datetime
 ) -> bool:
@@ -32,14 +29,8 @@ def omitted_from_listing(
     snapshot table or a JSON collection snapshot), captured by the cutoff, that does not
     contain the resource."""
     from ghost_audit.domain.submission_semantics import prefix
-    from ghost_audit.domain.snapshot_inventory import snapshot_listings
 
-    listings = _LISTINGS.get(id(evidence))
-    if listings is None or listings.get("index") is not evidence:
-        listings = _LISTINGS[id(evidence)] = {
-            "index": evidence,
-            "listings": snapshot_listings(evidence.observations),
-        }
+    listings = evidence.submission_listings
     return any(
         item.evidence_id == evidence_id
         and item.captured_at is not None
@@ -47,13 +38,14 @@ def omitted_from_listing(
         and item.at is not None
         and item.at <= cutoff
         and resource_id not in item.ids
-        for item in listings["listings"].get((system_id, prefix(resource_id)), ())
+        for item in listings.get((system_id, prefix(resource_id)), ())
     )
 
 
 def check_citation(
     case_id: str, step: OutputStep, cutoff: datetime, evidence: EvidenceIndex
 ) -> CitationCheck:
+    """Check citation availability and resource linkage without asserting state truth."""
     entry = evidence.registry.get(step.evidence_id)
     if entry is None:
         raise ValueError(f"{case_id}: unknown evidence citation: {step.evidence_id}")
@@ -72,7 +64,7 @@ def check_citation(
         item for item in candidates if item.available_at is not None and item.available_at <= cutoff
     ]
 
-    def linked(item):
+    def linked(item: Observation) -> bool:
         return any(
             resource.resource_id == step.resource_id
             and resource.system_id in (None, step.system_id)

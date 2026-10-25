@@ -1,10 +1,13 @@
 """Identifier-only uncertainty records, separate from official predictions."""
 
 from pydantic import Field
+
 from ghost_audit.domain.models import StrictModel
 
 
 class Obligation(StrictModel):
+    """An identifier-only unresolved policy or state obligation."""
+
     resource: str
     scope: str
     category: str | None
@@ -14,6 +17,8 @@ class Obligation(StrictModel):
 
 
 class AbstentionDiagnostic(StrictModel):
+    """Actionable uncertainty causes without copying personal fields or raw evidence."""
+
     case_id: str
     intent: str
     identity: str

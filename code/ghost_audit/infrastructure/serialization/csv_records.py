@@ -22,7 +22,7 @@ def read_csv(path: Path, columns: list[str]) -> list[dict[str, str]]:
         return rows
 
 
-def load_models(path: Path, model: type[T], unique_key: str) -> list[T]:
+def load_models[T: StrictModel](path: Path, model: type[T], unique_key: str) -> list[T]:
     result = []
     seen = set()
     for number, row in enumerate(read_csv(path, list(model.model_fields)), 2):

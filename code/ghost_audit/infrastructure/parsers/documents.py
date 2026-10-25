@@ -4,16 +4,14 @@ import hashlib
 import json
 import re
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Literal
+
+from pydantic import JsonValue
 from pypdf import PdfReader
+
 from ghost_audit.domain.catalog import COLLECTION_SYSTEMS
-from ghost_audit.infrastructure.parsers.structured import (
-    ExtractionContext,
-    parse_csv,
-    parse_json,
-    parse_text,
-)
 from ghost_audit.domain.models import (
     Activity,
     EvidenceDocument,
@@ -23,7 +21,12 @@ from ghost_audit.domain.models import (
 )
 from ghost_audit.infrastructure.parsers.image_ocr import image_panels, image_text
 from ghost_audit.infrastructure.parsers.sql_snapshot import parse_sql
-
+from ghost_audit.infrastructure.parsers.structured import (
+    ExtractionContext,
+    parse_csv,
+    parse_json,
+    parse_text,
+)
 
 CATALOG_LINK = re.compile(r"(?:linked|confirmed) (?P<resource>[\w-]+) \((?P<alias>[^)]+)\)")
 
@@ -37,9 +40,9 @@ EMAIL_TOKEN = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 USER_TOKEN = re.compile(r"(?<![\w-])user_\d+(?![\w-])")
 
 
-def catalog_references(activities: list[Activity]) -> dict[str, tuple[str, str, object]]:
+def catalog_references(activities: list[Activity]) -> dict[str, tuple[str, str, datetime]]:
     """Reference text -> (system, resource, catalogued_at) from data-catalog link events."""
-    references = {}
+    references: dict[str, tuple[str, str, datetime]] = {}
     for activity in sorted(activities, key=lambda a: a.activity_id):
         match = CATALOG_LINK.search(activity.details)
         if (
@@ -63,7 +66,7 @@ def section_text(text: str, reference: str) -> str:
     section. A section naming more than one subject (several emails or user IDs) is a
     multi-person register: only the lines naming the reference describe its subject.
     """
-    sections = []
+    sections: list[str] = []
     for page in text.split("\f"):
         if sections and re.search(r"\bcontinued\b", page[:200], re.I):
             sections[-1] += "\n" + page
@@ -78,7 +81,7 @@ def section_text(text: str, reference: str) -> str:
 def document_observations(
     text: str,
     context: ExtractionContext,
-    catalog: dict[str, tuple[str, str, object]],
+    catalog: dict[str, tuple[str, str, datetime]],
     *,
     catalogued_only: bool,
 ) -> list[Observation]:
@@ -99,7 +102,7 @@ def document_observations(
         if context.manifest.origin in set(COLLECTION_SYSTEMS.values())
         else None
     )
-    found = {}
+    found: dict[tuple[str, str], tuple[str, datetime | None]] = {}
     for token in RESOURCE_TOKEN.findall(text):
         if catalogued_only and token not in catalog:
             continue
@@ -125,7 +128,7 @@ def document_observations(
         )
         emails = sorted(set(EMAIL_TOKEN.findall(scoped)))
         users = sorted(set(USER_TOKEN.findall(scoped)))
-        payload = {
+        payload: dict[str, JsonValue] = {
             "resource_id": resource,
             "document_reference": reference,
             "document_text": scoped,
@@ -160,7 +163,9 @@ def evidence_path(dataset: Path, relative: str) -> Path:
 
 
 def parse_document(
-    dataset: Path, manifest: EvidenceFile, catalog: dict[str, tuple[str, str, object]] | None = None
+    dataset: Path,
+    manifest: EvidenceFile,
+    catalog: dict[str, tuple[str, str, datetime]] | None = None,
 ) -> EvidenceDocument:
     path = evidence_path(dataset, manifest.file_path)
     content = path.read_bytes()
@@ -168,7 +173,7 @@ def parse_document(
     context = ExtractionContext(manifest, digest)
     catalog = catalog or {}
     notes = []
-    status = "parsed"
+    status: Literal["parsed", "deferred"] = "parsed"
     suffix = path.suffix.lower()
     if suffix == ".pdf":
         observations = []
@@ -187,13 +192,15 @@ def parse_document(
     elif suffix in {".png", ".jpg", ".jpeg"}:
         observations = []
         status = "deferred"
-        text = image_text(path, digest)
-        if text is None:
+        image_content = image_text(path, digest)
+        if image_content is None:
             notes.append("Image content retained by manifest and digest; OCR is unavailable.")
         else:
             # Raw OCR is an unverified extraction: only catalogued resources become
             # observations, and identifiers must still match exactly downstream.
-            observations = document_observations(text, context, catalog, catalogued_only=True)
+            observations = document_observations(
+                image_content, context, catalog, catalogued_only=True
+            )
             for reference, panel in image_panels(path, digest):
                 if reference not in catalog:
                     continue

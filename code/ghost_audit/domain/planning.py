@@ -2,35 +2,25 @@
 
 from collections import defaultdict
 
-from ghost_audit.domain.output_contract import OPERATIONS, OutputRow, OutputStep, canonical_steps
+from ghost_audit.domain.output_contract import (
+    FINDINGS,
+    OPERATIONS,
+    REMEDIATION,
+    VERIFICATION,
+    DeletionStatus,
+    Operation,
+    OutputRow,
+    OutputStep,
+    canonical_steps,
+)
 from ghost_audit.domain.policy import supported_observations
-from ghost_audit.domain.policy_models import CaseDecision
-
-REMEDIATION = {
-    "DELETE": "DELETE_RECORD",
-    "REDACT": "REDACT_RECORD",
-    "ANONYMIZE": "ANONYMIZE_RECORD",
-    "DISABLE": "DISABLE_DATA_FLOW",
-    "BLOCK": "BLOCK_RESTORE",
-}
-VERIFICATION = {
-    "DELETE": "VERIFY_RECORD_ABSENT",
-    "RETAIN": "VERIFY_RECORD_PRESENT",
-    "REDACT": "VERIFY_RECORD_REDACTED",
-    "ANONYMIZE": "VERIFY_RECORD_ANONYMIZED",
-    "DISABLE": "VERIFY_DATA_FLOW_DISABLED",
-    "BLOCK": "VERIFY_RESTORE_BLOCKED",
-}
-FINDINGS = {
-    "DELETE": "REPORT_REMAINING_RECORD",
-    "REDACT": "REPORT_EXPOSED_PII",
-    "ANONYMIZE": "REPORT_EXPOSED_PII",
-    "DISABLE": "REPORT_ACTIVE_DATA_FLOW",
-    "BLOCK": "REPORT_RESTORE_RISK",
-}
+from ghost_audit.domain.policy_models import CaseDecision, PolicyAssessment
+from ghost_audit.domain.temporal_models import CaseStateBundle
 
 
-def step(assessment, operation, evidence_id=""):
+def step(assessment: PolicyAssessment, operation: Operation, evidence_id: str = "") -> OutputStep:
+    """Construct an official operation only for an assessment with known system scope."""
+    assert assessment.scope.system_id is not None
     phase, state = OPERATIONS[operation]
     return OutputStep(
         step_no=1,
@@ -43,16 +33,16 @@ def step(assessment, operation, evidence_id=""):
     )
 
 
-def deduplicate(steps):
-    # Several physical scopes may prove one logical violation. Choose a deterministic
-    # citation actually supporting that violation, never one proving a compliant replica.
-    result = {}
+def deduplicate(steps: list[OutputStep]) -> list[OutputStep]:
+    """Choose deterministic supporting citations across equivalent logical operations."""
+    result: dict[tuple[str, str, str], OutputStep] = {}
     for s in sorted(steps, key=lambda s: (s.evidence_id, s.model_dump_json())):
         result.setdefault((s.operation, s.system_id, s.resource_id), s)
     return canonical_steps(list(result.values()))
 
 
-def dependency_conflicts(bundle, steps):
+def dependency_conflicts(bundle: CaseStateBundle, steps: list[OutputStep]) -> list[str]:
+    """Reject dependency orders that cannot fit the official canonical operation order."""
     positions = {
         (s.system_id, s.resource_id): i
         for i, s in enumerate(steps)
@@ -64,28 +54,39 @@ def dependency_conflicts(bundle, steps):
         for o in supported_observations(h, bundle.audit_at):
             source = o.attributes.get("source_resource_id")
             system = o.attributes.get("source_system_id") or o.attributes.get("source_system")
-            if source and not system:
+            if source:
+                assert isinstance(source, str)
+            if system:
+                assert isinstance(system, str)
+            if isinstance(source, str) and source and not system:
                 candidates = [key for key in positions if key[1] == source]
                 if len(candidates) == 1:
                     system = candidates[0][0]
                 elif len(candidates) > 1:
                     conflicts.append("cleanup_dependency_system_ambiguous:" + source)
-            if source and system and target in positions and (system, source) in positions:
-                if positions[target] >= positions[(system, source)]:
-                    conflicts.append(
-                        "cleanup_dependency_conflicts_with_official_order:"
-                        + system
-                        + ":"
-                        + source
-                        + "->"
-                        + ":".join(target)
-                    )
+            if (
+                isinstance(source, str)
+                and source
+                and isinstance(system, str)
+                and system
+                and target in positions
+                and (system, source) in positions
+            ) and positions[target] >= positions[(system, source)]:
+                conflicts.append(
+                    "cleanup_dependency_conflicts_with_official_order:"
+                    + system
+                    + ":"
+                    + source
+                    + "->"
+                    + ":".join(target)
+                )
     return sorted(set(conflicts))
 
 
-def plan_case(bundle, assessments):
+def plan_case(bundle: CaseStateBundle, assessments: list[PolicyAssessment]) -> CaseDecision:
+    """Plan grounded findings and final checks, or retain explicit publication blockers."""
     unresolved = sorted(
-        set(reason for a in assessments if a.compliance == "UNKNOWN" for reason in a.reasons)
+        {reason for a in assessments if a.compliance == "UNKNOWN" for reason in a.reasons}
     )
     unresolved.extend(
         sorted(
@@ -145,6 +146,7 @@ def plan_case(bundle, assessments):
     incomplete = bool(violations)
     steps = []
     for a in violations:
+        assert a.required_action is not None
         citation = min(link.evidence_id for link in a.evidence)
         steps.extend(
             [
@@ -160,14 +162,16 @@ def plan_case(bundle, assessments):
         if len(actions) != 1:
             blockers.append("incompatible_policy_treatments_for_one_output_resource")
             continue
+        action = values[0].required_action
+        assert action is not None
         # Future verification also checks already-compliant retained resources and processes.
         if incomplete:
-            steps.append(step(values[0], VERIFICATION[values[0].required_action]))
+            steps.append(step(values[0], VERIFICATION[action]))
         elif all(a.compliance == "COMPLIANT" for a in values):
             # Every physical scope must be compliant before one logical verification is emitted.
             # Its citation proves the named logical state; scope coverage stays in diagnostics.
             citations = [link.evidence_id for a in values for link in a.evidence]
-            steps.append(step(values[0], VERIFICATION[values[0].required_action], min(citations)))
+            steps.append(step(values[0], VERIFICATION[action], min(citations)))
     steps = deduplicate(steps)
     # The problem statement fixes the order (operation, system, resource); flows and
     # restores already precede every record change. Explicit source links are recorded.
@@ -181,7 +185,7 @@ def plan_case(bundle, assessments):
             unresolved=sorted(set(unresolved)),
             blockers=sorted(set(blockers)),
         )
-    status = "INCOMPLETE" if incomplete else "COMPLETE"
+    status: DeletionStatus = "INCOMPLETE" if incomplete else "COMPLETE"
     return CaseDecision(
         case_id=bundle.case_id,
         decision=status,

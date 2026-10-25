@@ -72,7 +72,7 @@ def panels_from_tsv(tsv: str) -> list[tuple[str, str]]:
         if any(int(t["top"]) < y and abs(int(t["left"]) - x) < 24 for t in titles):
             continue
         selected = [r for r in words if int(r["left"]) >= x - 12 and int(r["top"]) >= y - 2]
-        lines = []
+        lines: list[tuple[int, list[dict[str, str]]]] = []
         for r in sorted(selected, key=lambda r: (int(r["top"]), int(r["left"]))):
             top = int(r["top"])
             if not lines or top - lines[-1][0] > 8:

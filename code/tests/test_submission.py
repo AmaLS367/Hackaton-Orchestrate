@@ -9,7 +9,8 @@ from ghost_audit.domain.evidence_index import EvidenceIndex
 from ghost_audit.infrastructure.ingestion.dataset_loader import load_dataset
 from ghost_audit.infrastructure.serialization.csv_output import read_output
 from ghost_audit.domain.citation_validation import validate_output
-from ghost_audit.application.submission_service import SubmissionPredictor, predict_submission
+from ghost_audit.application.submission_service import predict_submission
+from ghost_audit.application.submission.records import SubmissionRecords
 from ghost_audit.domain.snapshot_inventory import snapshot_listings
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -74,11 +75,11 @@ def test_replica_copy_in_the_case_file_outranks_an_unrelated_inventory(samples):
 
 
 def test_stable_reference_is_permitted_for_redaction_not_anonymization():
-    direct, stable, subject = SubmissionPredictor._exposure(
+    direct, stable, subject = SubmissionRecords._exposure(
         {'customer_reference': 'user_26', 'requester_email': None, 'message_excerpt': 'Order update.'},
         {'user_26', 'subject@example.test'})
     assert (direct, stable, subject) == (False, True, False)
-    _, _, subject = SubmissionPredictor._exposure(
+    _, _, subject = SubmissionRecords._exposure(
         {'message_text': 'Send it to SUBJECT@example.test please'}, {'user_26', 'subject@example.test'})
     assert subject
 

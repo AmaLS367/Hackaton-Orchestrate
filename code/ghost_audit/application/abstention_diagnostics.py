@@ -6,20 +6,22 @@ leads for investigation; none is the subject's record until independently linked
 """
 
 from collections import Counter
+from collections.abc import Iterable
+from datetime import datetime
 
-from ghost_audit.domain.diagnostic_models import Obligation, AbstentionDiagnostic
-
-from ghost_audit.domain.evidence_index import EvidenceIndex
-from ghost_audit.domain.models import ResourceRef
+from ghost_audit.application.observation_interpretation import interpret
 from ghost_audit.domain.association_models import (
     AssociatedObservation,
     CaseEvidenceBundle,
     CorrelationLink,
     ObservationLink,
 )
-from ghost_audit.application.observation_interpretation import interpret
+from ghost_audit.domain.diagnostic_models import AbstentionDiagnostic, Obligation
+from ghost_audit.domain.evidence_index import EvidenceIndex
+from ghost_audit.domain.models import ResourceRef
 from ghost_audit.domain.observation_clocks import logical_collection
-from ghost_audit.domain.temporal_models import CaseStateBundle
+from ghost_audit.domain.policy_models import CaseDecision, PolicyAssessment
+from ghost_audit.domain.temporal_models import CaseStateBundle, ResourceHistory, ResourceScope
 
 STAGES = ("EXTRACT", "ASSOCIATE", "INTERPRET", "APPLY_POLICY", "PLAN", "VALIDATE")
 # Root cause -> the pipeline stage where the case first fails for that cause.
@@ -51,24 +53,16 @@ FIELD_COVERAGE = {
 }
 
 
-def label(ref) -> str:
+def label(ref: ResourceRef | ResourceScope) -> str:
     return f"{ref.system_id or '?'}:{ref.resource_id}"
 
 
-_LISTINGS: dict[int, tuple] = {}
-
-
-def listing_coverage(index: EvidenceIndex, refs, cutoff) -> dict[str, str]:
+def listing_coverage(
+    index: EvidenceIndex, refs: Iterable[ResourceRef], cutoff: datetime
+) -> dict[str, str]:
     """Per unresolved resource: whether any listing of its collection known by the cutoff
     could prove absence by omission, and if not, why not."""
-    from ghost_audit.domain.snapshot_coverage import coverage_surfaces
-
-    cached = _LISTINGS.get(id(index))
-    if cached is None or cached[0] is not index:
-        cached = _LISTINGS[id(index)] = (
-            index,
-            coverage_surfaces(index.observations, include_incomplete=True),
-        )
+    listings_by_collection = index.coverage_listings
     result = {}
     for ref in refs:
         collection = logical_collection(ref)
@@ -77,7 +71,7 @@ def listing_coverage(index: EvidenceIndex, refs, cutoff) -> dict[str, str]:
             continue
         listings = [
             item
-            for item in cached[1].get((ref.system_id, collection), ())
+            for item in listings_by_collection.get((ref.system_id, collection), ())
             if item.observed_at is not None
             and item.observed_at <= cutoff
             and item.surface.available_at is not None
@@ -93,7 +87,7 @@ def listing_coverage(index: EvidenceIndex, refs, cutoff) -> dict[str, str]:
     return dict(sorted(result.items()))
 
 
-def readback_states(index: EvidenceIndex, ref: ResourceRef, cutoff) -> list[str]:
+def readback_states(index: EvidenceIndex, ref: ResourceRef, cutoff: datetime) -> list[str]:
     """'evidence_id=STATE' for citable reads of one exact system resource, ignoring ownership."""
     found = set()
     for i in sorted(index.by_resource.get(ref.resource_id, ())):
@@ -129,7 +123,9 @@ def readback_states(index: EvidenceIndex, ref: ResourceRef, cutoff) -> list[str]
     return sorted(found)
 
 
-def late_evidence(index: EvidenceIndex, evidence: CaseEvidenceBundle, resources) -> list[str]:
+def late_evidence(
+    index: EvidenceIndex, evidence: CaseEvidenceBundle, resources: Iterable[ResourceRef]
+) -> list[str]:
     """Evidence naming the subject's identifiers or case resources, available only after the audit."""
     values = [a.normalized_value for a in evidence.aliases if a.field_name != "name"]
     late = set()
@@ -153,7 +149,7 @@ def late_evidence(index: EvidenceIndex, evidence: CaseEvidenceBundle, resources)
     return sorted(late)
 
 
-def assessment_causes(assessment, histories) -> list[str]:
+def assessment_causes(assessment: PolicyAssessment, histories: list[ResourceHistory]) -> list[str]:
     reasons = set(assessment.reasons)
     causes = set()
     if "policy_condition_unestablished_or_ambiguous" in reasons:
@@ -191,20 +187,24 @@ def assessment_causes(assessment, histories) -> list[str]:
 
 
 def diagnose(
-    evidence: CaseEvidenceBundle, state: CaseStateBundle, decision, index: EvidenceIndex
+    evidence: CaseEvidenceBundle,
+    state: CaseStateBundle,
+    decision: CaseDecision,
+    index: EvidenceIndex,
 ) -> AbstentionDiagnostic:
     """decision: the planner's CaseDecision for this case."""
     cutoff = evidence.audit_at
     confirmed = {label(r.reference) for r in evidence.resources}
-    potential = {}
+    potential: dict[str, tuple[ResourceRef, str]] = {}
     for item in evidence.observations:
         if item.association == "POTENTIAL":
             for r in item.observation.resources:
                 if label(r) not in confirmed:
                     potential.setdefault(label(r), (r, item.reason))
     candidates = {label(r): r for r in evidence.primary_profile_candidates}
-    proven, unknown = {}, {}
-    by_resource = {}
+    proven: dict[str, list[str]] = {}
+    unknown: dict[str, list[str]] = {}
+    by_resource: dict[str, list[ResourceHistory]] = {}
     for h in state.resource_histories:
         key = label(h.scope)
         by_resource.setdefault(key, []).append(h)

@@ -3,13 +3,12 @@
 import json
 import re
 import sqlite3
-from ghost_audit.domain.catalog import TABLE_SYSTEMS
 from contextlib import closing
 from dataclasses import replace
 
-from ghost_audit.infrastructure.parsers.structured import ExtractionContext, timestamps
-from ghost_audit.domain.catalog import ISO_TOKEN
+from ghost_audit.domain.catalog import ISO_TOKEN, TABLE_SYSTEMS
 from ghost_audit.domain.models import Observation
+from ghost_audit.infrastructure.parsers.structured import ExtractionContext, timestamps
 
 # Schema adapters map named tables, never resource-ID prefixes or case families.
 

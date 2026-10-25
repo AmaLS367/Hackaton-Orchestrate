@@ -7,8 +7,8 @@ from ghost_audit.domain.temporal_models import CaseStateBundle
 
 def diagnostics(bundles: list[CaseStateBundle]) -> dict:
     histories = [h for b in bundles for h in b.resource_histories]
-    records = Counter(h.record.state for h in histories)
-    support = Counter(h.record.support for h in histories)
+    records: Counter[str] = Counter(h.record.state for h in histories)
+    support: Counter[str] = Counter(h.record.support for h in histories)
     incomplete = [
         b.case_id
         for b in bundles

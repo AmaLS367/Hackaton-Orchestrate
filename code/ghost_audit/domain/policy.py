@@ -2,17 +2,26 @@
 
 import re
 from collections import defaultdict
+from datetime import datetime
+from typing import Literal
 
+from pydantic import JsonValue
+
+from ghost_audit.domain.association_models import ObservationLink, ResolvedIdentity
 from ghost_audit.domain.models import DeletionRule
-from ghost_audit.domain.association_models import ResolvedIdentity
+from ghost_audit.domain.observation_clocks import boolean
 from ghost_audit.domain.policy_models import PolicyAssessment
 from ghost_audit.domain.state_selection import links_sorted, scope_key
-from ghost_audit.domain.observation_clocks import boolean
-from ghost_audit.domain.temporal_models import CaseStateBundle, ResourceHistory, TemporalObservation
+from ghost_audit.domain.temporal_models import (
+    CaseStateBundle,
+    FieldObservation,
+    ResourceHistory,
+    TemporalObservation,
+)
 from ghost_audit.domain.time import parse_timestamp
 
 # Explicit participant schemas, not resource-ID conventions. An unknown schema stays unknown.
-COLLECTION_CATEGORIES = {
+COLLECTION_CATEGORIES: dict[tuple[str | None, str | None], str] = {
     ("account_service", "customer_profiles"): "USER_PROFILE",
     ("account_service", "deleted_customer_references"): "ACCOUNT_TOMBSTONE",
     ("identity_service", "deleted_customer_references"): "ACCOUNT_TOMBSTONE",
@@ -34,7 +43,7 @@ COLLECTION_CATEGORIES = {
     ("integration_service", "connector_configurations"): "DATA_FLOW",
     ("integration_service", "connector_subscriptions"): "DATA_FLOW",
 }
-EXPORT_CATEGORIES = {
+EXPORT_CATEGORIES: dict[tuple[str | None, str | None], str] = {
     ("account_service", "profile_lookups"): "USER_PROFILE",
     ("analytics_platform", "profiles"): "ANALYTICS_PROFILE",
     ("backup_service", "restore_entries"): "BACKUP_ARCHIVE",
@@ -128,7 +137,8 @@ IDENTIFYING = {
 }
 
 
-def supported_observations(history: ResourceHistory, cutoff) -> list[TemporalObservation]:
+def supported_observations(history: ResourceHistory, cutoff: datetime) -> list[TemporalObservation]:
+    """Keep only proven, confirmed facts available before the audit cutoff."""
     return [
         o
         for o in history.observations
@@ -141,7 +151,8 @@ def supported_observations(history: ResourceHistory, cutoff) -> list[TemporalObs
     ]
 
 
-def latest(observations):
+def latest(observations: list[TemporalObservation]) -> list[TemporalObservation]:
+    """Select all contemporaneous latest statements, preserving possible conflicts."""
     if not observations:
         return []
     at = max(o.observed_at for o in observations)
@@ -150,9 +161,9 @@ def latest(observations):
     )
 
 
-def attributes(observations):
+def attributes(observations: list[TemporalObservation]) -> dict[str, JsonValue]:
     """Conflicting contemporaneous attributes cannot authorize destructive treatment."""
-    values = defaultdict(list)
+    values: defaultdict[str, list[JsonValue]] = defaultdict(list)
     for o in observations:
         for key, value in o.attributes.items():
             if value not in values[key]:
@@ -160,8 +171,11 @@ def attributes(observations):
     return {key: items[0] for key, items in values.items() if len(items) == 1}
 
 
-def exposed(fields, identity: ResolvedIdentity, *, stable=False):
+def exposed(
+    fields: list[FieldObservation], identity: ResolvedIdentity, *, stable: bool = False
+) -> bool:
     # The stable internal user_id is a permitted reference unless anonymizing.
+    """Detect prohibited direct or subject-linked fields under the requested treatment."""
     aliases = [
         a.original_value.casefold()
         for a in identity.aliases
@@ -184,7 +198,9 @@ def exposed(fields, identity: ResolvedIdentity, *, stable=False):
     return False
 
 
-def coverage(fields, *, anonymize=False, tombstone=False):
+def coverage(
+    fields: list[FieldObservation], *, anonymize: bool = False, tombstone: bool = False
+) -> bool:
     """Full identifying-field groups must be observed, not just one null email."""
     names = {f.path.rsplit(".", 1)[-1] for f in fields}
     groups = [
@@ -200,12 +216,20 @@ def coverage(fields, *, anonymize=False, tombstone=False):
 
 
 class PolicyEvaluator:
-    def __init__(self, rules: list[DeletionRule]):
+    """Apply supplied policy facts without treating missing conditions as permission."""
+
+    def __init__(self, rules: list[DeletionRule]) -> None:
         self.rules = defaultdict(list)
         for rule in sorted(rules, key=lambda r: r.rule_id):
             self.rules[rule.data_category].append(rule)
 
-    def category(self, history, observations, *, fallback=True):
+    def category(
+        self,
+        history: ResourceHistory,
+        observations: list[TemporalObservation],
+        *,
+        fallback: bool = True,
+    ) -> str | None:
         """Record type from explicit evidence of the resource (any confirmed observation,
         including linkage-only rows), most specific signal first."""
         system = history.scope.system_id
@@ -245,7 +269,7 @@ class PolicyEvaluator:
                 explicit.add("MARKETING_PROFILE")
         if not explicit:
             explicit.update(
-                EVENT_CATEGORIES[o.attributes["event"]]
+                EVENT_CATEGORIES[str(o.attributes["event"])]
                 for o in observations
                 if o.attributes.get("event") in EVENT_CATEGORIES
             )
@@ -272,7 +296,13 @@ class PolicyEvaluator:
             explicit.add(SYSTEM_CATEGORIES[system])
         return next(iter(explicit)) if len(explicit) == 1 else None
 
-    def condition(self, kind, obs, history, bundle):
+    def condition(
+        self,
+        kind: str | None,
+        obs: list[TemporalObservation],
+        history: ResourceHistory,
+        bundle: CaseStateBundle,
+    ) -> bool | None:
         """True/False from supplied facts; omitted conditions remain unknown."""
         a = attributes(obs)
         fields = [f for o in obs for f in o.fields]
@@ -345,7 +375,14 @@ class PolicyEvaluator:
             )
         return None
 
-    def applicable(self, rule, selected, observations, history, bundle):
+    def applicable(
+        self,
+        rule: DeletionRule,
+        selected: list[TemporalObservation],
+        observations: list[TemporalObservation],
+        history: ResourceHistory,
+        bundle: CaseStateBundle,
+    ) -> tuple[bool | None, list[ObservationLink]]:
         kind = CONDITIONS.get(rule.condition)
         current = self.condition(kind, selected, history, bundle)
         if current is not None:
@@ -356,7 +393,9 @@ class PolicyEvaluator:
             "retention": {"retention_until", "retained_until"},
             "hold": {"hold_active", "legal_hold_until", "retained_until"},
         }
-        if any(key in o.attributes for o in selected for key in condition_fields.get(kind, ())):
+        if any(
+            key in o.attributes for o in selected for key in condition_fields.get(kind or "", ())
+        ):
             # Malformed or contradictory current facts cannot be replaced with a
             # convenient historical condition.
             return None, []
@@ -418,7 +457,13 @@ class PolicyEvaluator:
                     results.append(self.unobserved(h, local_category, local, bundle))
         return results
 
-    def unobserved(self, h, category, confirmed, bundle) -> PolicyAssessment:
+    def unobserved(
+        self,
+        h: ResourceHistory,
+        category: str | None,
+        confirmed: list[TemporalObservation],
+        bundle: CaseStateBundle,
+    ) -> PolicyAssessment:
         """A confirmed resource without a citable state: obligation known, compliance unknown."""
         reasons = ["no_confirmed_state_evidence"]
         if category in {"DATA_FLOW", "BACKUP_ARCHIVE"}:
@@ -433,7 +478,7 @@ class PolicyEvaluator:
                 compliance="UNKNOWN",
                 reasons=reasons,
             )
-        candidates = self.rules.get(category, [])
+        candidates = self.rules.get(category or "", [])
         selected = latest(confirmed)
         rules = [
             r
@@ -455,13 +500,19 @@ class PolicyEvaluator:
             else [*reasons, "policy_condition_unestablished_or_ambiguous"],
         )
 
-    def assess(self, h, category, observations, bundle) -> list[PolicyAssessment]:
+    def assess(
+        self,
+        h: ResourceHistory,
+        category: str | None,
+        observations: list[TemporalObservation],
+        bundle: CaseStateBundle,
+    ) -> list[PolicyAssessment]:
         if category == "DATA_FLOW":
             return [self.process(h, "flow", category)]
         if category == "BACKUP_ARCHIVE":
             # Archives are retained (rule 14); the obligation is the restore path.
             return [self.process(h, "restore", category)]
-        candidates = self.rules.get(category, [])
+        candidates = self.rules.get(category or "", [])
         selected = latest([o for o in observations if o.link in h.record.supporting_evidence])
         applicability = [
             (r, *self.applicable(r, selected, observations, h, bundle)) for r in candidates
@@ -494,7 +545,7 @@ class PolicyEvaluator:
                 )
             ]
         rule, condition_evidence = rules[0]
-        base = dict(
+        base = PolicyAssessment(
             scope=h.scope,
             dimension="record",
             category=category,
@@ -503,27 +554,29 @@ class PolicyEvaluator:
             required_state=FINAL_STATES[rule.required_action],
             observed_state=h.record.state,
             condition_evidence=condition_evidence,
+            compliance="UNKNOWN",
         )
         if h.record.support != "PROVEN" or not selected:
-            return [
-                PolicyAssessment(**base, compliance="UNKNOWN", reasons=["record_state_unproven"])
-            ]
+            return [base.model_copy(update={"reasons": ["record_state_unproven"]})]
         compliance, reasons = self.record_compliance(h, selected, rule, bundle)
         return [
-            PolicyAssessment(
-                **base,
-                compliance=compliance,
-                evidence=links_sorted(o.link for o in selected),
-                reasons=reasons,
+            base.model_copy(
+                update={
+                    "compliance": compliance,
+                    "evidence": links_sorted(o.link for o in selected),
+                    "reasons": reasons,
+                }
             )
         ]
 
     @staticmethod
-    def process(h, dimension, category):
+    def process(
+        h: ResourceHistory, dimension: Literal["flow", "restore"], category: str
+    ) -> PolicyAssessment:
         selection = getattr(h, dimension)
         flow = dimension == "flow"
         required, bad = ("INACTIVE", "ACTIVE") if flow else ("BLOCKED", "ALLOWED")
-        compliance = (
+        compliance: Literal["COMPLIANT", "VIOLATION", "UNKNOWN"] = (
             "UNKNOWN"
             if selection.support != "PROVEN"
             else "VIOLATION"
@@ -545,7 +598,12 @@ class PolicyEvaluator:
         )
 
     @staticmethod
-    def record_compliance(h, observations, rule, bundle):
+    def record_compliance(
+        h: ResourceHistory,
+        observations: list[TemporalObservation],
+        rule: DeletionRule,
+        bundle: CaseStateBundle,
+    ) -> tuple[Literal["COMPLIANT", "VIOLATION", "UNKNOWN"], list[str]]:
         state, action = h.record.state, rule.required_action
         fields = [f for o in observations for f in o.fields]
         if action == "DELETE":

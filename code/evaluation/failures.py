@@ -31,7 +31,7 @@ def signature(step, *, evidence=True):
 def failure_analysis(predictions, references, decisions=()):
     predicted = {p.case_id: p for p in predictions}
     decisions = {d.case_id: d for d in decisions}
-    groups = {key: [] for key in GROUPS}
+    groups: dict[str, list[str]] = {key: [] for key in GROUPS}
     cases = []
     missing_total = extra_total = wrong_evidence_total = 0
     for target in sorted(references, key=lambda r: r.case_id):

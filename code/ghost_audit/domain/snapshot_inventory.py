@@ -1,92 +1,132 @@
-"""Read point-in-time inventory values for the submission confidence strategy."""
+"""Point-in-time inventory interpretation for the submission confidence strategy."""
 
 import re
 from collections import defaultdict
-from ghost_audit.domain.catalog import COLLECTION_SYSTEMS, SYSTEM_ALIASES
-from ghost_audit.domain.catalog import TABLE_SYSTEMS
-from ghost_audit.domain.catalog import REPLICA_SUFFIX
+from collections.abc import Iterable
+from dataclasses import dataclass, field
+
+from ghost_audit.domain.catalog import (
+    COLLECTION_SYSTEMS,
+    REPLICA_SUFFIX,
+    SYSTEM_ALIASES,
+    TABLE_SYSTEMS,
+)
+from ghost_audit.domain.models import Observation
 from ghost_audit.domain.observation_clocks import observation_time
-
 from ghost_audit.domain.submission_models import Listing
-from ghost_audit.domain.submission_semantics import prefix, table_scope, PREFIX_BY_COLLECTION
+from ghost_audit.domain.submission_semantics import PREFIX_BY_COLLECTION, prefix, table_scope
+
+Inventory = dict[tuple[str | None, str], list[Listing]]
 
 
-def snapshot_listings(observations) -> dict:
-    """(system, resource kind) -> point-in-time collection contents.
+@dataclass
+class _TableSnapshot:
+    observation: Observation
+    rows: defaultdict[str | None, set[str]] = field(default_factory=lambda: defaultdict(set))
 
-    A SQL snapshot table is a full dump of that table at capture time, and a JSON
-    snapshot envelope names its data store and collection and lists its records, so
-    a resource of that kind missing from either was not in that copy at that time.
-    Callers decide which copies are relevant to a case; this only reads contents."""
-    tables = {}
-    envelopes = {}
-    for o in observations:
-        if o.kind != "evidence":
+
+@dataclass
+class _CollectionSnapshot:
+    observation: Observation
+    ids: set[str] = field(default_factory=set)
+
+
+def _collect_snapshots(
+    observations: Iterable[Observation],
+) -> tuple[dict[tuple[str, str], _TableSnapshot], dict[tuple[str, str], _CollectionSnapshot]]:
+    tables: dict[tuple[str, str], _TableSnapshot] = {}
+    envelopes: dict[tuple[str, str], _CollectionSnapshot] = {}
+    for observation in observations:
+        if observation.kind != "evidence":
             continue
-        p, loc, eid = o.payload, o.provenance.locator, o.provenance.evidence_id
-        schema = re.fullmatch(r"sql:(.+):schema", loc)
-        row = re.fullmatch(r"sql:(.+):row:\d+", loc)
+        payload = observation.payload
+        locator, evidence_id = observation.provenance.locator, observation.provenance.evidence_id
+        schema = re.fullmatch(r"sql:(.+):schema", locator)
+        row = re.fullmatch(r"sql:(.+):row:\d+", locator)
         if schema and schema[1] != "snapshot_scope":
-            tables.setdefault((eid, schema[1]), {"o": o, "rows": defaultdict(set)})["o"] = o
+            tables.setdefault(
+                (evidence_id, schema[1]), _TableSnapshot(observation)
+            ).observation = observation
         elif row:
-            entry = tables.setdefault((eid, row[1]), {"o": o, "rows": defaultdict(set)})
-            for r in o.resources:
-                entry["rows"][SYSTEM_ALIASES.get(r.system_id, r.system_id)].add(r.resource_id)
-        env = re.fullmatch(r"(\$\.snapshots\[\d+\])", loc)
-        rec = re.match(r"(\$\.snapshots\[\d+\])\.records\[\d+\]", loc)
-        if env and p.get("data_store") and p.get("collection"):
-            envelopes.setdefault((eid, env[1]), {"o": o, "ids": set()})["o"] = o
-        elif rec:
-            envelopes.setdefault((eid, rec[1]), {"o": o, "ids": set()})["ids"].update(
-                r.resource_id for r in o.resources
-            )
-    listings = defaultdict(list)
-    for (eid, table), entry in tables.items():
-        o = entry["o"]
-        at = observation_time(o) or o.provenance.captured_at
+            entry = tables.setdefault((evidence_id, row[1]), _TableSnapshot(observation))
+            for resource in observation.resources:
+                system = (
+                    SYSTEM_ALIASES.get(resource.system_id, resource.system_id)
+                    if resource.system_id
+                    else None
+                )
+                entry.rows[system].add(resource.resource_id)
+        envelope = re.fullmatch(r"(\$\.snapshots\[\d+\])", locator)
+        record = re.match(r"(\$\.snapshots\[\d+\])\.records\[\d+\]", locator)
+        if envelope and payload.get("data_store") and payload.get("collection"):
+            envelopes.setdefault(
+                (evidence_id, envelope[1]), _CollectionSnapshot(observation)
+            ).observation = observation
+        elif record:
+            envelopes.setdefault(
+                (evidence_id, record[1]), _CollectionSnapshot(observation)
+            ).ids.update(resource.resource_id for resource in observation.resources)
+    return tables, envelopes
+
+
+def snapshot_listings(observations: Iterable[Observation]) -> Inventory:
+    """Read snapshot contents without assigning their relevance to any subject.
+
+    Submission treats a supplied SQL dump or named JSON snapshot as a collection
+    inventory. Strict audit uses the separate explicit-completeness contract.
+    """
+    tables, envelopes = _collect_snapshots(observations)
+    listings: defaultdict[tuple[str | None, str], list[Listing]] = defaultdict(list)
+    for (evidence_id, table), entry in tables.items():
+        observation = entry.observation
+        at = observation_time(observation) or observation.provenance.captured_at
         family = REPLICA_SUFFIX.sub("", table)
         dedicated = TABLE_SYSTEMS.get(family) or COLLECTION_SYSTEMS.get(family)
-        rows = dict(entry["rows"])
+        rows = dict(entry.rows)
         if dedicated:
             rows.setdefault(dedicated, set())
         for system, ids in rows.items():
-            kinds = {prefix(r) for r in ids} or (
+            kinds = {prefix(resource) for resource in ids} or (
                 {PREFIX_BY_COLLECTION[family]} if family in PREFIX_BY_COLLECTION else set()
             )
             for kind in kinds:
                 listings[(system, kind)].append(
                     Listing(
-                        eid,
+                        evidence_id,
                         at,
-                        o.provenance.captured_at,
+                        observation.provenance.captured_at,
                         system,
                         kind,
                         table_scope(table),
                         frozenset(ids),
                     )
                 )
-    for (eid, _), entry in envelopes.items():
-        o = entry["o"]
-        p = o.payload
-        if not p.get("data_store"):
+    for (evidence_id, _), collection in envelopes.items():
+        observation = collection.observation
+        payload = observation.payload
+        store = payload.get("data_store")
+        if not store:
             continue
-        system = SYSTEM_ALIASES.get(p["data_store"], p["data_store"])
-        kinds = {prefix(r) for r in entry["ids"]} or (
-            {PREFIX_BY_COLLECTION[p["collection"]]}
-            if p["collection"] in PREFIX_BY_COLLECTION
+        assert isinstance(store, str), "Snapshot data_store must name a system"
+        system = SYSTEM_ALIASES.get(store, store)
+        collection_name = payload["collection"]
+        assert isinstance(collection_name, str), "Snapshot collection must be a name"
+        kinds = {prefix(resource) for resource in collection.ids} or (
+            {PREFIX_BY_COLLECTION[collection_name]}
+            if collection_name in PREFIX_BY_COLLECTION
             else set()
         )
-        at = observation_time(o) or o.provenance.captured_at
+        at = observation_time(observation) or observation.provenance.captured_at
         for kind in kinds:
             listings[(system, kind)].append(
                 Listing(
-                    eid,
+                    evidence_id,
                     at,
-                    o.provenance.captured_at,
+                    observation.provenance.captured_at,
                     system,
                     kind,
-                    "service:" + o.provenance.origin,
-                    frozenset(entry["ids"]),
+                    "service:" + observation.provenance.origin,
+                    frozenset(collection.ids),
                 )
             )
     return listings

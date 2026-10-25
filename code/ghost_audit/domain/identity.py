@@ -1,35 +1,51 @@
 """Exact, cutoff-aware alias ownership. No fuzzy matching or derived hashes."""
 
 from collections import defaultdict
+from collections.abc import Iterable
 from datetime import datetime
-from typing import Iterable
+from typing import Literal
 
+from ghost_audit.domain.association_models import IdentityAlias, ResolvedIdentity
 from ghost_audit.domain.evidence_index import normalize_identifier
 from ghost_audit.domain.models import DeletionRequest, Identity, IdentityChange
-from ghost_audit.domain.association_models import IdentityAlias, ResolvedIdentity
 from ghost_audit.domain.time import parse_timestamp
 
-FIELDS = ("email", "phone", "email_hash", "name")
+IDENTITY_FIELDS: tuple[Literal["user_id", "email", "phone", "email_hash", "name"], ...] = (
+    "user_id",
+    "email",
+    "phone",
+    "email_hash",
+    "name",
+)
+
+FIELDS: tuple[Literal["email", "phone", "email_hash", "name"], ...] = (
+    "email",
+    "phone",
+    "email_hash",
+    "name",
+)
 
 
 class IdentityResolver:
+    """Resolve exact identity facts only when available by the requested cutoff."""
+
     def __init__(self, identities: Iterable[Identity], changes: Iterable[IdentityChange]):
         self.snapshots = {row.user_id: row for row in identities}
-        self.changes = defaultdict(list)
+        self.changes: defaultdict[str, list[IdentityChange]] = defaultdict(list)
         # Ownership facts carry the time they became available, including old_value.
-        self.by_identifier = defaultdict(list)
-        self.by_email = defaultdict(list)
+        self.by_identifier: defaultdict[str, list[tuple[str, datetime]]] = defaultdict(list)
+        self.by_email: defaultdict[str, list[tuple[str, datetime]]] = defaultdict(list)
         for row in self.snapshots.values():
-            for field in ("user_id", *FIELDS):
+            for field in IDENTITY_FIELDS:
                 self._index(field, getattr(row, field), row.user_id, row.updated_at)
-        for row in sorted(changes, key=lambda r: (r.event_time, r.audit_id)):
-            self.changes[row.user_id].append(row)
-            self._index("user_id", row.user_id, row.user_id, row.event_time)
-            if row.field_name in FIELDS:
-                for value in (row.old_value, row.new_value):
-                    self._index(row.field_name, value, row.user_id, row.event_time)
+        for change in sorted(changes, key=lambda r: (r.event_time, r.audit_id)):
+            self.changes[change.user_id].append(change)
+            self._index("user_id", change.user_id, change.user_id, change.event_time)
+            if change.field_name in FIELDS:
+                for value in (change.old_value, change.new_value):
+                    self._index(change.field_name, value, change.user_id, change.event_time)
 
-    def _index(self, field, value, user, at):
+    def _index(self, field: str, value: str, user: str, at: datetime) -> None:
         if not value.strip() or field == "name":
             return
         key = normalize_identifier(value)
@@ -91,7 +107,7 @@ class IdentityResolver:
         facts = []
         issues = set()
         if visible_snapshot:
-            for field in ("user_id", *FIELDS):
+            for field in IDENTITY_FIELDS:
                 value = getattr(visible_snapshot, field)
                 if value.strip():
                     facts.append(
@@ -122,26 +138,29 @@ class IdentityResolver:
             )
             if change.field_name not in FIELDS:
                 continue
-            for role in ("old_value", "new_value"):
+            roles: tuple[Literal["old_value", "new_value"], ...] = ("old_value", "new_value")
+            for role in roles:
                 value = getattr(change, role)
                 if value.strip():
                     facts.append(
-                        IdentityAlias(
-                            field_name=change.field_name,
-                            normalized_value=normalize_identifier(value),
-                            original_value=value,
-                            source="audit_log",
-                            audit_id=change.audit_id,
-                            event_time=change.event_time,
-                            value_role=role,
-                            valid_from=change.event_time if role == "new_value" else None,
-                            valid_until=change.event_time if role == "old_value" else None,
-                            active_at_cutoff=None,
+                        IdentityAlias.model_validate(
+                            {
+                                "field_name": change.field_name,
+                                "normalized_value": normalize_identifier(value),
+                                "original_value": value,
+                                "source": "audit_log",
+                                "audit_id": change.audit_id,
+                                "event_time": change.event_time,
+                                "value_role": role,
+                                "valid_from": change.event_time if role == "new_value" else None,
+                                "valid_until": change.event_time if role == "old_value" else None,
+                                "active_at_cutoff": None,
+                            }
                         )
                     )
         # Latest known field statement establishes the active alias at the cutoff.
         # A later snapshot is never rolled backwards using future audit events.
-        active = {}
+        active: dict[str, set[str]] = {}
         for field in FIELDS:
             field_changes = [c for c in changes if c.field_name == field]
             timeline = [
@@ -161,7 +180,7 @@ class IdentityResolver:
                 active[field] = values
                 if len(values) > 1:
                     issues.add("conflicting_latest_values:" + field)
-            for earlier, later in zip(field_changes, field_changes[1:]):
+            for earlier, later in zip(field_changes, field_changes[1:], strict=False):
                 if normalize_identifier(earlier.new_value) != normalize_identifier(later.old_value):
                     issues.add("discontinuous_history:" + field)
         result = []

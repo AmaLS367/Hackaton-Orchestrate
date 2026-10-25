@@ -2,8 +2,9 @@
 
 import hashlib
 import re
-from ghost_audit.domain.catalog import REPLICA_SUFFIX
+from datetime import timedelta
 
+from ghost_audit.domain.catalog import REPLICA_SUFFIX
 
 WORKFLOW_RESULT = {"COMPLETE": "SUCCESS", "PARTIALLY_COMPLETE": "PARTIAL", "NOT_STARTED": "FAILED"}
 
@@ -118,47 +119,23 @@ NULLS = {
 }
 
 
-REMEDIATION = {
-    "DELETE": "DELETE_RECORD",
-    "REDACT": "REDACT_RECORD",
-    "ANONYMIZE": "ANONYMIZE_RECORD",
-    "DISABLE": "DISABLE_DATA_FLOW",
-    "BLOCK": "BLOCK_RESTORE",
-}
-
-
-VERIFICATION = {
-    "DELETE": "VERIFY_RECORD_ABSENT",
-    "RETAIN": "VERIFY_RECORD_PRESENT",
-    "REDACT": "VERIFY_RECORD_REDACTED",
-    "ANONYMIZE": "VERIFY_RECORD_ANONYMIZED",
-    "DISABLE": "VERIFY_DATA_FLOW_DISABLED",
-    "BLOCK": "VERIFY_RESTORE_BLOCKED",
-}
-
-
-FINDING = {
-    "DELETE": "REPORT_REMAINING_RECORD",
-    "REDACT": "REPORT_EXPOSED_PII",
-    "ANONYMIZE": "REPORT_EXPOSED_PII",
-    "DISABLE": "REPORT_ACTIVE_DATA_FLOW",
-    "BLOCK": "REPORT_RESTORE_RISK",
-}
-
-
 def prefix(resource_id: str) -> str:
+    """Read the existing submission resource-kind convention without inventing an ID."""
     return resource_id.rsplit("_", 1)[0]
 
 
-def minutes(delta) -> float:
+def minutes(delta: timedelta) -> float:
+    """Express observed workflow timing offsets in minutes."""
     return delta.total_seconds() / 60
 
 
 def sha256(value: str) -> str:
+    """Derive the submission strategy's normalized email hash."""
     return hashlib.sha256(value.strip().casefold().encode()).hexdigest()
 
 
-def present(value) -> bool:
+def present(value: object) -> bool:
+    """Recognize non-null scalar representations without declaring policy compliance."""
     return (
         value is not None
         and not isinstance(value, (dict, list))
@@ -167,5 +144,6 @@ def present(value) -> bool:
 
 
 def table_scope(table: str) -> str:
+    """Preserve the named physical SQL replica or the original table scope."""
     match = REPLICA_SUFFIX.search(table)
     return match[1] if match else "table:" + table

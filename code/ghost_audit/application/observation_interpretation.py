@@ -1,10 +1,11 @@
 """Adapt provenance format metadata to the pure record interpreter."""
 
 from pathlib import PurePosixPath
+
 from ghost_audit.domain.association_models import AssociatedObservation
 from ghost_audit.domain.models import ResourceRef
-from ghost_audit.domain.temporal_models import TemporalObservation
 from ghost_audit.domain.record_interpretation import interpret as interpret_record
+from ghost_audit.domain.temporal_models import TemporalObservation
 
 
 def interpret(item: AssociatedObservation, reference: ResourceRef) -> TemporalObservation:

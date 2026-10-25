@@ -4,18 +4,18 @@ import csv
 import io
 import json
 import re
-from ghost_audit.domain.catalog import (
-    ISO_TOKEN,
-    BUSINESS_TIMES,
-    SOURCE_TIMES,
-    SYSTEM_FIELDS,
-    SYSTEM_ALIASES,
-    collection_system,
-)
 from dataclasses import dataclass, replace
 
 from pydantic import JsonValue
 
+from ghost_audit.domain.catalog import (
+    BUSINESS_TIMES,
+    ISO_TOKEN,
+    SOURCE_TIMES,
+    SYSTEM_ALIASES,
+    SYSTEM_FIELDS,
+    collection_system,
+)
 from ghost_audit.domain.models import (
     EvidenceFile,
     Observation,
@@ -106,42 +106,51 @@ class ExtractionContext:
         resource = payload.get("resource_id") or (
             decoded.get("resource_id") if isinstance(decoded, dict) else None
         )
-        system = SYSTEM_ALIASES.get(scope.system, scope.system) or collection_system(
-            scope.collection
-        )
+        system = (
+            SYSTEM_ALIASES.get(scope.system, scope.system) if scope.system else None
+        ) or collection_system(scope.collection)
         scope = replace(scope, system=system)
         systems = {scope.system} if scope.system else set()
-        systems.update(payload[k] for k in ("source_system", "target_system") if payload.get(k))
-        return Observation(
-            provenance=Provenance(
-                evidence_id=self.manifest.file_id,
-                file_path=self.manifest.file_path,
-                origin=self.manifest.origin,
-                locator=locator,
-                captured_at=self.manifest.captured_at,
-                sha256=self.sha256,
-                timestamps=times,
-            ),
-            payload=payload,
-            raw_text=raw_text,
-            trace_id=trace_id or payload.get("trace_id"),
-            resources=[
-                ResourceRef(
-                    resource_id=resource,
-                    system_id=scope.system,
-                    collection=scope.collection,
-                    physical_table=scope.physical_table,
-                )
-            ]
-            if resource
-            else [],
-            system_ids=sorted(systems),
+        for field in ("source_system", "target_system"):
+            value = payload.get(field)
+            if value:
+                assert isinstance(value, str), "Evidence system must be a string"
+                systems.add(value)
+        return Observation.model_validate(
+            {
+                "provenance": Provenance(
+                    evidence_id=self.manifest.file_id,
+                    file_path=self.manifest.file_path,
+                    origin=self.manifest.origin,
+                    locator=locator,
+                    captured_at=self.manifest.captured_at,
+                    sha256=self.sha256,
+                    timestamps=times,
+                ),
+                "payload": payload,
+                "raw_text": raw_text,
+                "trace_id": trace_id or payload.get("trace_id"),
+                "resources": [
+                    ResourceRef.model_validate(
+                        {
+                            "resource_id": resource,
+                            "system_id": scope.system,
+                            "collection": scope.collection,
+                            "physical_table": scope.physical_table,
+                        }
+                    )
+                ]
+                if resource
+                else [],
+                "system_ids": sorted(systems),
+            }
         )
 
 
 def parse_json(
     value: JsonValue, context: ExtractionContext, locator: str = "$"
 ) -> list[Observation]:
+    """Flatten structured evidence while keeping nested scope and listing metadata."""
     if isinstance(value, list):
         return [
             item
@@ -155,7 +164,9 @@ def parse_json(
     scope = context.scoped(value, locator)
     observations = []
     # Preserve envelope metadata without indexing every unrelated record together.
-    scalars = {k: v for k, v in value.items() if not isinstance(v, (dict, list))}
+    scalars: dict[str, JsonValue] = {
+        k: v for k, v in value.items() if not isinstance(v, (dict, list))
+    }
     # Scope/pagination metadata must survive on its listing envelope, including
     # structured filters. Dropping it could turn a partial export into absence proof.
     scalars.update({k: value[k] for k in ("filter", "filters", "where") if k in value})
@@ -178,6 +189,7 @@ def parse_json(
 
 
 def parse_csv(text: str, context: ExtractionContext) -> list[Observation]:
+    """Parse record CSV evidence with strict headers and located provenance."""
     reader = csv.DictReader(io.StringIO(text, newline=""))
     if (
         not reader.fieldnames
@@ -327,6 +339,7 @@ def parse_log(line: str) -> dict | None:
 def parse_text(
     text: str, context: ExtractionContext, locator_prefix: str = "line"
 ) -> list[Observation]:
+    """Extract supported log and text facts without assigning case membership."""
     observations = []
     for number, line in enumerate(text.splitlines(), 1):
         if not line.strip():

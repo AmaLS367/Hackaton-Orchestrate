@@ -4,35 +4,39 @@ from collections import Counter
 from time import perf_counter
 
 from ghost_audit.application.abstention_diagnostics import diagnose, summarize
-from ghost_audit.domain.evidence_index import EvidenceIndex
-from ghost_audit.domain.citation_validation import validate_output
 from ghost_audit.application.evidence_association import EvidenceAssociationService
+from ghost_audit.application.temporal_service import TemporalStateEngine
+from ghost_audit.domain.citation_validation import validate_output
+from ghost_audit.domain.dataset import Dataset
+from ghost_audit.domain.evidence_index import EvidenceIndex
 from ghost_audit.domain.planning import plan_case
 from ghost_audit.domain.policy import PolicyEvaluator
 from ghost_audit.domain.policy_models import PredictionRun
-from ghost_audit.application.temporal_service import TemporalStateEngine
 
 
 class PredictionBlocked(ValueError):
+    """Strict publication cannot represent every request with grounded evidence."""
+
     pass
 
 
-def predict(dataset, index: EvidenceIndex | None = None) -> PredictionRun:
+def predict(dataset: Dataset, index: EvidenceIndex | None = None) -> PredictionRun:
+    """Run the strict use case over every request, preserving undecidable cases."""
     started = perf_counter()
-    phase2 = EvidenceAssociationService(dataset, index)
-    phase3 = TemporalStateEngine(phase2.index)
+    association_service = EvidenceAssociationService(dataset, index)
+    state_engine = TemporalStateEngine(association_service.index)
     policy = PolicyEvaluator(dataset.rules)
     cases = []
     validation_errors = []
     abstentions = []
     for request in sorted(dataset.requests, key=lambda r: r.case_id):
-        evidence = phase2.analyze(request)
-        bundle = phase3.analyze(evidence)
+        evidence = association_service.analyze(request)
+        bundle = state_engine.analyze(evidence)
         assessments = policy.evaluate(bundle) if bundle.intent.decision == "DELETE_INTENT" else []
         decision = plan_case(bundle, assessments)
         if decision.prediction is not None:
             try:
-                checks = validate_output([decision.prediction], [request], phase2.index)
+                checks = validate_output([decision.prediction], [request], association_service.index)
                 if any(
                     check.resource_support == "unknown" or check.parsing_status != "parsed"
                     for check in checks
@@ -45,14 +49,12 @@ def predict(dataset, index: EvidenceIndex | None = None) -> PredictionRun:
                     update={
                         "prediction": None,
                         "decision": "UNDECIDABLE",
-                        "blockers": sorted(
-                            set([*decision.blockers, "prediction_validation_failed"])
-                        ),
+                        "blockers": sorted({*decision.blockers, "prediction_validation_failed"}),
                     }
                 )
         cases.append(decision)
         if decision.prediction is None:
-            abstentions.append(diagnose(evidence, bundle, decision, phase2.index))
+            abstentions.append(diagnose(evidence, bundle, decision, association_service.index))
     return PredictionRun(
         cases=cases,
         elapsed_seconds=perf_counter() - started,
@@ -62,7 +64,7 @@ def predict(dataset, index: EvidenceIndex | None = None) -> PredictionRun:
 
 
 def diagnostics(run: PredictionRun) -> dict:
-    counts = Counter(case.decision for case in run.cases)
+    counts: Counter[str] = Counter(case.decision for case in run.cases)
     assessments = [a for c in run.cases for a in c.assessments]
     return {
         "cases_processed": len(run.cases),

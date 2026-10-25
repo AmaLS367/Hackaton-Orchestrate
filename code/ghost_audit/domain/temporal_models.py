@@ -1,16 +1,16 @@
 """Phase 3 observable facts. No policy verdicts or proposed operations live here."""
 
-from typing import Literal
+from typing import Literal, Self
 
 from pydantic import Field, JsonValue, model_validator
 
-from ghost_audit.domain.models import Provenance, StrictModel
 from ghost_audit.domain.association_models import (
     CorrelationLink,
     IntentResult,
     ObservationLink,
     ResolvedIdentity,
 )
+from ghost_audit.domain.models import Provenance, StrictModel
 from ghost_audit.domain.time import Timestamp
 
 RecordState = Literal["PRESENT", "ABSENT", "REDACTED", "ANONYMIZED", "UNKNOWN"]
@@ -20,6 +20,8 @@ Support = Literal["PROVEN", "CLAIM_ONLY", "CONFLICTED", "UNKNOWN"]
 
 
 class ResourceScope(StrictModel):
+    """One logical resource on one physical read surface."""
+
     resource_id: str
     system_id: str | None
     collection: str | None
@@ -27,6 +29,8 @@ class ResourceScope(StrictModel):
 
 
 class FieldObservation(StrictModel):
+    """An observed field representation, separate from policy-level treatment."""
+
     path: str
     role: Literal["DIRECT_IDENTIFIER", "STABLE_REFERENCE", "CONTENT"]
     representation: Literal["VALUE", "NULL", "REDACTED", "ANONYMIZED"]
@@ -34,6 +38,8 @@ class FieldObservation(StrictModel):
 
 
 class TemporalObservation(StrictModel):
+    """An interpreted readback or claim with scoped clocks and ownership links."""
+
     scope: ResourceScope
     physical_table: str | None
     observed_at: Timestamp
@@ -69,6 +75,8 @@ class TemporalObservation(StrictModel):
 
 
 class StateSelection(StrictModel):
+    """A dimension-specific conclusion with support and preserved conflicts."""
+
     dimension: Literal["record", "flow", "restore"]
     state: Literal[
         "PRESENT",
@@ -88,7 +96,7 @@ class StateSelection(StrictModel):
     reason: str
 
     @model_validator(mode="after")
-    def consistent_dimension(self):
+    def consistent_dimension(self) -> Self:
         allowed = {
             "record": {"PRESENT", "ABSENT", "REDACTED", "ANONYMIZED", "UNKNOWN"},
             "flow": {"ACTIVE", "INACTIVE", "UNKNOWN"},
@@ -102,6 +110,8 @@ class StateSelection(StrictModel):
 
 
 class ResourceHistory(StrictModel):
+    """Chronology and selected record, flow and restore states of one scope."""
+
     scope: ResourceScope
     observations: list[TemporalObservation]
     record: StateSelection
@@ -112,6 +122,8 @@ class ResourceHistory(StrictModel):
 
 
 class ReplicaDrift(StrictModel):
+    """A state, field or coverage disagreement between related physical copies."""
+
     system_id: str
     collection: str
     resource_id: str
@@ -123,12 +135,16 @@ class ReplicaDrift(StrictModel):
 
 
 class UnresolvedState(StrictModel):
+    """A scoped uncertainty that must not be silently treated as compliance."""
+
     scope: ResourceScope | None = None
     evidence: ObservationLink | None = None
     reason: str
 
 
 class CaseStateBundle(StrictModel):
+    """Reconstructed resource histories and unresolved obligations at the cutoff."""
+
     case_id: str
     audit_at: Timestamp
     intent: IntentResult

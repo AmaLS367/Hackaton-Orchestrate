@@ -1,17 +1,28 @@
 """Coordinate interpretation and temporal reconstruction for one attributed case."""
 
 from collections import defaultdict
-from ghost_audit.domain.evidence_index import EvidenceIndex
-from ghost_audit.domain.models import ResourceRef
+from datetime import datetime
+
+from ghost_audit.application.observation_interpretation import interpret
 from ghost_audit.domain.association_models import (
     AssociatedObservation,
     CaseEvidenceBundle,
     CorrelationLink,
     ObservationLink,
 )
-from ghost_audit.domain.catalog import REPLICA_SUFFIX
-from ghost_audit.application.observation_interpretation import interpret
+from ghost_audit.domain.catalog import REPLICA_SUFFIX, TABLE_SYSTEMS
+from ghost_audit.domain.evidence_index import EvidenceIndex
+from ghost_audit.domain.models import Observation, ResourceRef
 from ghost_audit.domain.observation_clocks import known_at, logical_collection, observation_time
+from ghost_audit.domain.snapshot_coverage import Listing, coverage_surfaces, known_collections
+from ghost_audit.domain.state_selection import (
+    compare_replicas,
+    historical_conflicts,
+    links_sorted,
+    observation_key,
+    scope_key,
+    select_state,
+)
 from ghost_audit.domain.temporal_models import (
     CaseStateBundle,
     ResourceHistory,
@@ -19,18 +30,6 @@ from ghost_audit.domain.temporal_models import (
     TemporalObservation,
     UnresolvedState,
 )
-from ghost_audit.domain.catalog import TABLE_SYSTEMS
-
-from ghost_audit.domain.state_selection import (
-    scope_key,
-    links_sorted,
-    observation_key,
-    select_state,
-    historical_conflicts,
-    compare_replicas,
-)
-from ghost_audit.domain.snapshot_coverage import known_collections, coverage_surfaces
-from ghost_audit.domain.snapshot_coverage import Listing
 
 
 class TemporalStateEngine:
@@ -52,7 +51,7 @@ class TemporalStateEngine:
                     self.schemas[o.provenance.evidence_id].append(o)
         self.surfaces = coverage_surfaces(index.observations) if index is not None else {}
 
-    def _linkable(self, observation, cutoff) -> bool:
+    def _linkable(self, observation: Observation, cutoff: datetime) -> bool:
         """An ownership fact counts only once known by the cutoff, like a citation."""
         at = known_at(observation)
         if at is None or at > cutoff:
@@ -63,7 +62,7 @@ class TemporalStateEngine:
                 return False
         return True
 
-    def _visible(self, observation, cutoff) -> bool:
+    def _visible(self, observation: Observation, cutoff: datetime) -> bool:
         available = observation.available_at
         if available is None or available > cutoff:
             return False
@@ -76,9 +75,14 @@ class TemporalStateEngine:
         return True
 
     def analyze(self, case_bundle: CaseEvidenceBundle) -> CaseStateBundle:
-        bundle = case_bundle
-        histories = defaultdict(list)
-        unresolved = []
+        """Reconstruct each physical scope before assembling case-level diagnostics."""
+        unresolved: list[UnresolvedState] = []
+        histories = self._collect_observations(case_bundle, unresolved)
+        results = self._build_histories(histories, unresolved)
+        return self._assemble_bundle(case_bundle, results, unresolved)
+
+    def _collect_observations(self, bundle, unresolved):
+        histories: defaultdict[tuple[str, ...], list[TemporalObservation]] = defaultdict(list)
         local = {ObservationLink.of(i.observation): i.observation for i in bundle.observations}
         if bundle.intent.decision != "DELETE_INTENT":
             unresolved.append(UnresolvedState(reason="deletion_not_authorized_or_intent_uncertain"))
@@ -151,6 +155,9 @@ class TemporalStateEngine:
             self._snapshot_gaps(histories, bundle.audit_at)
             self._coverage_absence(histories, bundle.audit_at)
 
+        return histories
+
+    def _build_histories(self, histories, unresolved):
         results = []
         for key in sorted(histories):
             observations = sorted(histories[key], key=observation_key)
@@ -174,6 +181,9 @@ class TemporalStateEngine:
                 unresolved.append(
                     UnresolvedState(scope=history.scope, reason=history.record.reason)
                 )
+        return results
+
+    def _assemble_bundle(self, bundle, results, unresolved):
         known = {(h.scope.system_id, h.scope.collection, h.scope.resource_id) for h in results}
         if bundle.intent.decision == "DELETE_INTENT":
             for resource in bundle.resources:
@@ -213,15 +223,13 @@ class TemporalStateEngine:
             ]
         )
         limitations = sorted(
-            set(
-                [
-                    *bundle.limitations,
-                    "Last observed states do not prove continuous state between observations or complete discovery.",
-                    "Null identifiers and category names do not establish redaction, anonymization, or policy compliance.",
-                    "Replica comparisons with different observation times may reflect temporal skew.",
-                    "Potential associations, unscoped negatives, deferred files, and missing rows remain unresolved.",
-                ]
-            )
+            {
+                *bundle.limitations,
+                "Last observed states do not prove continuous state between observations or complete discovery.",
+                "Null identifiers and category names do not establish redaction, anonymization, or policy compliance.",
+                "Replica comparisons with different observation times may reflect temporal skew.",
+                "Potential associations, unscoped negatives, deferred files, and missing rows remain unresolved.",
+            }
         )
         if bundle.deferred_evidence:
             unresolved.append(
@@ -256,10 +264,10 @@ class TemporalStateEngine:
             conflicting_evidence=conflicting,
             unresolved_states=sorted(set(unresolved), key=lambda u: u.model_dump_json()),
             limitations=limitations,
-            primary_profile_absence=links_sorted(absence),
+            primary_profile_absence=links_sorted(link for link in absence if link is not None),
         )
 
-    def _candidate_absence(self, ref: ResourceRef, cutoff) -> ObservationLink | None:
+    def _candidate_absence(self, ref: ResourceRef, cutoff: datetime) -> ObservationLink | None:
         """Citation proving a candidate record absent at the cutoff, from its own latest
         citable read or else the latest complete listing omitting it; None otherwise."""
         if self.index is None:
@@ -310,15 +318,19 @@ class TemporalStateEngine:
             else None
         )
 
-    def _latest_listing(self, system, collection, cutoff) -> "Listing | None":
+    def _latest_listing(
+        self, system: str | None, collection: str | None, cutoff: datetime
+    ) -> Listing | None:
         """The newest complete listing of one system collection known by the cutoff."""
-        best = None
+        best: Listing | None = None
         for item in self.surfaces.get((system, collection), ()):
             if (
                 item.observed_at is not None
                 and item.observed_at <= cutoff
                 and self._visible(item.surface, cutoff)
-                and (best is None or item.observed_at > best.observed_at)
+                and (
+                    best is None or best.observed_at is None or item.observed_at > best.observed_at
+                )
             ):
                 best = item
         return best
@@ -343,6 +355,7 @@ class TemporalStateEngine:
                     continue
                 for schema in self.schemas.get(fact.provenance.evidence_id, ()):
                     table = schema.payload["table"]
+                    assert isinstance(table, str), "SQL schema table must be a name"
                     if REPLICA_SUFFIX.sub("", table) != family or table == fact.physical_table:
                         continue
                     if not self._visible(schema, cutoff):
@@ -366,11 +379,13 @@ class TemporalStateEngine:
                         for o in histories.get(key, ())
                     ):
                         continue
+                    observed_at, available_at = observation_time(schema), schema.available_at
+                    assert observed_at is not None and available_at is not None
                     gap = TemporalObservation(
                         scope=scope,
                         physical_table=table,
-                        observed_at=observation_time(schema),
-                        available_at=schema.available_at,
+                        observed_at=observed_at,
+                        available_at=available_at,
                         provenance=schema.provenance,
                         association="CONFIRMED",
                         association_links=fact.association_links,
@@ -430,12 +445,15 @@ class TemporalStateEngine:
                 collection=collection,
                 replica_scope="coverage",
             )
+            physical_table, available_at = surface.payload.get("table"), surface.available_at
+            assert physical_table is None or isinstance(physical_table, str)
+            assert at is not None and available_at is not None
             histories[scope_key(scope)].append(
                 TemporalObservation(
                     scope=scope,
-                    physical_table=surface.payload.get("table"),
+                    physical_table=physical_table,
                     observed_at=at,
-                    available_at=surface.available_at,
+                    available_at=available_at,
                     provenance=surface.provenance,
                     association="CONFIRMED",
                     association_links=confirmed[0].association_links,

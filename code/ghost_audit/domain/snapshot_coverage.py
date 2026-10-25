@@ -2,19 +2,22 @@
 
 import re
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
-from ghost_audit.domain.catalog import SYSTEM_ALIASES
-from ghost_audit.domain.models import Observation
+from datetime import datetime
+
+from pydantic import JsonValue
+
 from ghost_audit.domain.association_models import CaseEvidenceBundle
-from ghost_audit.domain.catalog import REPLICA_SUFFIX
+from ghost_audit.domain.catalog import REPLICA_SUFFIX, SYSTEM_ALIASES, TABLE_SYSTEMS
+from ghost_audit.domain.models import Observation
 from ghost_audit.domain.observation_clocks import logical_collection, observation_time
-from ghost_audit.domain.catalog import TABLE_SYSTEMS
 
 PAGINATION = ("truncated", "partial", "next_page", "next_cursor")
 FILTERS = ("filter", "filters", "where", "subject_selector")
 
 
-def known_collections(bundle: CaseEvidenceBundle) -> dict[tuple, str]:
+def known_collections(bundle: CaseEvidenceBundle) -> dict[tuple[str | None, str], str | None]:
     """(system, resource) -> its single explicit logical collection among confirmed rows."""
     found = defaultdict(set)
     for item in bundle.observations:
@@ -33,12 +36,12 @@ class Listing:
     proof and declares neither a filter nor pagination/truncation.
     """
 
-    system: str
-    collection: str
+    system: str | None
+    collection: str | None
     physical_table: str | None
-    observed_at: object
+    observed_at: datetime | None
     surface: Observation
-    resource_ids: frozenset
+    resource_ids: frozenset[str]
     filter_scope: str | None
     truncated: bool
     proof: str | None
@@ -48,7 +51,7 @@ class Listing:
         return self.proof is not None and self.filter_scope is None and not self.truncated
 
 
-def complete_listing(payload):
+def complete_listing(payload: dict[str, JsonValue]) -> bool:
     """An explicit completeness assertion for an unfiltered collection.
 
     A schema, row_count, empty records array, or snapshot label alone is insufficient.
@@ -58,7 +61,13 @@ def complete_listing(payload):
     )
 
 
-def listing(key, at, surface, ids, table=None) -> Listing:
+def listing(
+    key: tuple[str | None, str | None],
+    at: datetime | None,
+    surface: Observation,
+    ids: Iterable[str],
+    table: str | None = None,
+) -> Listing:
     p = surface.payload
     filters = [k for k in FILTERS if p.get(k)]
     return Listing(
@@ -74,22 +83,28 @@ def listing(key, at, surface, ids, table=None) -> Listing:
     )
 
 
-def coverage_surfaces(observations, *, include_incomplete=False) -> dict[tuple, list[Listing]]:
+def coverage_surfaces(
+    observations: Iterable[Observation], *, include_incomplete: bool = False
+) -> dict[tuple[str | None, str | None], list[Listing]]:
     """(system, logical collection) -> listings captured at one time each.
 
     A listing is a SQL table (dedicated tables even when empty; generic tables only for
     system/collection pairs they contain) or a JSON snapshot whose envelope names its
     data store and collection. Only complete listings are returned unless requested.
     """
-    schemas, rows = {}, defaultdict(lambda: defaultdict(set))
-    envelopes, members = {}, defaultdict(set)
+    schemas: dict[tuple[str, str], Observation] = {}
+    rows: defaultdict[tuple[str, str], defaultdict[tuple[str | None, str | None], set[str]]] = (
+        defaultdict(lambda: defaultdict(set))
+    )
+    envelopes: dict[tuple[str, str], Observation] = {}
+    members: defaultdict[tuple[str, str], set[str]] = defaultdict(set)
     for o in observations:
         if o.kind != "evidence":
             continue
         locator, evidence = o.provenance.locator, o.provenance.evidence_id
-        table = re.fullmatch(r"sql:(.+):schema", locator)
-        if table:
-            schemas[(evidence, table[1])] = o
+        table_match = re.fullmatch(r"sql:(.+):schema", locator)
+        if table_match:
+            schemas[(evidence, table_match[1])] = o
             continue
         row = re.fullmatch(r"sql:(.+):row:\d+", locator)
         if row:
@@ -110,23 +125,27 @@ def coverage_surfaces(observations, *, include_incomplete=False) -> dict[tuple, 
         record = re.match(r"(\$\.snapshots\[\d+\])\.records\[\d+\]", locator)
         if record:
             members[(evidence, record[1])].update(r.resource_id for r in o.resources)
-    surfaces = defaultdict(list)
+    surfaces: defaultdict[tuple[str | None, str | None], list[Listing]] = defaultdict(list)
     for (evidence, table), schema in schemas.items():
-        listed = dict(rows.get((evidence, table), {}))
+        listed: dict[tuple[str | None, str | None], set[str]] = dict(
+            rows.get((evidence, table), {})
+        )
         family = REPLICA_SUFFIX.sub("", table)
         if family in TABLE_SYSTEMS:
             listed.setdefault((TABLE_SYSTEMS[family], family), set())
         for key, ids in listed.items():
             surfaces[key].append(listing(key, observation_time(schema), schema, ids, table))
-    for key, envelope in envelopes.items():
+    for envelope_key, envelope in envelopes.items():
         p = envelope.payload
-        system = SYSTEM_ALIASES.get(p["data_store"], p["data_store"])
-        surfaces[(system, p["collection"])].append(
+        store, collection = p["data_store"], p["collection"]
+        assert isinstance(store, str) and isinstance(collection, str)
+        system = SYSTEM_ALIASES.get(store, store)
+        surfaces[(system, collection)].append(
             listing(
-                (system, p["collection"]),
+                (system, collection),
                 observation_time(envelope),
                 envelope,
-                members.get(key, ()),
+                members.get(envelope_key, ()),
             )
         )
     return {

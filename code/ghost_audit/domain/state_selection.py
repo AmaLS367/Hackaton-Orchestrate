@@ -1,12 +1,21 @@
 """Select scoped temporal facts and compare replicas while preserving contradictions."""
 
 from collections import defaultdict
+from collections.abc import Iterable
+from datetime import datetime
 from itertools import combinations
+from typing import Literal
+
+from pydantic import JsonValue
+
 from ghost_audit.domain.association_models import ObservationLink
 from ghost_audit.domain.temporal_models import (
+    FlowState,
+    RecordState,
     ReplicaDrift,
     ResourceHistory,
     ResourceScope,
+    RestoreState,
     StateSelection,
     TemporalObservation,
 )
@@ -16,11 +25,13 @@ def scope_key(scope: ResourceScope) -> tuple[str, ...]:
     return (scope.system_id or "", scope.collection or "", scope.resource_id, scope.replica_scope)
 
 
-def links_sorted(links) -> list[ObservationLink]:
+def links_sorted(links: Iterable[ObservationLink]) -> list[ObservationLink]:
+    """Deduplicate provenance links in a stable citation order."""
     return sorted(set(links), key=lambda link: (link.evidence_id, link.file_path, link.locator))
 
 
-def observation_key(o: TemporalObservation):
+def observation_key(o: TemporalObservation) -> tuple[datetime, datetime, str, str, str]:
+    """Order facts deterministically without discarding simultaneous contradictions."""
     return (
         o.observed_at,
         o.available_at,
@@ -30,14 +41,16 @@ def observation_key(o: TemporalObservation):
     )
 
 
-def select_state(observations: list[TemporalObservation], dimension: str) -> StateSelection:
-    field = dimension + "_state"
+def select_state(
+    observations: list[TemporalObservation], dimension: Literal["record", "flow", "restore"]
+) -> StateSelection:
+    """Select the latest precise fact in one physical scope and retain contrary claims."""
     direct = [
         o
         for o in observations
         if o.association == "CONFIRMED"
         and o.support in {"PROVEN", "CONFLICTED"}
-        and getattr(o, field) != "UNKNOWN"
+        and _dimension_state(o, dimension) != "UNKNOWN"
     ]
     pool = direct
     if not pool:
@@ -46,7 +59,7 @@ def select_state(observations: list[TemporalObservation], dimension: str) -> Sta
             for o in observations
             if o.association == "CONFIRMED"
             and o.support == "CLAIM_ONLY"
-            and getattr(o, field) != "UNKNOWN"
+            and _dimension_state(o, dimension) != "UNKNOWN"
         ]
         return StateSelection(
             dimension=dimension,
@@ -67,7 +80,7 @@ def select_state(observations: list[TemporalObservation], dimension: str) -> Sta
         if o.category in {"RESOURCE_READBACK", "SNAPSHOT", "DOCUMENT", "SNAPSHOT_COVERAGE"}
     ]
     latest = precise or latest
-    states = {getattr(o, field) for o in latest}
+    states = {_dimension_state(o, dimension) for o in latest}
     conflicted = len(states) > 1 or any(
         o.support == "CONFLICTED"
         and (not o.conflict_dimensions or dimension in o.conflict_dimensions)
@@ -80,7 +93,7 @@ def select_state(observations: list[TemporalObservation], dimension: str) -> Sta
         if o not in latest
         and o.observed_at >= latest_at
         and o.association == "CONFIRMED"
-        and getattr(o, field) not in {"UNKNOWN", selected}
+        and _dimension_state(o, dimension) not in {"UNKNOWN", selected}
         and o.support in {"CLAIM_ONLY", "PROVEN", "CONFLICTED"}
     ]
     conflicts = [*latest, *contrary] if conflicted else contrary
@@ -101,7 +114,9 @@ def select_state(observations: list[TemporalObservation], dimension: str) -> Sta
     )
 
 
-def historical_conflicts(observations: list[TemporalObservation]):
+def historical_conflicts(
+    observations: list[TemporalObservation],
+) -> tuple[list[ObservationLink], list[str]]:
     """A later resolution must not discard an earlier contradictory readback pair."""
     links, reasons = [], []
     for o in observations:
@@ -111,9 +126,12 @@ def historical_conflicts(observations: list[TemporalObservation]):
     for dimension in ("record", "flow", "restore"):
         groups = defaultdict(list)
         for o in observations:
-            if o.association == "CONFIRMED" and o.support in {"PROVEN", "CONFLICTED"}:
-                if getattr(o, dimension + "_state") != "UNKNOWN":
-                    groups[o.observed_at].append(o)
+            if (
+                o.association == "CONFIRMED"
+                and o.support in {"PROVEN", "CONFLICTED"}
+                and getattr(o, dimension + "_state") != "UNKNOWN"
+            ):
+                groups[o.observed_at].append(o)
         for values in groups.values():
             if len({getattr(o, dimension + "_state") for o in values}) > 1:
                 links.extend(o.link for o in values)
@@ -127,7 +145,8 @@ def historical_conflicts(observations: list[TemporalObservation]):
     return links_sorted(links), sorted(set(reasons))
 
 
-def field_signatures(observation: TemporalObservation):
+def field_signatures(observation: TemporalObservation) -> dict[str, tuple[str, JsonValue]]:
+    """Compare observed field representations independently of surrounding metadata."""
     return {
         f.path: (f.representation, f.value if f.representation == "VALUE" else None)
         for f in observation.fields
@@ -135,6 +154,7 @@ def field_signatures(observation: TemporalObservation):
 
 
 def compare_replicas(histories: list[ResourceHistory]) -> list[ReplicaDrift]:
+    """Expose drift only between established related system/resource collections."""
     groups = defaultdict(list)
     for h in histories:
         if h.scope.system_id and h.scope.collection:
@@ -144,7 +164,7 @@ def compare_replicas(histories: list[ResourceHistory]) -> list[ReplicaDrift]:
         for left, right in combinations(values, 2):
             if left.scope.replica_scope == right.scope.replica_scope:
                 continue
-            kind = None
+            kind: Literal["STATE_DISAGREEMENT", "FIELD_DISAGREEMENT", "COVERAGE_GAP"] | None = None
             if any(
                 o.category == "SNAPSHOT_GAP"
                 and (h.record.observed_at is None or o.observed_at >= h.record.observed_at)
@@ -157,7 +177,7 @@ def compare_replicas(histories: list[ResourceHistory]) -> list[ReplicaDrift]:
                     kind = "STATE_DISAGREEMENT"
                 else:
 
-                    def fields(h):
+                    def fields(h: ResourceHistory) -> dict[str, tuple[str, JsonValue]]:
                         return {
                             path: value
                             for o in h.observations
@@ -200,3 +220,13 @@ def compare_replicas(histories: list[ResourceHistory]) -> list[ReplicaDrift]:
                     )
                 )
     return sorted(drift, key=lambda d: d.model_dump_json())
+
+
+def _dimension_state(
+    observation: TemporalObservation, dimension: Literal["record", "flow", "restore"]
+) -> RecordState | FlowState | RestoreState:
+    if dimension == "record":
+        return observation.record_state
+    if dimension == "flow":
+        return observation.flow_state
+    return observation.restore_state

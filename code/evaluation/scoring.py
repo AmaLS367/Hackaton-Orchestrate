@@ -53,7 +53,7 @@ def evaluate(predictions: list[OutputRow], references: list[OutputRow]) -> Evalu
                 & Counter(map(_step_signature, target.steps))
             ).values()
         )
-        for left, right in zip(actual_steps, target.steps):
+        for left, right in zip(actual_steps, target.steps, strict=False):
             field_hits += sum(
                 left.model_dump()[key] == value for key, value in right.model_dump().items()
             )

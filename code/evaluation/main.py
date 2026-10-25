@@ -9,17 +9,18 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from evaluation.scoring import evaluate
-from evaluation.failures import failure_analysis
-from ghost_audit.infrastructure.serialization.csv_records import load_models
+from ghost_audit.domain.citation_validation import validate_output
 from ghost_audit.domain.models import DeletionRequest
 from ghost_audit.infrastructure.serialization.csv_output import read_output
-from ghost_audit.domain.citation_validation import validate_output
+from ghost_audit.infrastructure.serialization.csv_records import load_models
+
+from evaluation.failures import failure_analysis
+from evaluation.scoring import evaluate
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def main(argv=None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", type=Path, default=ROOT / "dataset")
     group = parser.add_mutually_exclusive_group(required=True)
@@ -58,11 +59,11 @@ def main(argv=None) -> int:
         run = None
         summary = None
         if args.run and args.engine == "submission":
-            from ghost_audit.infrastructure.ingestion.dataset_loader import load_dataset
             from ghost_audit.application.submission_service import (
                 predict_submission,
                 submission_diagnostics,
             )
+            from ghost_audit.infrastructure.ingestion.dataset_loader import load_dataset
 
             cases = predict_submission(load_dataset(args.dataset, samples=True))
             predictions = [c.row for c in cases]
@@ -73,8 +74,8 @@ def main(argv=None) -> int:
                     json.dumps(report, ensure_ascii=False, indent=1) + "\n", encoding="utf-8"
                 )
         elif args.run:
+            from ghost_audit.application.strict_audit import diagnostics, predict
             from ghost_audit.infrastructure.ingestion.dataset_loader import load_dataset
-            from ghost_audit.application.strict_audit import predict, diagnostics
             from ghost_audit.infrastructure.serialization.prediction_artifacts import (
                 write_diagnostics,
             )

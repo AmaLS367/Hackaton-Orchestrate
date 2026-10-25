@@ -4,14 +4,16 @@ from typing import Literal
 
 from pydantic import Field
 
+from ghost_audit.domain.association_models import ObservationLink
 from ghost_audit.domain.diagnostic_models import AbstentionDiagnostic
 from ghost_audit.domain.models import StrictModel
 from ghost_audit.domain.output_contract import OutputRow
-from ghost_audit.domain.association_models import ObservationLink
 from ghost_audit.domain.temporal_models import ResourceScope
 
 
 class PolicyAssessment(StrictModel):
+    """One scope and dimension assessed against an applicable supplied obligation."""
+
     scope: ResourceScope
     dimension: Literal["record", "flow", "restore"]
     category: str | None
@@ -28,6 +30,8 @@ class PolicyAssessment(StrictModel):
 
 
 class CaseDecision(StrictModel):
+    """A grounded official row or an abstention with its assessments and blockers."""
+
     case_id: str
     prediction: OutputRow | None
     assessments: list[PolicyAssessment]
@@ -38,6 +42,8 @@ class CaseDecision(StrictModel):
 
 
 class PredictionRun(StrictModel):
+    """The complete strict run; any missing row or validation error blocks publication."""
+
     cases: list[CaseDecision]
     elapsed_seconds: float
     validation_errors: list[str] = Field(default_factory=list)

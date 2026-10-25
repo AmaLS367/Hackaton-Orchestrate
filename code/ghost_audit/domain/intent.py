@@ -2,9 +2,10 @@
 
 import re
 import unicodedata
+from typing import Literal
 
-from ghost_audit.domain.models import DeletionRequest
 from ghost_audit.domain.association_models import IntentResult
+from ghost_audit.domain.models import DeletionRequest
 
 
 def fold(text: str) -> str:
@@ -101,6 +102,8 @@ NON_DELETE = (
 
 
 class IntentClassifier:
+    """Classify multilingual deletion authorization with explicit uncertainty."""
+
     def classify(self, request: DeletionRequest | str) -> IntentResult:
         text = fold(request.request_text if isinstance(request, DeletionRequest) else request)
         # Conditional/hypothetical and quoted instructions are not authorization.
@@ -171,7 +174,9 @@ class IntentClassifier:
         return self._result("UNCERTAIN", "no_reliable_rule")
 
     @staticmethod
-    def _result(decision, reason):
+    def _result(
+        decision: Literal["DELETE_INTENT", "NO_DELETE_INTENT", "UNCERTAIN"], reason: str
+    ) -> IntentResult:
         uncertain = decision == "UNCERTAIN"
         return IntentResult(
             decision=decision,

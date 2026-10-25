@@ -2,8 +2,9 @@
 
 import re
 from collections import defaultdict
+from collections.abc import Iterable
 from datetime import datetime
-from typing import Iterable
+from functools import cached_property
 
 from ghost_audit.domain.models import (
     Activity,
@@ -12,6 +13,9 @@ from ghost_audit.domain.models import (
     IdentityChange,
     Observation,
 )
+from ghost_audit.domain.snapshot_coverage import Listing as CoverageListing
+from ghost_audit.domain.snapshot_coverage import coverage_surfaces
+from ghost_audit.domain.snapshot_inventory import Inventory, snapshot_listings
 from ghost_audit.domain.time import parse_timestamp
 
 TOKEN = re.compile(r"[\w.+%'-]+@[\w.-]+\.[A-Za-z]{2,}|[\w]+(?:_[\w]+)+|\b[a-fA-F0-9]{64}\b")
@@ -19,13 +23,15 @@ PHONE = re.compile(r"(?<!\w)\+\d[\d ()-]{6,}\d(?!\w)")
 
 
 def normalize_identifier(value: str) -> str:
+    """Normalize exact text and phone formatting without fuzzy identity matching."""
     value = value.strip().casefold()
     if value.startswith("+") and re.fullmatch(r"\+[\d ()-]+", value):
         return "+" + re.sub(r"\D", "", value)
     return value
 
 
-def identifier_values(value) -> set[str]:
+def identifier_values(value: object) -> set[str]:
+    """Extract exact normalized atoms while retaining complete scalar strings."""
     if isinstance(value, dict):
         return {token for child in value.values() for token in identifier_values(child)}
     if isinstance(value, list):
@@ -104,8 +110,10 @@ class EvidenceRegistry:
 
 
 class EvidenceIndex:
+    """Index extracted values once; lookups and caches belong to this dataset instance."""
+
     @staticmethod
-    def trace_key(item: Observation):
+    def trace_key(item: Observation) -> tuple[str, object, str | None]:
         # A collector can report several target systems within one service trace.
         service = item.payload.get("service") or tuple(item.system_ids)
         return item.provenance.file_path, service, item.trace_id
@@ -133,6 +141,16 @@ class EvidenceIndex:
             if item.trace_id:
                 # Trace IDs can collide between files or services.
                 self.by_trace[self.trace_key(item)].add(index)
+
+    @cached_property
+    def submission_listings(self) -> Inventory:
+        """Cache immutable inventory interpretation for this index's lifetime."""
+        return snapshot_listings(self.observations)
+
+    @cached_property
+    def coverage_listings(self) -> dict[tuple[str | None, str | None], list[CoverageListing]]:
+        """Keep incomplete surfaces too, so uncertainty diagnostics retain their cause."""
+        return coverage_surfaces(self.observations, include_incomplete=True)
 
     def lookup(
         self,
@@ -163,7 +181,7 @@ class EvidenceIndex:
             candidates = set(range(len(self.observations)))
         cutoff = parse_timestamp(audit_at) if audit_at is not None else None
 
-        def visible(index):
+        def visible(index: int) -> bool:
             time = self.observations[index].available_at
             return cutoff is None or (time is not None and time <= cutoff)
 

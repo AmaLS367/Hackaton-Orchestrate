@@ -2,11 +2,11 @@
 
 import json
 from pathlib import Path
-from ghost_audit.application.abstention_diagnostics import summarize
-from ghost_audit.infrastructure.serialization.csv_output import write_output
-from ghost_audit.domain.policy_models import PredictionRun
 
+from ghost_audit.application.abstention_diagnostics import summarize
 from ghost_audit.application.strict_audit import PredictionBlocked, diagnostics
+from ghost_audit.domain.policy_models import PredictionRun
+from ghost_audit.infrastructure.serialization.csv_output import write_output
 
 
 def write_diagnostics(path: Path, run: PredictionRun) -> None:

@@ -15,8 +15,14 @@ The correlator keeps these candidates POTENTIAL until an independent link exists
 """
 
 from collections import defaultdict
-from datetime import timedelta
+from collections.abc import Iterable
+from datetime import datetime, timedelta
 
+from ghost_audit.domain.correlation import EvidenceCorrelator
+from ghost_audit.domain.evidence_index import EvidenceIndex
+from ghost_audit.domain.identity import IdentityResolver
+from ghost_audit.domain.intent import IntentClassifier
+from ghost_audit.domain.models import DeletionRequest
 from ghost_audit.domain.observation_clocks import known_at, observation_time
 
 WORKER = "deletion_worker"
@@ -42,12 +48,23 @@ LATE_STATUS = {
 }
 
 
-def within(windows, reported_at, at) -> bool:
+def within(
+    windows: tuple[tuple[timedelta, timedelta], ...], reported_at: datetime, at: datetime
+) -> bool:
     return any(reported_at + low <= at <= reported_at + high for low, high in windows)
 
 
 class WorkflowAttribution:
-    def __init__(self, requests, index, resolver, correlator, classifier):
+    """Retrieve timing candidates that still require independent ownership proof."""
+
+    def __init__(
+        self,
+        requests: Iterable[DeletionRequest],
+        index: EvidenceIndex,
+        resolver: IdentityResolver,
+        correlator: EvidenceCorrelator,
+        classifier: IntentClassifier,
+    ) -> None:
         self.index, self.resolver = index, resolver
         self.requests = [
             r
@@ -79,6 +96,7 @@ class WorkflowAttribution:
             if o.kind != "activity_claim" or p.get("source_system") != WORKER or not o.resources:
                 continue
             at = observation_time(o)
+            assert at is not None, "Workflow activities require a source clock"
             primary = (
                 p.get("target_system") == "account_service"
                 and p.get("event_type") == "DELETE_RECORD"
@@ -100,22 +118,22 @@ class WorkflowAttribution:
                     ).get(result, set())
                 ]
             if candidates:
-                self.events.append(
-                    (i, (p["target_system"], p["resource_id"]), at, primary, candidates)
-                )
+                system, resource_id = p["target_system"], p["resource_id"]
+                assert isinstance(system, str) and isinstance(resource_id, str)
+                self.events.append((i, (system, resource_id), at, primary, candidates))
         # More primary profiles near a report time than known requests reporting then
         # means a batch of a request outside both files overlaps it: per-resource
         # actions in that window cannot be attributed by elimination.
-        reported = defaultdict(int)
-        for r in self.requests:
-            reported[r.reported_at] += 1
+        reported: defaultdict[datetime, int] = defaultdict(int)
+        for request in self.requests:
+            reported[request.reported_at] += 1
         self.crowded = {
             at
             for at, count in reported.items()
             if sum(within(PRIMARY_WINDOWS, at, t) for t in primary_times) > count
         }
 
-    def pins(self, resource, cutoff) -> set[str]:
+    def pins(self, resource: tuple[str, str], cutoff: datetime) -> set[str]:
         """Users exactly identified with a resource by evidence observed by the cutoff."""
         users = set()
         for at, tokens in self.owners.get(resource, ()):
@@ -129,16 +147,16 @@ class WorkflowAttribution:
                     users |= owners
         return users
 
-    def attributed(self, request) -> list[int]:
+    def attributed(self, request: DeletionRequest) -> list[int]:
         """Observation indices of worker events uniquely attributable to this request."""
         return self.resolve(request)[0]
 
-    def primary_candidates(self, request) -> list[int]:
+    def primary_candidates(self, request: DeletionRequest) -> list[int]:
         """Primary-profile events still possible for this request when none is unique."""
         unique, options = self.resolve(request)
         return [] if any(i in unique for i in options) else sorted(options)
 
-    def resolve(self, request) -> tuple[list[int], set[int]]:
+    def resolve(self, request: DeletionRequest) -> tuple[list[int], set[int]]:
         if request.case_id not in self.users:
             return [], set()
         cutoff = request.audit_at

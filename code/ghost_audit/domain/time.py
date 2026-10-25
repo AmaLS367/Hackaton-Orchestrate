@@ -6,7 +6,8 @@ from typing import Annotated
 from pydantic import BeforeValidator
 
 
-def parse_timestamp(value: str | datetime) -> datetime:
+def parse_timestamp(value: object) -> datetime:
+    """Require an explicit timezone and normalize supported timestamps to UTC."""
     if isinstance(value, str):
         # ISO dates alone and timezone-free datetimes are ambiguous evidence.
         if "T" not in value and " " not in value:

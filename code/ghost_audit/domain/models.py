@@ -11,10 +11,14 @@ Identifier = Annotated[str, Field(min_length=1, pattern=r"\S")]
 
 
 class StrictModel(BaseModel):
+    """Immutable values reject coercion and unknown fields at every contract boundary."""
+
     model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
 
 
 class DeletionRequest(StrictModel):
+    """A participant request and the cutoff at which its deletion must be judged."""
+
     case_id: Identifier
     email: Identifier
     requested_at: Timestamp
@@ -25,6 +29,8 @@ class DeletionRequest(StrictModel):
 
 
 class Identity(StrictModel):
+    """Current identity facts, available only from their snapshot update time."""
+
     user_id: Identifier
     name: str
     email: str
@@ -34,6 +40,8 @@ class Identity(StrictModel):
 
 
 class IdentityChange(StrictModel):
+    """A historical identifier transition and when that statement became available."""
+
     audit_id: Identifier
     user_id: Identifier
     event_time: Timestamp
@@ -43,6 +51,8 @@ class IdentityChange(StrictModel):
 
 
 class Activity(StrictModel):
+    """A global operation claim; success alone never establishes resulting state."""
+
     activity_id: Identifier
     event_time: Timestamp
     event_type: Identifier
@@ -54,6 +64,8 @@ class Activity(StrictModel):
 
 
 class DeletionRule(StrictModel):
+    """A supplied category, applicability condition and required treatment."""
+
     rule_id: Identifier
     data_category: Identifier
     condition: Identifier
@@ -61,6 +73,8 @@ class DeletionRule(StrictModel):
 
 
 class EvidenceFile(StrictModel):
+    """Manifest identity and capture metadata, without inferred case membership."""
+
     file_id: Identifier
     file_path: Identifier
     origin: Identifier
@@ -68,6 +82,8 @@ class EvidenceFile(StrictModel):
 
 
 class SourceTimestamp(StrictModel):
+    """A located source or business clock retained without losing its role."""
+
     locator: Identifier
     field: Identifier
     value: Timestamp
@@ -76,6 +92,8 @@ class SourceTimestamp(StrictModel):
 
 
 class Provenance(StrictModel):
+    """The original participant citation, digest, location and availability clocks."""
+
     evidence_id: Identifier
     file_path: Identifier
     origin: Identifier
@@ -86,6 +104,8 @@ class Provenance(StrictModel):
 
 
 class ResourceRef(StrictModel):
+    """A resource scoped by system, logical collection and optional physical table."""
+
     resource_id: Identifier
     system_id: Identifier | None = None
     collection: str | None = None
@@ -93,6 +113,8 @@ class ResourceRef(StrictModel):
 
 
 class Observation(StrictModel):
+    """An extracted fact retaining raw values and provenance, never a deletion verdict."""
+
     provenance: Provenance
     kind: Literal["evidence", "activity_claim", "identity"] = "evidence"
     payload: dict[str, JsonValue]
@@ -110,6 +132,8 @@ class Observation(StrictModel):
 
 
 class EvidenceDocument(StrictModel):
+    """One parsed or deferred manifest file and its extracted observations."""
+
     manifest: EvidenceFile
     sha256: str
     status: Literal["parsed", "deferred"]

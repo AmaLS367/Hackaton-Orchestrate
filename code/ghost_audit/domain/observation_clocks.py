@@ -1,13 +1,14 @@
 """Observation clocks, availability gates and scalar interpretation."""
 
 import re
-from ghost_audit.domain.models import Observation, ResourceRef
-from ghost_audit.domain.catalog import TABLE_SYSTEMS
+from datetime import datetime
 
-from ghost_audit.domain.catalog import REPLICA_SUFFIX
+from ghost_audit.domain.catalog import REPLICA_SUFFIX, TABLE_SYSTEMS
+from ghost_audit.domain.models import Observation, ResourceRef
 
 
 def logical_collection(reference: ResourceRef) -> str | None:
+    """Equate only established schema families across their physical replica suffixes."""
     collection = reference.collection
     if collection and reference.physical_table == collection:
         base = REPLICA_SUFFIX.sub("", collection)
@@ -17,6 +18,7 @@ def logical_collection(reference: ResourceRef) -> str | None:
 
 
 def replica_scope(observation: Observation, reference: ResourceRef) -> str:
+    """Keep explicit replicas and regional read surfaces distinct."""
     p = observation.payload
     explicit = p.get("replica_scope") or p.get("replica") or p.get("source_scope")
     if isinstance(explicit, str) and explicit:
@@ -30,7 +32,7 @@ def replica_scope(observation: Observation, reference: ResourceRef) -> str:
     return source + ":" + str(region) if region else source
 
 
-def observation_time(o: Observation):
+def observation_time(o: Observation) -> datetime | None:
     """A snapshot's clock is not row updated_at or a later packaging/export clock."""
     times = [t for t in o.provenance.timestamps if t.role == "source"]
     clocks = [
@@ -70,7 +72,7 @@ def observation_time(o: Observation):
     return o.provenance.captured_at or o.available_at
 
 
-def linkage_time(o: Observation):
+def linkage_time(o: Observation) -> datetime | None:
     """The source-side time of an observation's facts: its own observation clock, never
     earlier than a record time it reports. This orders facts; it is not availability."""
     at = observation_time(o)
@@ -84,7 +86,7 @@ def linkage_time(o: Observation):
     return max([at, *record_times])
 
 
-def known_at(o: Observation):
+def known_at(o: Observation) -> datetime | None:
     """When an auditor could first know an observation's facts, ownership included.
 
     The official contract decides each case only from information available at its
@@ -96,7 +98,7 @@ def known_at(o: Observation):
     return max(times) if times else None
 
 
-def time_profile(o: Observation) -> dict:
+def time_profile(o: Observation) -> dict[str, datetime | None]:
     """observed_at/effective_at/captured_at/known_at of one observation, for diagnostics."""
     effective = [
         t.value
@@ -111,7 +113,8 @@ def time_profile(o: Observation) -> dict:
     }
 
 
-def boolean(value):
+def boolean(value: object) -> bool | None:
+    """Interpret supported wire booleans; ambiguous representations remain unknown."""
     if value is True or type(value) is int and value == 1 or value in ("true", "1"):
         return True
     if value is False or type(value) is int and value == 0 or value in ("false", "0"):
@@ -119,8 +122,9 @@ def boolean(value):
     return None
 
 
-def integer(value):
+def integer(value: object) -> int | None:
     # bool is deliberately not a row count.
+    """Interpret nonnegative integer counts while excluding booleans."""
     if type(value) is int:
         return value
     if isinstance(value, str) and re.fullmatch(r"\d+", value):

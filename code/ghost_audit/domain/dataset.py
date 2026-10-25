@@ -1,6 +1,7 @@
 """In-memory participant inputs shared by the two prediction use cases."""
 
 from dataclasses import dataclass, field
+
 from ghost_audit.domain.evidence_index import EvidenceRegistry
 from ghost_audit.domain.models import (
     Activity,
@@ -27,7 +28,7 @@ class Dataset:
     workflow_requests: list[DeletionRequest] = field(default_factory=list)
     registry: EvidenceRegistry = field(init=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.registry = EvidenceRegistry(
             documents=self.documents,
             activities=self.activities,
