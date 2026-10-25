@@ -17,6 +17,8 @@ def test_submission_archive_is_deterministic_and_excludes_private_or_generated_f
         "CONTRIBUTING.md",
         "CODE_OF_CONDUCT.md",
         ".editorconfig",
+        "Dockerfile",
+        ".dockerignore",
         "pyproject.toml",
         "uv.lock",
         ".python-version",
@@ -61,7 +63,15 @@ def test_submission_archive_is_deterministic_and_excludes_private_or_generated_f
 
 
 def test_archive_refuses_metadata_referencing_a_file_it_would_omit(tmp_path: Path) -> None:
-    for name in ("README.md", "LICENSE", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", ".editorconfig"):
+    for name in (
+        "README.md",
+        "LICENSE",
+        "CONTRIBUTING.md",
+        "CODE_OF_CONDUCT.md",
+        ".editorconfig",
+        "Dockerfile",
+        ".dockerignore",
+    ):
         (tmp_path / name).write_text(name)
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "x"\nreadme = "README.md"\nlicense = { file = "NOTICE" }\n'
@@ -96,6 +106,8 @@ def test_real_archive_contains_every_file_install_metadata_references(tmp_path: 
         "CONTRIBUTING.md",
         "CODE_OF_CONDUCT.md",
         ".editorconfig",
+        "Dockerfile",
+        ".dockerignore",
         "evaluation/evaluation_report.md",
         "evaluation/usage_report.md",
         "code/main.py",

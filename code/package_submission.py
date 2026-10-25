@@ -13,6 +13,8 @@ ROOT_FILES = (
     "CONTRIBUTING.md",
     "CODE_OF_CONDUCT.md",
     ".editorconfig",
+    "Dockerfile",
+    ".dockerignore",
     "pyproject.toml",
     "uv.lock",
     ".python-version",

@@ -117,6 +117,50 @@ The reference run used Tesseract with all 94 manifest files parsed. Exact output
 regression requires the same inputs and extraction environment; a different OCR
 installation can change observations and must be investigated, not snapshot-approved.
 
+## Docker
+
+The image bundles Python 3.12, the locked runtime dependencies from `pyproject.toml`
+(`uv sync --locked --no-dev`) and Tesseract, and runs as an unprivileged user. It contains
+no dataset, predictions, credentials or network requirement. Mount the participant
+dataset read-only at `/data` and a writable directory at `/output`.
+
+```text
+docker build -t ghost-audit .
+mkdir -p /tmp/ghost-audit-out
+docker run --rm --network none --user "$(id -u):$(id -g)" \
+  -v "$PWD/dataset:/data:ro" -v /tmp/ghost-audit-out:/output ghost-audit
+```
+
+PowerShell:
+
+```text
+docker build -t ghost-audit .
+New-Item -ItemType Directory -Force "$env:TEMP\ghost-audit-out"
+docker run --rm --network none `
+  -v "${PWD}\dataset:/data:ro" -v "$env:TEMP\ghost-audit-out:/output" ghost-audit
+```
+
+The default command is `--dataset /data --predictions /output/output.csv --diagnostics
+/output/full_prediction_diagnostics.json`; it writes `output.csv` plus the three diagnostic
+JSON files into `/output` (the code tree is read-only at runtime, so diagnostics must not
+use their checkout defaults). Arguments after the image name replace that command and keep
+every CLI option, for example:
+
+```text
+docker run --rm -v "$PWD/dataset:/data:ro" ghost-audit inspect --dataset /data
+docker run --rm -v "$PWD/dataset:/data:ro" -v /tmp/ghost-audit-out:/output:ro ghost-audit \
+  validate-output --dataset /data --predictions /output/output.csv
+```
+
+On Linux pass `--user "$(id -u):$(id -g)"` so the output directory is writable, and create
+it first. **Tesseract is required to reproduce the accepted output.** With
+`GHOST_AUDIT_OCR=0` seven cases have no provable resource state, publication is blocked
+and the container exits 2 without writing a CSV. The image installs Debian
+bookworm's Tesseract 5.3.0 (the reference run used Windows Tesseract 5.3.1); a container run
+on the participant dataset produces the accepted `output.csv` byte for byte
+(SHA-256 `1bc68692b30cfc7d23efb502c8ad6ba03bfecf75452415d11eae0d4639c3666c`). After
+rebuilding on a different base image, compare that hash before trusting the output.
+
 ## Package
 
 ```text
@@ -124,6 +168,7 @@ uv run python code/package_submission.py
 ```
 
 The deterministic `code.zip` includes runtime code, tests and fixtures, configuration,
+`Dockerfile`/`.dockerignore`,
 lockfile, this README, developer docs and the required reports at
 `evaluation/evaluation_report.md` and `evaluation/usage_report.md`. It excludes dataset,
 outputs, environments, caches, diagnostics, credentials, transcripts and nested archives.

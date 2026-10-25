@@ -1,0 +1,40 @@
+# Participant data, predictions and submission artifacts never enter the image.
+dataset/
+output.csv
+*.csv
+code.zip
+agent-trace.zip
+*.zip
+log.txt
+agent_trace_instructions.md
+problem_statement.md
+
+# Secrets and local environment
+.env
+.env.*
+.venv/
+venv/
+
+# VCS, tool caches and editor state
+.git/
+.gitignore
+.github/
+.qodo/
+.claude/
+.vscode/
+.idea/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.import_linter_cache/
+**/__pycache__/
+*.py[cod]
+
+# Not needed at runtime
+code/tests/
+docs/
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+.editorconfig
+Dockerfile
+.dockerignore
