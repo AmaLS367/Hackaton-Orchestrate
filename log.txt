@@ -9267,3 +9267,58 @@ branch=master
 repo_root=C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-october26
 worktree=main
 parent_agent=none
+
+## [2026-10-25T10:09:02Z] SESSION START
+
+tool=Claude Code
+model=claude-sonnet-5-5
+Repo Root: C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-october26
+Branch: master
+Worktree: main
+Parent Agent: none
+Language: py
+Time Remaining: not configured
+
+## [2026-10-25T10:42:38Z] Final release polish: Docker, metric docs, reproducible zip
+
+User Prompt (verbatim, secrets redacted):
+# FINAL RELEASE POLISH — Docker, Documentation and Portable Packaging
+(Task text pasted by the user, condensed: as Senior Python Release Engineer, complete three narrowly scoped tasks on local master without changing prediction behavior — (1) add a production-quality Dockerfile and .dockerignore (Python 3.12, runtime deps from pyproject.toml, lightweight official base, no dev deps, no dataset/output.csv/credentials baked in, unprivileged user, read-only dataset mount, writable output mount, CLI options and deterministic predictions preserved, inspect whether Tesseract or another executable is needed to reproduce the accepted output, no Compose); document exact build/run commands in README.md; mandatory Docker test: build, run on the read-only dataset into a separate output mount, verify 518 rows, schema, valid citations, dataset unchanged, same accepted SHA-256 1bc68692b30cfc7d23efb502c8ad6ba03bfecf75452415d11eae0d4639c3666c; (2) correct stale prediction metrics in README.md, docs/baseline.md, code/evaluation/evaluation_report.md and other docs (152→154 COMPLETE, 356→354 INCOMPLETE, 3,071→3,067 steps, stale output.csv SHA-256s), keep historical metrics only if clearly labeled, distinguish original submission baseline / first temporal fix / policy cutoff fix / support-category fallback / current accepted release; (3) make package_submission.py reproducible across Windows (CRLF via autocrlf) and Linux by normalizing known UTF-8 text assets, preserving binaries and Unicode, deterministic timestamps/ordering, uv/pip compatibility, metadata completeness checks, LICENSE inclusion, no dataset/output.csv/secrets/caches, with LF/CRLF regression tests; (4) release acceptance: uv sync --locked, pytest, ruff check, ruff format --check, mypy, lint-imports, main.py, validate-output, evaluation --run --json, package_submission.py, Docker build and full prediction test, rebuild code.zip, clean-environment extraction check, deterministic archive check, strict-engine unchanged. Git rules: work on local master, no branches/worktrees/merge/rebase/reset/pull/push, preserve uncommitted changes including log.txt, no HackerRank submission, no CI, no dependency or license changes. Separate local commits for Docker, documentation metrics and archive reproducibility; rebuild code.zip after the final commit. Final report in Russian with full SHAs, Docker build/run/hash, updated docs, ZIP reproducibility results, final code.zip SHA-256, test/static-analysis results, confirmation all 518 predictions are identical, remaining blockers, and a READY / NEEDS REVIEW / BLOCKED verdict.)
+
+Agent Response Summary:
+Added a two-stage python:3.12-slim Dockerfile (locked runtime deps via uv, Debian Tesseract 5.3.0, non-root user) and .dockerignore; verified Tesseract is required (OCR off blocks publication with exit 2) and that the container reproduces output.csv byte for byte (1bc68692...). Corrected the stale 152/356/3,071 metrics with a measured release-lineage table (each historical commit reproduced in a scratch directory) and labeled historical figures. Fixed package_submission.py so LF/CRLF checkouts and Windows/Linux hosts build the identical archive (CRLF-to-LF for known UTF-8 text, fixed ZipInfo creator system) with red-green regression tests, then found and documented via a fourth small docs commit that Linux container commands must run under the host uid (output.csv is written 0600). No prediction code changed.
+
+Actions:
+* Created Dockerfile and .dockerignore; edited README.md, docs/baseline.md, docs/quality-pass.md, docs/refactor-report.md, docs/development.md, code/evaluation/evaluation_report.md, code/package_submission.py, code/tests/integration/test_packaging.py
+* Local commits on master (not pushed): c167cb3 Docker, 0ace88f metrics docs, 4f78ff8 archive reproducibility, 35fa7c6 README Linux uid fix; log.txt left uncommitted
+* docker build/run (PowerShell on Windows and bash in WSL Ubuntu, uid 1000) on the read-only dataset; hash, schema, validate-output and dataset-unchanged checks
+* Reproduced commits 4476d26, 2d85859, 59ba4a1, bf707f8 with git archive in a scratch dir for the lineage table
+* uv sync --locked; pytest (586 passed); ruff check; ruff format --check; mypy; lint-imports; main.py (output.csv unchanged); validate-output; evaluation --run --json and --engine strict; main.py --strict (exit 2)
+* Rebuilt code.zip (sha256 82bc5936564bf4325c03fd09363e846c5a715562b5020bc51502be454d8cad26); checked identical bytes from Windows LF/CRLF clones and Linux (Debian) LF/CRLF clones; clean extraction with uv and pip
+
+Context:
+tool=Claude Code
+model=claude-sonnet-5-5
+branch=master
+repo_root=C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-october26
+worktree=main
+parent_agent=none
+
+## [2026-10-25T10:53:47Z] Commit current log.txt
+
+User Prompt (verbatim, secrets redacted):
+Закоммить текущий log.txt
+
+Agent Response Summary:
+Appended this entry and committed log.txt alone on master, without pushing. No other files touched; code.zip does not include log.txt, so it is unchanged.
+
+Actions:
+* git add log.txt; git commit
+
+Context:
+tool=Claude Code
+model=claude-sonnet-5-5
+branch=master
+repo_root=C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-october26
+worktree=main
+parent_agent=none
