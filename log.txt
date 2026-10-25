@@ -9096,3 +9096,174 @@ branch=master
 repo_root=C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-october26
 worktree=C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-october26
 parent_agent=none
+
+## [2026-10-25T09:39:45Z] Commit metadata and community files to master
+
+User Prompt (verbatim, secrets redacted):
+Закоммить
+
+Agent Response Summary:
+Staged pyproject.toml, LICENSE, CONTRIBUTING.md, CODE_OF_CONDUCT.md, .editorconfig, and log.txt. Created a commit on master documenting the project metadata improvements and community guidelines. Verified clean working tree status.
+
+Actions:
+* Appended turn entry to log.txt
+* Staged files using git add
+* Committed files using git commit
+* Verified git status
+
+Context:
+tool=Antigravity
+model=Gemini 3.8 Flash (High)
+branch=master
+repo_root=C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-october26
+worktree=C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-october26
+parent_agent=none
+
+
+## [2026-10-25T09:40:17Z] Narrow support-category fallback from the request's own DELETE_RECORD
+
+User Prompt (verbatim, secrets redacted):
+# FINAL DECISION — Support Resource Classification
+
+Work directly on the existing local `master`. Do not create branches, merge, rebase, reset, or pull.
+
+Current HEAD should include:
+
+- `59ba4a1ac1e39643c875531637a5d2249a02fda3`
+- `07f880c02a05f2da3d5c2fa20d407f46845845dc`
+
+## Decision
+
+Implement a narrow, deterministic fallback for ambiguous support-resource classification in the submission predictor.
+
+The previous audit-cutoff fix is correct and must remain intact.
+
+When a support resource has no explicit, time-valid category evidence:
+
+1. Inspect deletion-worker operations referring to that exact resource.
+2. Consider only operations available by the request's `audit_at`.
+3. Require valid attribution to the request.
+4. Treat a uniquely established `DELETE_RECORD` operation as a weak category signal favoring `SUPPORT_ATTACHMENT`.
+5. Preserve `SUPPORT_MESSAGE` / REDACT when independently supported by conversation metadata or shared-context evidence.
+6. Never override explicit record_type, collection, attachment ownership, or other authoritative category evidence.
+7. Never assume a DELETE_RECORD operation proves the record was actually deleted.
+8. Never apply this heuristic to determine record state or deletion completion.
+9. Never use post-audit evidence to support this inference.
+10. Keep the strict audit engine unchanged.
+
+Record the inferred category and its uncertainty in submission diagnostics.
+
+Do not turn this into a global rule that DELETE_RECORD always means SUPPORT_ATTACHMENT.
+
+## Scope
+
+Analyze the 8 previously changed cases:
+
+71, 119, 131, 179, 227, 275, 431, 527.
+
+Also inspect the 7 additional cases identified by the review:
+
+47, 95, 143, 251, 287, 347, 443.
+
+For all 15 cases, confirm the exact pre-audit operation, attribution, absence of contradictory category evidence, and applicable deletion policy conditions.
+
+Do not hardcode case IDs.
+
+## Acceptance
+
+- Run all tests and static checks.
+- Add focused synthetic tests, including contradictory workflow operations, shared conversations, and late operations.
+- Preserve all 518 valid predictions.
+- Compare every changed CSV step against the current baseline.
+- Confirm no unrelated status or step changes.
+- Check public sample metrics and strict-mode invariance.
+- Do not update golden-master fixtures until the differences have been reviewed and explained.
+- Rebuild and validate code.zip.
+
+If the fallback creates unsupported destructive findings or conflicts with explicit policy facts, reject those individual inferences and retain the safer classification.
+
+Implement the narrow fix, make one local commit on master, and do not push.
+
+Report in Russian:
+
+- Full commit SHA.
+- Which of the 15 cases changed.
+- Before/after status and steps.
+- Exact evidence behind each category inference.
+- Before/after sample metrics.
+- Full output.csv SHA-256.
+- Tests and quality checks.
+- Remaining uncertainty.
+
+Do not perform unrelated improvements.
+
+Agent Response Summary:
+Implemented a narrow submission-only fallback. A support record with no time-valid category evidence is classified as SUPPORT_ATTACHMENT only when all of its deletion-worker treatments up to audit_at are DELETE_RECORD operations uniquely assigned to this request's batch and the record names only the subject. The inference is rejected if it alone would report a record already compliant under REDACT. All 15 reviewed cases changed (one support resource each, REDACT to DELETE, same cited pre-audit evidence), with no status changes, identical sample metrics and an unchanged strict engine. Each inference is recorded in submission diagnostics as low-confidence. An archive packaged from the uncommitted working tree failed to build because the concurrent pyproject.toml edit references a LICENSE file the packager does not include; code.zip was rebuilt from committed HEAD and verified.
+
+Actions:
+* Commit bf707f8de483f206f94b26cf4a6969d46cdbedc2 (records.py, workflow.py, submission_service.py, test_support_workflow_inference.py, test_policy_cutoff.py, baseline_contract.json, submission_diagnostics.json, support_inference_differential.{json,md}, usage_report.md)
+* pytest 569 passed; ruff, ruff format, mypy strict, lint-imports (3 kept); mutation checks for each guard
+* main.py twice (identical SHA 1bc68692...), validate-output, sample and strict evaluation, independent output-contract check (0 errors)
+* code.zip rebuilt from a git-archive export of HEAD, extracted and executed (same SHA); concurrent uncommitted files (pyproject.toml, LICENSE, .editorconfig, CODE_OF_CONDUCT.md, CONTRIBUTING.md) left untouched
+
+Context:
+tool=Claude Code
+model=claude-opus-5-5
+branch=master
+repo_root=C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-october26
+worktree=main
+parent_agent=none
+
+## [2026-10-25T09:46:52Z] SESSION START
+
+tool=Claude Code
+model=claude-sonnet-5-5
+Repo Root: C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-october26
+Branch: master
+Worktree: main
+Parent Agent: none
+Language: py
+Time Remaining: not configured
+
+## [2026-10-25T10:20:00Z] Fix code.zip packaging: include LICENSE and metadata files
+
+User Prompt (verbatim, secrets redacted):
+# URGENT RELEASE FIX — Repair code.zip Packaging and Verify Submission
+(Task text pasted by the user: fix the packager so LICENSE referenced by pyproject.toml (`license = { file = "LICENSE" }`) is included in code.zip; also include other referenced/required metadata files (CONTRIBUTING.md, CODE_OF_CONDUCT.md, .editorconfig where appropriate); validate pyproject/hatchling metadata, editable install, wheel build and uv.lock sync; add a packaging regression test that would have caught the missing LICENSE and checks required files, evaluation reports at evaluation/*.md, exclusion of dataset and secrets, and determinism; test a clean extraction in a temp directory outside the repo with uv and pip on Python 3.12 using the external read-only dataset; protect output.csv (SHA-256 1bc68692b30cfc7d23efb502c8ad6ba03bfecf75452415d11eae0d4639c3666c, 518 rows, 154 COMPLETE / 354 INCOMPLETE / 10 NOT_APPLICABLE, 3,067 steps, zero prediction changes); run the full validation list (uv sync --locked, pytest, ruff, ruff format, mypy, lint-imports, main.py, validate-output, evaluation --run --json, package_submission.py); work on local master only (no branches, no merge/rebase/reset/pull/push, no AGENTS.md or dataset edits, no unrelated staging); one focused commit "fix: include license and required metadata in submission archive"; regenerate root code.zip after committing; final report in Russian with SHA, files, root cause, archive contents, uv/pip/wheel results, tests, linters, hashes, and a READY / NEEDS REVIEW / BLOCKED verdict.)
+
+Agent Response Summary:
+Added LICENSE, CONTRIBUTING.md, CODE_OF_CONDUCT.md and .editorconfig to ROOT_FILES in code/package_submission.py and made the packager refuse to build when pyproject.toml references a readme/license file that would be omitted. Added two regression tests (synthetic-root guard test and real-repo archive test covering metadata files, evaluation reports, exclusions and determinism) and verified by mutation that they fail against the original packager. Validated clean-extraction installs with uv and pip, wheel/sdist build (LICENSE present), and byte-identical output.csv. No prediction, policy or dataset changes.
+
+Actions:
+* Edited code/package_submission.py and code/tests/integration/test_packaging.py; committed locally on master (log.txt left unstaged)
+* uv sync --locked; pytest (571 passed); ruff; ruff format --check; mypy; lint-imports (3 kept)
+* main.py run twice (output.csv SHA-256 1bc68692... unchanged, byte-identical to backup); validate-output; evaluation --run --json
+* Built code.zip, extracted to a temp dir outside the repo, installed with uv sync --locked and pip install -e . --group dev, ran predictions against the external dataset (identical SHA-256); uv build produced sdist and wheel containing LICENSE
+* Rebuilt root code.zip after the commit
+
+Context:
+tool=Claude Code
+model=claude-sonnet-5-5
+branch=master
+repo_root=C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-october26
+worktree=main
+parent_agent=none
+
+## [2026-10-25T10:04:38Z] Commit log.txt
+
+User Prompt (verbatim, secrets redacted):
+Закоммить ебанный log.txt
+
+Agent Response Summary:
+Appended this entry and committed log.txt alone on master, without pushing.
+
+Actions:
+* git add log.txt; git commit
+
+Context:
+tool=Claude Code
+model=claude-sonnet-5-5
+branch=master
+repo_root=C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-october26
+worktree=main
+parent_agent=none
