@@ -6,19 +6,16 @@ from random import Random
 
 import pytest
 
-from ghost_audit.extraction import ExtractionContext, parse_json, parse_text
-from ghost_audit.index import EvidenceIndex
-from ghost_audit.ingestion import load_dataset
-from ghost_audit.models import EvidenceFile, ResourceRef
-from ghost_audit.phase2 import Phase2Analyzer
-from ghost_audit.phase2_models import (
-    AssociatedObservation, CaseEvidenceBundle, CorrelationLink, IntentResult,
-    ObservationLink, ResolvedIdentity,
-)
-from ghost_audit.phase3 import diagnostics
-from ghost_audit.sql import parse_sql
-from ghost_audit.temporal import TemporalStateEngine
-from ghost_audit.temporal_models import CaseStateBundle
+from ghost_audit.infrastructure.parsers.structured import ExtractionContext, parse_json, parse_text
+from ghost_audit.domain.evidence_index import EvidenceIndex
+from ghost_audit.infrastructure.ingestion.dataset_loader import load_dataset
+from ghost_audit.domain.models import EvidenceFile, ResourceRef
+from ghost_audit.application.evidence_association import EvidenceAssociationService
+from ghost_audit.domain.association_models import AssociatedObservation, CaseEvidenceBundle, CorrelationLink, IntentResult, ObservationLink, ResolvedIdentity
+from ghost_audit.application.temporal_diagnostics import diagnostics
+from ghost_audit.infrastructure.parsers.sql_snapshot import parse_sql
+from ghost_audit.application.temporal_service import TemporalStateEngine
+from ghost_audit.domain.temporal_models import CaseStateBundle
 
 EARLY = '2026-01-01T10:00:00Z'
 LATE = '2026-01-02T10:00:00Z'
@@ -439,7 +436,7 @@ def test_same_time_field_conflict_preserved_when_existence_agrees():
 
 
 def test_unregistered_evidence_cannot_prove_state():
-    from ghost_audit.index import EvidenceRegistry
+    from ghost_audit.domain.evidence_index import EvidenceRegistry
     a = record()
     result = TemporalStateEngine(EvidenceIndex([a], registry=EvidenceRegistry())).analyze(bundle([a]))
     assert not result.resource_histories
@@ -461,7 +458,7 @@ def test_non_deletion_intent_does_not_reconstruct_records():
 @pytest.fixture(scope='module')
 def full_run():
     dataset = load_dataset(Path(__file__).resolve().parents[2] / 'dataset')
-    analyzer = Phase2Analyzer(dataset)
+    analyzer = EvidenceAssociationService(dataset)
     engine = TemporalStateEngine(analyzer.index)
     return dataset, analyzer, engine, [engine.analyze(analyzer.analyze(r)) for r in dataset.requests]
 
@@ -495,10 +492,10 @@ def test_full_dataset_coverage_and_evidence_contract(full_run):
 
 
 def test_phase3_cli_full_sample_and_single_case(full_run, monkeypatch, capsys):
-    import main
+    from ghost_audit.interfaces import cli as main
     from dataclasses import replace
-    from ghost_audit.csvio import load_models
-    from ghost_audit.models import DeletionRequest
+    from ghost_audit.infrastructure.serialization.csv_records import load_models
+    from ghost_audit.domain.models import DeletionRequest
     dataset, _, _, _ = full_run
     samples = load_models(Path(__file__).resolve().parents[2] / 'dataset/sample_deletion_requests.csv',
                           DeletionRequest, 'case_id')

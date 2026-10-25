@@ -2,14 +2,14 @@
 
 import pytest
 
-from ghost_audit.extraction import parse_json
-from ghost_audit.index import EvidenceIndex
-from ghost_audit.ingestion import document_observations, parse_document
-from ghost_audit.models import EvidenceFile
-from ghost_audit.ocr import image_panels, image_text, panels_from_tsv
-from ghost_audit.output import omitted_from_listing
-from ghost_audit.prediction import predict
-from ghost_audit.temporal import coverage_surfaces
+from ghost_audit.infrastructure.parsers.structured import parse_json
+from ghost_audit.domain.evidence_index import EvidenceIndex
+from ghost_audit.infrastructure.parsers.documents import document_observations, parse_document
+from ghost_audit.domain.models import EvidenceFile
+from ghost_audit.infrastructure.parsers.image_ocr import image_panels, image_text, panels_from_tsv
+from ghost_audit.domain.citation_validation import omitted_from_listing
+from ghost_audit.application.strict_audit import predict
+from ghost_audit.domain.snapshot_coverage import coverage_surfaces
 from test_prediction import (
     CUTOFF, EARLY, FUTURE, LATE, absent, dataset, decision, observation, rules,
 )
@@ -137,8 +137,8 @@ def test_alternate_ocr_recovers_observed_text_without_repairing_identifier(
         rules, tmp_path, monkeypatch):
     (tmp_path / 'evidence').mkdir()
     (tmp_path / 'evidence/image.png').write_bytes(b'fixture image bytes')
-    monkeypatch.setattr('ghost_audit.ingestion.image_text', lambda *a: 'export_700 subject@exarnple.test')
-    monkeypatch.setattr('ghost_audit.ingestion.image_panels', lambda *a: [
+    monkeypatch.setattr('ghost_audit.infrastructure.parsers.documents.image_text', lambda *a: 'export_700 subject@exarnple.test')
+    monkeypatch.setattr('ghost_audit.infrastructure.parsers.documents.image_panels', lambda *a: [
         ('export_700', 'export_700\nOwner subject@example.test\nSize 18 MB')])
     manifest = EvidenceFile(file_id='image', file_path='evidence/image.png', origin='export_service', captured_at=EARLY)
     doc = parse_document(tmp_path, manifest, {'export_700': ('export_service', 'export_700', None)})

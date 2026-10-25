@@ -6,17 +6,20 @@ from random import Random
 
 import pytest
 
-from ghost_audit.csvio import load_models
-from ghost_audit.extraction import ExtractionContext, parse_json
-from ghost_audit.index import EvidenceIndex
-from ghost_audit.ingestion import Dataset
-from ghost_audit.models import DeletionRequest, DeletionRule, EvidenceDocument, EvidenceFile, Identity, IdentityChange
-from ghost_audit.output import OPERATION_ORDER, read_output, validate_output
-from ghost_audit.phase2 import Phase2Analyzer
-from ghost_audit.planning import plan_case
-from ghost_audit.policy import PolicyEvaluator
-from ghost_audit.prediction import PredictionBlocked, diagnostics, predict, publish
-from ghost_audit.temporal import TemporalStateEngine
+from ghost_audit.infrastructure.serialization.csv_records import load_models
+from ghost_audit.infrastructure.parsers.structured import ExtractionContext, parse_json
+from ghost_audit.domain.evidence_index import EvidenceIndex
+from ghost_audit.domain.dataset import Dataset
+from ghost_audit.domain.models import DeletionRequest, DeletionRule, EvidenceDocument, EvidenceFile, Identity, IdentityChange
+from ghost_audit.domain.output_contract import OPERATION_ORDER
+from ghost_audit.infrastructure.serialization.csv_output import read_output
+from ghost_audit.domain.citation_validation import validate_output
+from ghost_audit.application.evidence_association import EvidenceAssociationService
+from ghost_audit.domain.planning import plan_case
+from ghost_audit.domain.policy import PolicyEvaluator
+from ghost_audit.application.strict_audit import PredictionBlocked, diagnostics, predict
+from ghost_audit.infrastructure.serialization.prediction_artifacts import publish
+from ghost_audit.application.temporal_service import TemporalStateEngine
 
 EARLY = '2026-01-01T10:00:00Z'
 LATE = '2026-01-02T10:00:00Z'
@@ -227,7 +230,7 @@ def test_unknown_and_successful_delete_claim_cannot_prove_absence(rules):
 
 def test_potential_association_cannot_establish_compliance_or_violation(rules):
     d = dataset(rules, observation())
-    analyzer = Phase2Analyzer(d)
+    analyzer = EvidenceAssociationService(d)
     b = analyzer.analyze(d.requests[0])
     b = b.model_copy(update={'observations': [o.model_copy(update={'association': 'POTENTIAL'}) for o in b.observations]})
     state = TemporalStateEngine(analyzer.index).analyze(b)
@@ -378,16 +381,16 @@ def test_rules_are_data_driven_and_unknown_conditions_abstain(rules):
 
 def test_unassigned_deferred_pool_does_not_block_otherwise_complete_case(rules):
     d = dataset(rules, absent())
-    analyzer = Phase2Analyzer(d)
+    analyzer = EvidenceAssociationService(d)
     state = TemporalStateEngine(analyzer.index).analyze(analyzer.analyze(d.requests[0]))
-    from ghost_audit.temporal_models import UnresolvedState
+    from ghost_audit.domain.temporal_models import UnresolvedState
     state = state.model_copy(update={'unresolved_states': [UnresolvedState(
         reason='unassigned_deferred_evidence_requires_interpretation')]})
     assert plan_case(state, PolicyEvaluator(rules).evaluate(state)).decision == 'COMPLETE'
 
 
 def test_default_and_strict_cli_block_without_writing_and_preserve_inspect(rules, tmp_path, monkeypatch, capsys):
-    import main
+    from ghost_audit.interfaces import cli as main
     d = dataset(rules)
     monkeypatch.setattr(main, 'load_dataset', lambda *a, **k: d)
     out = tmp_path / 'output.csv'
@@ -406,7 +409,7 @@ def test_default_and_strict_cli_block_without_writing_and_preserve_inspect(rules
 
 
 def test_complete_cli_publishes_and_validates(rules, tmp_path, monkeypatch, capsys):
-    import main
+    from ghost_audit.interfaces import cli as main
     d = dataset(rules, absent())
     monkeypatch.setattr(main, 'load_dataset', lambda *a, **k: d)
     out = tmp_path / 'predictions.csv'
@@ -509,7 +512,7 @@ def test_only_retention_or_process_safety_cannot_prove_deleted_user(rules, categ
 
 
 def test_cli_rejects_artifacts_inside_dataset(rules, tmp_path, monkeypatch):
-    import main
+    from ghost_audit.interfaces import cli as main
     monkeypatch.setattr(main, 'load_dataset', lambda *a, **k: dataset(rules, observation()))
     with pytest.raises(SystemExit):
         main.main(['--dataset', str(tmp_path), '--predictions', str(tmp_path / 'input.csv')])
@@ -529,7 +532,7 @@ def test_pipeline_never_reads_sample_answers_or_existing_output(rules, tmp_path,
 
 @pytest.fixture(scope='module')
 def participant_run():
-    from ghost_audit.ingestion import load_dataset
+    from ghost_audit.infrastructure.ingestion.dataset_loader import load_dataset
     d = load_dataset(Path(__file__).resolve().parents[2] / 'dataset')
     index = EvidenceIndex(d.observations, registry=d.registry)
     return d, index, predict(d, index)

@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from ghost_audit.time import parse_timestamp
+from ghost_audit.domain.time import parse_timestamp
 
 
 @pytest.mark.parametrize("value", ["2026-01-02T08:00:00Z", "2026-01-02T12:00:00+04:00",

@@ -3,18 +3,18 @@ from pathlib import Path
 
 import pytest
 
-from ghost_audit.csvio import load_models
-from ghost_audit.ingestion import load_dataset
-from ghost_audit.models import DeletionRequest, EvidenceDocument, EvidenceFile
-from ghost_audit.phase2 import Phase2Analyzer, diagnostics
-from ghost_audit.phase2_models import CaseEvidenceBundle
-from ghost_audit.temporal_adapters import linkage_time
+from ghost_audit.infrastructure.serialization.csv_records import load_models
+from ghost_audit.infrastructure.ingestion.dataset_loader import load_dataset
+from ghost_audit.domain.models import DeletionRequest, EvidenceDocument, EvidenceFile
+from ghost_audit.application.evidence_association import EvidenceAssociationService, diagnostics
+from ghost_audit.domain.association_models import CaseEvidenceBundle
+from ghost_audit.domain.observation_clocks import linkage_time
 
 
 @pytest.fixture(scope='module')
 def analyzed():
     dataset = load_dataset(Path(__file__).resolve().parents[2] / 'dataset')
-    analyzer = Phase2Analyzer(dataset)
+    analyzer = EvidenceAssociationService(dataset)
     bundles = [analyzer.analyze(r) for r in dataset.requests]
     return analyzer, bundles
 
@@ -98,7 +98,7 @@ def test_deferred_pool_is_time_filtered_unassigned_and_provenance_preserved(anal
 
 
 def test_phase2_cli_aggregate_and_single_case(analyzed, monkeypatch, capsys):
-    import main
+    from ghost_audit.interfaces import cli as main
     analyzer, _ = analyzed
     monkeypatch.setattr(main, 'load_dataset', lambda *args, **kwargs: analyzer.dataset)
     assert main.main(['phase2']) == 0
@@ -122,5 +122,5 @@ def test_synthetic_future_deferred_file_is_not_offered(analyzed):
         sha256='a' * 64, status='deferred', observations=[],
     )
     dataset = replace(analyzer.dataset, documents=[*analyzer.dataset.documents, future])
-    bundle = Phase2Analyzer(dataset).analyze(dataset.requests[0])
+    bundle = EvidenceAssociationService(dataset).analyze(dataset.requests[0])
     assert 'future_image' not in {e.evidence_id for e in bundle.deferred_evidence}

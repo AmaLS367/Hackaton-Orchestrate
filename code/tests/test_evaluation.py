@@ -1,7 +1,7 @@
 import pytest
 
 from evaluation.scoring import evaluate
-from ghost_audit.output import OutputRow, OutputStep
+from ghost_audit.domain.output_contract import OutputRow, OutputStep
 
 
 def complete(case_id="fictional_deletion", evidence_id="fixture_file"):
@@ -64,17 +64,17 @@ def test_failure_analysis_distinguishes_wrong_citation_and_missing_case():
 def test_sample_run_harness_counts_abstentions_against_all_32_cases(dataset_path, monkeypatch, capsys):
     import json
     from evaluation.main import main
-    from ghost_audit.policy_models import CaseDecision, PredictionRun
-    from ghost_audit.prediction import predict
-    from ghost_audit.csvio import load_models
-    from ghost_audit.models import DeletionRequest
-    import ghost_audit.prediction
+    from ghost_audit.domain.policy_models import CaseDecision, PredictionRun
+    from ghost_audit.application.strict_audit import predict
+    from ghost_audit.infrastructure.serialization.csv_records import load_models
+    from ghost_audit.domain.models import DeletionRequest
+    import ghost_audit.application.strict_audit
 
     requests = load_models(dataset_path / 'sample_deletion_requests.csv', DeletionRequest, 'case_id')
     run = PredictionRun(cases=[CaseDecision(case_id=r.case_id, decision='UNDECIDABLE', prediction=None,
         assessments=[], unresolved=['synthetic_missing_evidence'], blockers=['no_grounded_answer']) for r in requests],
         elapsed_seconds=0.0)
-    monkeypatch.setattr(ghost_audit.prediction, 'predict', lambda *a, **k: run)
+    monkeypatch.setattr(ghost_audit.application.strict_audit, 'predict', lambda *a, **k: run)
     assert main(['--run', '--engine', 'strict', '--json']) == 0
     result = json.loads(capsys.readouterr().out)
     assert result['metrics']['reference_cases'] == result['metrics']['missing_cases'] == 32

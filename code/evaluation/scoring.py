@@ -3,7 +3,7 @@
 from collections import Counter
 from dataclasses import asdict, dataclass
 
-from ghost_audit.output import OutputRow
+from ghost_audit.domain.output_contract import OutputRow
 
 
 @dataclass(frozen=True)
@@ -47,10 +47,16 @@ def evaluate(predictions: list[OutputRow], references: list[OutputRow]) -> Evalu
         slots = max(len(target.steps), len(actual_steps))
         step_slots += slots
         field_slots += slots * 7
-        step_hits += sum((Counter(map(_step_signature, actual_steps)) &
-                          Counter(map(_step_signature, target.steps))).values())
+        step_hits += sum(
+            (
+                Counter(map(_step_signature, actual_steps))
+                & Counter(map(_step_signature, target.steps))
+            ).values()
+        )
         for left, right in zip(actual_steps, target.steps):
-            field_hits += sum(left.model_dump()[key] == value for key, value in right.model_dump().items())
+            field_hits += sum(
+                left.model_dump()[key] == value for key, value in right.model_dump().items()
+            )
         if actual is not None:
             status_hits += actual.deletion_status == target.deletion_status
             sequence_hits += actual.steps == target.steps
@@ -59,12 +65,21 @@ def evaluate(predictions: list[OutputRow], references: list[OutputRow]) -> Evalu
 
     def ratio(hits, total):
         # No steps is perfect only when every reference case was supplied.
-        return hits / total if total else float(
-            predicted_steps == expected_steps == 0 and len(predicted) == count
+        return (
+            hits / total
+            if total
+            else float(predicted_steps == expected_steps == 0 and len(predicted) == count)
         )
 
     return EvaluationMetrics(
-        count, len(predicted), count - len(predicted), status_hits / count,
-        ratio(step_hits, step_slots), ratio(step_hits, predicted_steps), ratio(step_hits, expected_steps),
-        ratio(field_hits, field_slots), sequence_hits / count, exact_hits / count,
+        count,
+        len(predicted),
+        count - len(predicted),
+        status_hits / count,
+        ratio(step_hits, step_slots),
+        ratio(step_hits, predicted_steps),
+        ratio(step_hits, expected_steps),
+        ratio(field_hits, field_slots),
+        sequence_hits / count,
+        exact_hits / count,
     )

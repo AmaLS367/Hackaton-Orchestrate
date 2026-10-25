@@ -1,6 +1,6 @@
 import pytest
 
-from ghost_audit.intent import IntentClassifier
+from ghost_audit.domain.intent import IntentClassifier
 
 
 @pytest.mark.parametrize('text', [
@@ -91,7 +91,7 @@ def test_uncertain_is_preserved(text):
 
 
 def test_reported_status_does_not_authorize_deletion():
-    from ghost_audit.models import DeletionRequest
+    from ghost_audit.domain.models import DeletionRequest
     request = DeletionRequest(case_id='x', email='p@example.invalid',
                               requested_at='2026-01-01T00:00:00Z',
                               reported_at='2026-01-02T00:00:00Z',

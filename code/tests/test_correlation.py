@@ -3,13 +3,13 @@ from itertools import permutations
 
 import pytest
 
-from ghost_audit.correlation import EvidenceCorrelator
-from ghost_audit.extraction import ExtractionContext, parse_json, parse_text
-from ghost_audit.identity import IdentityResolver
-from ghost_audit.index import EvidenceIndex, EvidenceRegistry
-from ghost_audit.models import EvidenceDocument, EvidenceFile, ResourceRef
-from ghost_audit.sql import parse_sql
-from ghost_audit.time import parse_timestamp
+from ghost_audit.domain.correlation import EvidenceCorrelator
+from ghost_audit.infrastructure.parsers.structured import ExtractionContext, parse_json, parse_text
+from ghost_audit.domain.identity import IdentityResolver
+from ghost_audit.domain.evidence_index import EvidenceIndex, EvidenceRegistry
+from ghost_audit.domain.models import EvidenceDocument, EvidenceFile, ResourceRef
+from ghost_audit.infrastructure.parsers.sql_snapshot import parse_sql
+from ghost_audit.domain.time import parse_timestamp
 
 from test_identity import T1, T2, T3, T4, change, snapshot
 

@@ -1,8 +1,8 @@
 import pytest
 
-from ghost_audit.identity import IdentityResolver
-from ghost_audit.models import Identity, IdentityChange
-from ghost_audit.time import parse_timestamp
+from ghost_audit.domain.identity import IdentityResolver
+from ghost_audit.domain.models import Identity, IdentityChange
+from ghost_audit.domain.time import parse_timestamp
 
 T1 = '2026-01-01T00:00:00Z'
 T2 = '2026-01-02T00:00:00Z'

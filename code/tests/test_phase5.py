@@ -9,16 +9,16 @@ from pathlib import Path
 
 import pytest
 
-from ghost_audit.csvio import load_models
-from ghost_audit.extraction import ExtractionContext, parse_json
-from ghost_audit.index import EvidenceIndex
-from ghost_audit.ingestion import Dataset, catalog_references, document_observations, parse_document, row_observations
-from ghost_audit.models import (
-    Activity, DeletionRequest, DeletionRule, EvidenceDocument, EvidenceFile, Identity,
-)
-from ghost_audit.output import validate_output
-from ghost_audit.phase2 import Phase2Analyzer
-from ghost_audit.prediction import predict
+from ghost_audit.infrastructure.serialization.csv_records import load_models
+from ghost_audit.infrastructure.parsers.structured import ExtractionContext, parse_json
+from ghost_audit.domain.evidence_index import EvidenceIndex
+from ghost_audit.domain.dataset import Dataset
+from ghost_audit.infrastructure.parsers.documents import catalog_references, document_observations, parse_document
+from ghost_audit.infrastructure.ingestion.dataset_loader import row_observations
+from ghost_audit.domain.models import Activity, DeletionRequest, DeletionRule, EvidenceDocument, EvidenceFile, Identity
+from ghost_audit.domain.citation_validation import validate_output
+from ghost_audit.application.evidence_association import EvidenceAssociationService
+from ghost_audit.application.strict_audit import predict
 
 REQUESTED = '2026-03-01T08:00:00Z'
 REPORTED = '2026-03-02T12:00:00Z'
@@ -132,7 +132,7 @@ def test_identity_exclusion_observed_after_audit_is_not_used(rules):
     a, c = request('case_a', 'a@example.test'), request('case_c', 'c@example.test', audit=AFTER)
     acts = [worker('act_1', '2026-03-02T11:00:00Z', 'account_1'), worker('act_2', '2026-03-02T11:10:00Z', 'account_2')]
     late = lookups('late', '2026-03-11T09:00:00Z', [('account_2', 200, {'email': 'c@example.test'})])
-    analyzer = Phase2Analyzer(build(rules, [a, c], late, acts))
+    analyzer = EvidenceAssociationService(build(rules, [a, c], late, acts))
     # At case_a's cutoff nobody has claimed account_2 yet: still ambiguous for case_a.
     assert analyzer.workflow.attributed(a) == []
     assert {r.resource_id for r in analyzer.analyze(a).primary_profile_candidates} == {'account_1', 'account_2'}
@@ -144,10 +144,10 @@ def test_crowded_window_blocks_per_resource_attribution(rules):
     a = request('case_a', 'a@example.test')
     action = worker('act_3', '2026-03-02T11:31:00Z', 'analytics_7', target='analytics_platform',
                     event='ANONYMIZE_RECORD')
-    alone = Phase2Analyzer(build(rules, [a], [], [worker('act_1', '2026-03-02T11:00:00Z', 'account_1'), action]))
+    alone = EvidenceAssociationService(build(rules, [a], [], [worker('act_1', '2026-03-02T11:00:00Z', 'account_1'), action]))
     assert len(alone.workflow.attributed(a)) == 2
     # A second profile with no visible request means another batch shares the window.
-    crowded = Phase2Analyzer(build(rules, [a], [], [worker('act_1', '2026-03-02T11:00:00Z', 'account_1'),
+    crowded = EvidenceAssociationService(build(rules, [a], [], [worker('act_1', '2026-03-02T11:00:00Z', 'account_1'),
                                                     worker('act_2', '2026-03-02T11:10:00Z', 'account_2'), action]))
     assert crowded.workflow.attributed(a) == []
 

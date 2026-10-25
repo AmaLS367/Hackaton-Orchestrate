@@ -3,11 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from ghost_audit.csvio import load_models
-from ghost_audit.index import EvidenceIndex
-from ghost_audit.ingestion import load_dataset
-from ghost_audit.models import DeletionRequest
-from ghost_audit.output import read_output, validate_output
+from ghost_audit.infrastructure.serialization.csv_records import load_models
+from ghost_audit.domain.evidence_index import EvidenceIndex
+from ghost_audit.infrastructure.ingestion.dataset_loader import load_dataset
+from ghost_audit.domain.models import DeletionRequest
+from ghost_audit.infrastructure.serialization.csv_output import read_output
+from ghost_audit.domain.citation_validation import validate_output
 
 
 @pytest.fixture(scope="module")

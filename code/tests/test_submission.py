@@ -5,10 +5,12 @@ from pathlib import Path
 import pytest
 
 from evaluation.scoring import evaluate
-from ghost_audit.index import EvidenceIndex
-from ghost_audit.ingestion import load_dataset
-from ghost_audit.output import read_output, validate_output
-from ghost_audit.submission import SubmissionPredictor, predict_submission, snapshot_listings
+from ghost_audit.domain.evidence_index import EvidenceIndex
+from ghost_audit.infrastructure.ingestion.dataset_loader import load_dataset
+from ghost_audit.infrastructure.serialization.csv_output import read_output
+from ghost_audit.domain.citation_validation import validate_output
+from ghost_audit.application.submission_service import SubmissionPredictor, predict_submission
+from ghost_audit.domain.snapshot_inventory import snapshot_listings
 
 ROOT = Path(__file__).resolve().parents[2]
 

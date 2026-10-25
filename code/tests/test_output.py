@@ -4,12 +4,12 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from ghost_audit.extraction import parse_json, parse_text
-from ghost_audit.index import EvidenceIndex
-from ghost_audit.models import DeletionRequest
-from ghost_audit.output import (
-    OPERATIONS, OutputRow, OutputStep, canonical_steps, read_output, validate_output, write_output,
-)
+from ghost_audit.infrastructure.parsers.structured import parse_json, parse_text
+from ghost_audit.domain.evidence_index import EvidenceIndex
+from ghost_audit.domain.models import DeletionRequest
+from ghost_audit.domain.output_contract import OPERATIONS, OutputRow, OutputStep, canonical_steps
+from ghost_audit.infrastructure.serialization.csv_output import read_output, write_output
+from ghost_audit.domain.citation_validation import validate_output
 
 
 def step(operation="VERIFY_RECORD_ABSENT", **overrides):

@@ -10,20 +10,23 @@ from pathlib import Path
 
 import pytest
 
-from ghost_audit.extraction import ExtractionContext, parse_json, parse_text
-from ghost_audit.index import EvidenceIndex
-from ghost_audit.ingestion import Dataset, catalog_references, document_observations, load_dataset
-from ghost_audit.models import Activity, EvidenceFile, Identity, IdentityChange
-from ghost_audit.phase2 import Phase2Analyzer
-from ghost_audit.phase2_models import (
-    AssociatedObservation, CaseEvidenceBundle, CorrelationLink, IntentResult, ObservationLink, ResolvedIdentity,
-)
-from ghost_audit.policy import PolicyEvaluator
-from ghost_audit.prediction import predict, write_abstention_diagnostics
-from ghost_audit.sql import parse_sql
-from ghost_audit.temporal import TemporalStateEngine, coverage_surfaces
-from ghost_audit.temporal_adapters import interpret, known_at, time_profile
-from ghost_audit.time import parse_timestamp
+from ghost_audit.infrastructure.parsers.structured import ExtractionContext, parse_json, parse_text
+from ghost_audit.domain.evidence_index import EvidenceIndex
+from ghost_audit.domain.dataset import Dataset
+from ghost_audit.infrastructure.parsers.documents import catalog_references, document_observations
+from ghost_audit.infrastructure.ingestion.dataset_loader import load_dataset
+from ghost_audit.domain.models import Activity, EvidenceFile, Identity, IdentityChange
+from ghost_audit.application.evidence_association import EvidenceAssociationService
+from ghost_audit.domain.association_models import AssociatedObservation, CaseEvidenceBundle, CorrelationLink, IntentResult, ObservationLink, ResolvedIdentity
+from ghost_audit.domain.policy import PolicyEvaluator
+from ghost_audit.application.strict_audit import predict
+from ghost_audit.infrastructure.serialization.prediction_artifacts import write_abstention_diagnostics
+from ghost_audit.infrastructure.parsers.sql_snapshot import parse_sql
+from ghost_audit.application.temporal_service import TemporalStateEngine
+from ghost_audit.domain.snapshot_coverage import coverage_surfaces
+from ghost_audit.application.observation_interpretation import interpret
+from ghost_audit.domain.observation_clocks import known_at, time_profile
+from ghost_audit.domain.time import parse_timestamp
 
 from test_phase5 import (  # noqa: F401  (rules is a fixture)
     AFTER, CUTOFF, LISTING, PEOPLE, audit_record, build, ctx, lookups, request, rules, snapshot, steps, worker,
@@ -98,7 +101,7 @@ def test_late_document_with_earlier_source_time_establishes_no_ownership(rules):
     o = next(o for o in late if o.resources)
     profile = time_profile(o)
     assert profile['observed_at'] < a.audit_at < profile['known_at'] == known_at(o)
-    bundle = Phase2Analyzer(build(rules, [a], late)).analyze(a)
+    bundle = EvidenceAssociationService(build(rules, [a], late)).analyze(a)
     assert bundle.observations == [] and bundle.resources == []
 
 
@@ -114,7 +117,7 @@ def test_reassigned_historical_email_confirms_neither_user(rules):
                IdentityChange(audit_id='audit_2', user_id='user_b', event_time='2025-09-01T00:00:00Z',
                               field_name='email', old_value='b@example.test', new_value='shared@example.test')]
     data = with_identities(build(rules, [a], search_row('rows', LISTING, 'shared@example.test')), people, changes)
-    bundle = Phase2Analyzer(data).analyze(a)
+    bundle = EvidenceAssociationService(data).analyze(a)
     assert 'shared_alias:email' in bundle.ambiguities
     assert 'CONFIRMED' not in associations(bundle).values() and bundle.resources == []
 
@@ -125,7 +128,7 @@ def test_legitimate_historical_alias_links_with_its_audit_origin(rules):
     changes = [IdentityChange(audit_id='audit_9', user_id='user_a', event_time='2025-06-01T00:00:00Z',
                               field_name='email', old_value='old@example.test', new_value='a@example.test')]
     data = with_identities(build(rules, [a], search_row('rows', LISTING, 'old@example.test')), PEOPLE, changes)
-    bundle = Phase2Analyzer(data).analyze(a)
+    bundle = EvidenceAssociationService(data).analyze(a)
     [item] = [o for o in bundle.observations if o.observation.resources]
     assert item.association == 'CONFIRMED'
     assert {x.audit_id for link in item.links for x in link.alias_origins} == {'audit_9'}
@@ -138,7 +141,7 @@ def test_multi_user_workflow_batch_attributes_no_resource(rules):
     acts = [worker('p1', '2026-03-02T11:00:00Z', 'account_1'), worker('p2', '2026-03-02T11:05:00Z', 'account_2'),
             worker('x1', '2026-03-02T11:40:00Z', 'analytics_1', target='analytics_platform', event='ANONYMIZE_RECORD'),
             worker('x2', '2026-03-02T11:41:00Z', 'analytics_2', target='analytics_platform', event='ANONYMIZE_RECORD')]
-    analyzer = Phase2Analyzer(build(rules, [a, b], [], acts))
+    analyzer = EvidenceAssociationService(build(rules, [a, b], [], acts))
     assert analyzer.workflow.attributed(a) == analyzer.workflow.attributed(b) == []
     assert all(o.association != 'CONFIRMED' for c in (a, b) for o in analyzer.analyze(c).observations)
 
@@ -148,7 +151,7 @@ def test_resource_ownership_change_keeps_foreign_period_unconfirmed(rules):
     a = request('case_a', 'a@example.test')
     earlier = search_row('s1', '2026-03-03T10:00:00Z', 'b@example.test')
     later = search_row('s2', LISTING, 'a@example.test')
-    bundle = Phase2Analyzer(build(rules, [a], [*earlier, *later])).analyze(a)
+    bundle = EvidenceAssociationService(build(rules, [a], [*earlier, *later])).analyze(a)
     by_file = {k[0]: v for k, v in associations(bundle).items() if k[1].endswith('.records[0]')}
     assert by_file['s2'] == 'CONFIRMED' and by_file.get('s1') != 'CONFIRMED'
 
@@ -178,7 +181,7 @@ def test_cross_collection_resource_id_collision_is_not_joined(rules):
                                        [{'resource_id': 'account_1', 'email': 'a@example.test'}])])
     other = snapshot('other', LISTING, [('account_service', 'marketing_preferences', LISTING,
                                          [{'resource_id': 'account_1', 'email': None}])])
-    bundle = Phase2Analyzer(build(rules, [a], [*owned, *other])).analyze(a)
+    bundle = EvidenceAssociationService(build(rules, [a], [*owned, *other])).analyze(a)
     statuses = {k[0]: v for k, v in associations(bundle).items() if k[1].endswith('.records[0]')}
     assert statuses == {'own': 'CONFIRMED', 'other': 'POTENTIAL'}
     item = next(o for o in bundle.observations if o.observation.provenance.evidence_id == 'other')
@@ -200,7 +203,7 @@ TRACES = [
 # 9. A trace that also names an unknown subject cannot assign its results.
 def test_scoped_trace_with_foreign_unknown_subject_stays_potential(rules):
     a = request('case_a', 'a@example.test')
-    bundle = Phase2Analyzer(build(rules, [a], trace('rb', TRACES))).analyze(a)
+    bundle = EvidenceAssociationService(build(rules, [a], trace('rb', TRACES))).analyze(a)
     status = {o.observation.resources[0].resource_id: (o.association, o.reason)
               for o in bundle.observations if o.observation.resources}
     assert status['account_1'][0] == 'POTENTIAL'
@@ -209,7 +212,7 @@ def test_scoped_trace_with_foreign_unknown_subject_stays_potential(rules):
 # 10. A clean direct anchor survives an unrelated ambiguous trace in the same file.
 def test_confirmed_direct_anchor_survives_unrelated_ambiguity(rules):
     a = request('case_a', 'a@example.test')
-    bundle = Phase2Analyzer(build(rules, [a], trace('rb', TRACES))).analyze(a)
+    bundle = EvidenceAssociationService(build(rules, [a], trace('rb', TRACES))).analyze(a)
     status = {o.observation.resources[0].resource_id: o.association
               for o in bundle.observations if o.observation.resources}
     assert status == {'account_1': 'POTENTIAL', 'account_2': 'CONFIRMED'}

@@ -4,15 +4,17 @@ import csv
 import pytest
 from pypdf import PdfWriter
 
-from ghost_audit.index import EvidenceIndex
-from ghost_audit.ingestion import parse_document
-from ghost_audit.output import OutputRow, validate_output, write_output
+from ghost_audit.domain.evidence_index import EvidenceIndex
+from ghost_audit.infrastructure.parsers.documents import parse_document
+from ghost_audit.domain.output_contract import OutputRow
+from ghost_audit.domain.citation_validation import validate_output
+from ghost_audit.infrastructure.serialization.csv_output import write_output
 from test_output import request, step
 
 
 @pytest.mark.parametrize('suffix', ['png', 'pdf'])
 def test_deferred_citation_uses_manifest_availability(tmp_path, context, suffix):
-    from ghost_audit.index import EvidenceRegistry
+    from ghost_audit.domain.evidence_index import EvidenceRegistry
 
     manifest = context.manifest.model_copy(update={'file_path': f'evidence/fixture.{suffix}'})
     path = tmp_path / manifest.file_path
@@ -48,8 +50,8 @@ def test_deferred_citation_uses_manifest_availability(tmp_path, context, suffix)
 
 
 def test_audit_and_activity_registered_without_observations():
-    from ghost_audit.index import EvidenceRegistry
-    from ghost_audit.models import Activity, IdentityChange
+    from ghost_audit.domain.evidence_index import EvidenceRegistry
+    from ghost_audit.domain.models import Activity, IdentityChange
 
     activity = Activity(activity_id='activity_x', event_time='2026-01-02T00:00:00Z',
                         event_type='lookup', source_system='', target_system='account_service',
@@ -70,7 +72,7 @@ def test_audit_and_activity_registered_without_observations():
 
 
 def test_current_identity_id_is_not_a_citation(context):
-    from ghost_audit.extraction import parse_json
+    from ghost_audit.infrastructure.parsers.structured import parse_json
 
     context = replace(context, manifest=context.manifest.model_copy(
         update={'file_path': 'user_identities.csv', 'file_id': 'user_x'}))
@@ -83,7 +85,7 @@ def test_current_identity_id_is_not_a_citation(context):
 
 
 def test_cli_validates_manifest_only_citation_offline(tmp_path, capsys):
-    from main import main
+    from ghost_audit.interfaces.cli import main
 
     dataset = tmp_path / 'dataset'
     dataset.mkdir()

@@ -7,13 +7,13 @@ import pytest
 from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
-from ghost_audit.csvio import load_models
-from ghost_audit.extraction import parse_csv, parse_json, parse_text
-from ghost_audit.index import EvidenceIndex
-from ghost_audit.ingestion import evidence_path, parse_document
-from ghost_audit.models import EvidenceFile, IdentityChange
-from ghost_audit.sql import parse_sql
-from ghost_audit.time import parse_timestamp
+from ghost_audit.infrastructure.serialization.csv_records import load_models
+from ghost_audit.infrastructure.parsers.structured import parse_csv, parse_json, parse_text
+from ghost_audit.domain.evidence_index import EvidenceIndex
+from ghost_audit.infrastructure.parsers.documents import evidence_path, parse_document
+from ghost_audit.domain.models import EvidenceFile, IdentityChange
+from ghost_audit.infrastructure.parsers.sql_snapshot import parse_sql
+from ghost_audit.domain.time import parse_timestamp
 
 
 def test_nested_json_scopes_and_identifiers(context):

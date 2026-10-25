@@ -4,9 +4,9 @@ from dataclasses import replace
 
 import pytest
 
-from ghost_audit.extraction import parse_text
-from ghost_audit.index import EvidenceIndex
-from ghost_audit.time import parse_timestamp
+from ghost_audit.infrastructure.parsers.structured import parse_text
+from ghost_audit.domain.evidence_index import EvidenceIndex
+from ghost_audit.domain.time import parse_timestamp
 
 
 FORMATS = [

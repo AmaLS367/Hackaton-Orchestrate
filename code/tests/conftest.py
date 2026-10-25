@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from ghost_audit.extraction import ExtractionContext
-from ghost_audit.models import EvidenceFile
+from ghost_audit.infrastructure.parsers.structured import ExtractionContext
+from ghost_audit.domain.models import EvidenceFile
 
 
 @pytest.fixture
