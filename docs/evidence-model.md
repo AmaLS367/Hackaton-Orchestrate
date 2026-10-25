@@ -60,9 +60,10 @@ attribution; those later files never become state citations. It may classify a c
 COMPLETE from proven compliant resources while unknown or ambiguous resources remain
 outside the row. These are inherited inference assumptions, not new strict guarantees.
 
-The structural refactor deliberately preserves those assumptions, including low
-confidence and all abstentions. They remain technical uncertainty, rather than being
-hidden by a higher sample score. See the official evaluation report for examples.
+The structural refactor and strict-typing pass preserve those assumptions, including
+low confidence and all abstentions. Type checking establishes interface and value-shape
+consistency; it does not establish hidden prediction accuracy or remove those inference
+limitations. See the official evaluation report for examples.
 
 Citation checks establish existence, availability and linkage. They cannot, by
 themselves, prove ownership, state truth, policy applicability or complete discovery.

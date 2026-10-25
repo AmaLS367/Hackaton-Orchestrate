@@ -105,7 +105,19 @@ def check_citation(
 def validate_output(
     rows: list[OutputRow], requests: list[DeletionRequest], evidence: EvidenceIndex | None = None
 ) -> list[CitationCheck]:
-    """Validate structure/time/linkage; return explicit unverified state diagnostics."""
+    """Validate complete sorted coverage, step contracts and citation availability.
+
+    Args:
+        rows: Official prediction rows, already in case_id order.
+        requests: The exact request set being published.
+        evidence: Optional registry/index for citation time and resource checks.
+
+    Returns:
+        Citation diagnostics whose state_support remains explicitly unverified.
+        A registered resource link is not a proof of ownership or state truth.
+
+    Raises:
+        ValueError: Coverage, serialization, ordering or citation checks fail."""
     expected = {request.case_id: request for request in requests}
     if len(expected) != len(requests):
         raise ValueError("duplicate request case_id")

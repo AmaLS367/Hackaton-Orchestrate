@@ -40,6 +40,7 @@ class TemporalStateEngine:
     """
 
     def __init__(self, index: EvidenceIndex | None = None) -> None:
+        """Index provenance and coverage surfaces without reparsing or expanding ownership."""
         self.index = index
         self.by_link = (
             {ObservationLink.of(o): o for o in index.observations} if index is not None else {}
@@ -84,6 +85,10 @@ class TemporalStateEngine:
     def _collect_observations(
         self, bundle: CaseEvidenceBundle, unresolved: list[UnresolvedState]
     ) -> defaultdict[tuple[str, ...], list[TemporalObservation]]:
+        """Interpret only visible facts whose ownership chain is also visible at audit_at.
+
+        A later anchor cannot lend earlier ownership to an otherwise timely readback.
+        Keep physical scopes separate before comparing replicas or inferring coverage."""
         histories: defaultdict[tuple[str, ...], list[TemporalObservation]] = defaultdict(list)
         local = {ObservationLink.of(i.observation): i.observation for i in bundle.observations}
         if bundle.intent.decision != "DELETE_INTENT":
@@ -164,6 +169,7 @@ class TemporalStateEngine:
         histories: dict[tuple[str, ...], list[TemporalObservation]],
         unresolved: list[UnresolvedState],
     ) -> list[ResourceHistory]:
+        """Select each state dimension per scope while retaining historical contradictions."""
         results = []
         for key in sorted(histories):
             observations = sorted(histories[key], key=observation_key)
@@ -195,6 +201,7 @@ class TemporalStateEngine:
         results: list[ResourceHistory],
         unresolved: list[UnresolvedState],
     ) -> CaseStateBundle:
+        """Aggregate scoped states, replica gaps and uncertainty without applying deletion policy."""
         known = {(h.scope.system_id, h.scope.collection, h.scope.resource_id) for h in results}
         if bundle.intent.decision == "DELETE_INTENT":
             for resource in bundle.resources:

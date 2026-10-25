@@ -1,4 +1,7 @@
-"""Exact, cutoff-aware alias ownership. No fuzzy matching or derived hashes."""
+"""Cutoff-aware identity resolution in the pure domain layer.
+
+Ownership uses exact supplied identifiers. Future snapshots cannot be rolled back,
+and names and derived hashes never establish strict identity ownership."""
 
 from collections import defaultdict
 from collections.abc import Iterable
@@ -30,6 +33,7 @@ class IdentityResolver:
     """Resolve exact identity facts only when available by the requested cutoff."""
 
     def __init__(self, identities: Iterable[Identity], changes: Iterable[IdentityChange]) -> None:
+        """Index supplied snapshots and audit transitions without inferring earlier facts."""
         self.snapshots = {row.user_id: row for row in identities}
         self.changes: defaultdict[str, list[IdentityChange]] = defaultdict(list)
         # Ownership facts carry the time they became available, including old_value.
@@ -65,7 +69,18 @@ class IdentityResolver:
     def resolve(
         self, request: DeletionRequest | str, audit_at: str | datetime | None = None
     ) -> ResolvedIdentity:
-        """Resolve a request email uniquely or retain ambiguity and historical aliases."""
+        """Resolve one request email using only statements known by the cutoff.
+
+        Args:
+            request: A deletion request or an exact current/historical email.
+            audit_at: Optional cutoff override; required when request is a string.
+
+        Returns:
+            A unique subject and its aliases, or explicit unresolved/ambiguous candidates.
+            A shared alias never merges people or silently selects one owner.
+
+        Raises:
+            ValueError: The cutoff is missing or has no explicit timezone."""
         if isinstance(request, DeletionRequest):
             email = request.email
             cutoff = parse_timestamp(audit_at) if audit_at is not None else request.audit_at
@@ -102,7 +117,11 @@ class IdentityResolver:
     def aliases_for(
         self, user: str, audit_at: str | datetime
     ) -> tuple[list[IdentityAlias], set[str]]:
-        """Reconstruct alias statements and bounded intervals without using future transitions."""
+        """Reconstruct visible alias statements, supported intervals and history issues.
+
+        An old_value becomes known when its audit transition is recorded; it is not
+        backdated into earlier audits. Only observed transitions bound validity, and
+        simultaneous disagreements keep active_at_cutoff unknown."""
         cutoff = parse_timestamp(audit_at)
         snapshot = self.snapshots.get(user)
         visible_snapshot = snapshot if snapshot and snapshot.updated_at <= cutoff else None

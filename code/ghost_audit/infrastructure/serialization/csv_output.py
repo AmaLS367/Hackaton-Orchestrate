@@ -44,7 +44,11 @@ def write_output(
     requests: list[DeletionRequest],
     evidence: EvidenceIndex | None = None,
 ) -> None:
-    """Validate the complete result before atomically replacing the destination CSV."""
+    """Validate all rows before atomically replacing the destination CSV.
+
+    The temporary file lives beside the destination so replacement stays on the
+    same filesystem. Validation failure preserves an existing submission; temporary
+    files are removed even when serialization or replacement raises an exception."""
     ordered = sorted(rows, key=lambda row: row.case_id)
     validate_output(ordered, requests, evidence)
     # Validate everything before replacing any existing output.

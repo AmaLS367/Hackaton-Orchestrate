@@ -36,6 +36,7 @@ PRIVATE_KEYS = {
 
 
 def redact(value: JsonValue) -> JsonValue:
+    """Recursively redact credential-like strings while preserving JSON structure."""
     if isinstance(value, dict):
         return {
             k: "[REDACTED]"
@@ -60,6 +61,7 @@ def redact(value: JsonValue) -> JsonValue:
 
 
 def sanitized_jsonl(path: Path) -> tuple[bytes, int]:
+    """Return UTF-8 JSONL bytes and the number of changed entries; keep safe raw lines."""
     lines, changes = [], 0
     for raw in path.read_text(encoding="utf-8").splitlines(keepends=True):
         original = json.loads(raw)
@@ -73,6 +75,7 @@ def sanitized_jsonl(path: Path) -> tuple[bytes, int]:
 
 
 def same_checkout(cwd: object, root: Path) -> bool:
+    """Compare normalized checkout paths without depending on host path separators."""
     return (
         str(cwd).replace("\\", "/").rstrip("/").casefold()
         == str(root).replace("\\", "/").rstrip("/").casefold()
@@ -82,6 +85,10 @@ def same_checkout(cwd: object, root: Path) -> bool:
 def discover(
     root: Path, codex_home: Path, claude_home: Path, excluded: Collection[str] = ()
 ) -> dict[str, Path]:
+    """Find raw local harness traces belonging to this checkout.
+
+    Exclude named active sessions and unrelated checkouts. Discovery reads metadata
+    only; packaging checks each selected file remained unchanged during copying."""
     result = {}
     sessions = codex_home / "sessions"
     for path in sorted(sessions.rglob("rollout-*.jsonl")):
@@ -120,6 +127,7 @@ def discover(
 
 
 def main() -> None:
+    """Package discovered traces, verify JSONL/ZIP integrity and print sharing caveats."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--codex-home",

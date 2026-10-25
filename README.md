@@ -86,6 +86,11 @@ uv run python code/evaluation/main.py --predictions sample_predictions.csv --jso
 uv run python code/evaluation/main.py --check-reference
 ```
 
+`uv run mypy` applies `strict = true` to all 99 Python files under `code/`, including
+tests, fixtures, both packaging scripts and regression tools. No packages are excluded
+or configured with weaker checks. See [development](docs/development.md) for the exact
+configuration and dependency-export workflow.
+
 Generate an independent sample file with
 `uv run python code/main.py --samples --predictions sample_predictions.csv` before
 scoring it. Only the evaluation package reads `sample_output.csv`. Sample status
@@ -140,5 +145,6 @@ traces after sessions have closed, follow [agent trace instructions](agent_trace
 - [Tests and regression strategy](docs/testing.md)
 - [Protected baseline](docs/baseline.md)
 - [Refactor release evidence](docs/refactor-report.md)
+- [Final quality pass and validation](docs/quality-pass.md)
 - [Official evaluation report](code/evaluation/evaluation_report.md)
 - [Runtime and development usage](code/evaluation/usage_report.md)

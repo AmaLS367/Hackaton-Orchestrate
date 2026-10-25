@@ -56,6 +56,7 @@ class EvidenceRegistry:
         identity_changes: Iterable[IdentityChange] = (),
         observations: Iterable[Observation] = (),
     ) -> None:
+        """Register manifest and CSV citations, including deferred files with no observations."""
         self.entries: dict[str, EvidenceEntry] = {}
         for document in documents:
             manifest = document.manifest
@@ -123,6 +124,7 @@ class EvidenceIndex:
     def __init__(
         self, observations: Iterable[Observation], registry: EvidenceRegistry | None = None
     ) -> None:
+        """Build in-memory lookup indexes and reuse the supplied citation registry."""
         self.observations = tuple(observations)
         self.registry = (
             registry if registry is not None else EvidenceRegistry(observations=self.observations)

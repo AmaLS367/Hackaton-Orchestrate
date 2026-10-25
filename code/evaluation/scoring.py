@@ -8,6 +8,8 @@ from ghost_audit.domain.output_contract import OutputRow, OutputStep
 
 @dataclass(frozen=True)
 class EvaluationMetrics:
+    """Public-reference status, multiset-step, positional-field and sequence measurements."""
+
     reference_cases: int
     predicted_cases: int
     missing_cases: int
@@ -20,6 +22,7 @@ class EvaluationMetrics:
     exact_case_accuracy: float
 
     def markdown(self) -> str:
+        """Render metric fields without claiming the organizer uses the same scoring formula."""
         return "\n".join(f"- {key}: {value}" for key, value in asdict(self).items())
 
 

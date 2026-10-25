@@ -16,6 +16,7 @@ from ghost_audit.infrastructure.parsers.structured import ExtractionContext, tim
 def _authorize(
     action: int, arg1: str | None, arg2: str | None, database: str | None, trigger: str | None
 ) -> int:
+    """Allow snapshot construction and reads; deny attachments and arbitrary SQL effects."""
     allowed = {
         sqlite3.SQLITE_CREATE_TABLE,
         sqlite3.SQLITE_CREATE_INDEX,
@@ -41,7 +42,12 @@ def _quote(identifier: str) -> str:
 
 
 def parse_sql(text: str, context: ExtractionContext) -> list[Observation]:
-    """Read supplied snapshots in a restricted in-memory SQLite connection."""
+    """Decode a supplied SQL snapshot in an isolated, restricted SQLite connection.
+
+    Keep empty-table schemas, physical replica names and source/capture clocks.
+    A schema or absent row alone never proves strict completeness. The authorizer
+    and instruction budget bound execution; SQLite errors propagate to the document
+    adapter, which records extraction deferral rather than inventing a state."""
     observations = []
     # A header capture is independent of row updated_at and manifest capture time.
     header = re.search(rf"-- Captured at:\s*({ISO_TOKEN})", text)

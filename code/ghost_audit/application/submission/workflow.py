@@ -19,10 +19,12 @@ class WorkflowAssignment:
     """Keep unique batch assignments separate from resource state evidence."""
 
     def __init__(self, evidence: SubmissionEvidence) -> None:
+        """Solve batch candidates once against both participant request files."""
         self.evidence = evidence
         self._index_workflow()
 
     def _index_workflow(self) -> None:
+        """Build constrained assignments; operation success never becomes record state."""
         deleting = [
             r
             for r in self.evidence.requests
@@ -56,6 +58,10 @@ class WorkflowAssignment:
         users: dict[str, str | None],
         submissions: list[Activity],
     ) -> None:
+        """Match reported cadence/result to primary submissions, then propagate singletons.
+
+        Independent ownership excludes contradictions. A lookup-only historical key does
+        not override the uniquely submitted account, and ambiguous options remain visible."""
         candidates = {}
         for r in deleting:
             options = set()
@@ -86,11 +92,11 @@ class WorkflowAssignment:
         # An account submitted in some other request's batch is not this subject's merely
         # because an old lookup by this subject's key touched it.
         self.batch_owner = {next(iter(v)): k for k, v in candidates.items() if len(v) == 1}
-        # Hand-written workflow reports name their target at reporting time.
 
     def _match_direct_reports(
         self, deleting: list[DeletionRequest], worker: list[Activity]
     ) -> None:
+        """Attribute an explicit target report only when its reporting window is unique."""
         self.direct_reports = defaultdict(set)
         for a in worker:
             if "Target resource:" not in a.details:
@@ -104,9 +110,6 @@ class WorkflowAssignment:
             ]
             if len(near) == 1:
                 self.direct_reports[near[0].case_id].add(a.resource_id)
-        # 2. Downstream policy actions and final results belong to the batch reported just
-        # after (actions) or just before (final results) them. A request that already has
-        # an explicitly owned record of the same kind is not a candidate for another one.
 
     def _match_downstream(
         self,
@@ -116,6 +119,11 @@ class WorkflowAssignment:
         submissions: list[Activity],
         kinds: dict[str, set[str]],
     ) -> None:
+        """Assign downstream worker actions only to a uniquely compatible batch.
+
+        Explicit owners constrain the batch. Without an owner, an already-owned resource
+        of the same kind removes a request from consideration; unresolved overlaps stay
+        in diagnostics instead of generating unsupported findings."""
         self.downstream = defaultdict(set)
         self.downstream_ambiguous = defaultdict(set)
         for a in worker:
@@ -150,6 +158,7 @@ class WorkflowAssignment:
 
     @staticmethod
     def _propagate(candidates: dict[str, set[str]]) -> None:
+        """Eliminate singleton accounts from other multi-option batches until stable."""
         changed = True
         while changed:
             changed = False

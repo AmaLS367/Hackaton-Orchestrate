@@ -18,6 +18,7 @@ class EvidenceAssociationService:
     """Coordinate identity, bounded discovery and per-case evidence bundles."""
 
     def __init__(self, dataset: Dataset, index: EvidenceIndex | None = None) -> None:
+        """Reuse loaded inputs and a shared index; initialize strict ownership services."""
         self.dataset = dataset
         self.index = (
             index
@@ -119,7 +120,7 @@ class EvidenceAssociationService:
 
 
 class AssociationDiagnostics(TypedDict):
-    """Serialized diagnostic fields; reporting never changes prediction state."""
+    """Counts and unresolved case IDs from association; these are not accuracy metrics."""
 
     cases: int
     intent: dict[str, int]

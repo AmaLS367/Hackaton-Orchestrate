@@ -67,7 +67,7 @@ def predict(dataset: Dataset, index: EvidenceIndex | None = None) -> PredictionR
 
 
 class ModelUsage(TypedDict):
-    """Serialized diagnostic fields; reporting never changes prediction state."""
+    """Offline-run accounting; these counters exclude development assistant usage."""
 
     providers: list[str]
     models: list[str]
@@ -81,7 +81,7 @@ class ModelUsage(TypedDict):
 
 
 class StrictDiagnostics(TypedDict):
-    """Serialized diagnostic fields; reporting never changes prediction state."""
+    """Strict decisions, validation blockers and usage counts, separate from official rows."""
 
     cases_processed: int
     status_counts: dict[str, int]

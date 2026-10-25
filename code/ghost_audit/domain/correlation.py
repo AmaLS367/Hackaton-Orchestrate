@@ -83,6 +83,7 @@ class EvidenceCorrelator:
     """Bound subject discovery without expanding through newly encountered identities."""
 
     def __init__(self, index: EvidenceIndex, resolver: IdentityResolver) -> None:
+        """Index subject tokens and scoped resources once; perform no evidence I/O."""
         self.index, self.resolver = index, resolver
         self.tokens = [
             identifier_values(o.payload) | identifier_values(o.raw_text) for o in index.observations
@@ -104,7 +105,18 @@ class EvidenceCorrelator:
         workflow_seeds: Iterable[int] = (),
         prior_audit: datetime | None = None,
     ) -> tuple[list[AssociatedObservation], list[AssociatedResource], list[str]]:
-        """Bound association expansion to one subject and an immutable audit cutoff."""
+        """Associate evidence through a bounded search from one resolved subject.
+
+        Args:
+            identity: Cutoff-visible aliases of a uniquely resolved subject.
+            audit_at: Immutable availability cutoff, with an explicit timezone.
+            workflow_seeds: Observation indices proposed by workflow timing; these
+                remain potential until independent ownership is established.
+            prior_audit: Earlier request boundary used to avoid recycling its anchors.
+
+        Returns:
+            Ordered observations, confirmed resource scopes and ambiguity reasons.
+            Encountering another identity never starts a new search."""
         cutoff = parse_timestamp(audit_at)
         if identity.status != "RESOLVED":
             return [], [], ["identity_not_uniquely_resolved"]
@@ -224,6 +236,7 @@ class _CaseCorrelation:
         cutoff: datetime,
         prior_audit: datetime | None,
     ) -> None:
+        """Allocate caches and expansion state for exactly one subject and cutoff."""
         self.correlator = correlator
         self.audit_at = cutoff
         self.prior_audit = prior_audit
@@ -240,6 +253,7 @@ class _CaseCorrelation:
         self.grounded_links: defaultdict[int, list[CorrelationLink]] = defaultdict(list)
 
     def ordered(self, indices: Iterable[int]) -> list[int]:
+        """Sort indices by provenance so input iteration order cannot change citations."""
         return sorted(
             indices,
             key=lambda i: (
@@ -251,17 +265,20 @@ class _CaseCorrelation:
         )
 
     def visible(self, i: int) -> bool:
+        """Require a known availability clock; source time alone cannot admit a later file."""
         time = self.correlator.times[i]
         return (
             self.observations[i].kind != "identity" and time is not None and time <= self.audit_at
         )
 
     def owners(self, value: str) -> set[str]:
+        """Memoize exact identifier owners at this case cutoff, including shared aliases."""
         if value not in self.owner_cache:
             self.owner_cache[value] = self.correlator.resolver.owners(value, self.audit_at)
         return self.owner_cache[value]
 
     def conflict(self, i: int) -> str | None:
+        """Return a foreign or unsupported subject reason before promoting co-occurrence."""
         if i in self.conflict_cache:
             return self.conflict_cache[i]
         # Co-occurrence is not proof that every resource belongs to the subject.
@@ -275,6 +292,7 @@ class _CaseCorrelation:
         return reason
 
     def event_time(self, i: int) -> datetime:
+        """Order visible ownership facts by source clocks without relaxing availability."""
         at = max(
             (t.value for t in self.observations[i].provenance.timestamps if t.role == "source"),
             default=self.observations[i].available_at,
@@ -283,6 +301,11 @@ class _CaseCorrelation:
         return at
 
     def ownership_safe(self, parent: int, candidate: int, resource: ResourceRef) -> bool:
+        """Reject joins that cross a visible foreign ownership interval.
+
+        An anonymous row cannot be backfilled into the subject's history merely because
+        the subject later acquired the same resource. OCR candidates cannot establish
+        a competing ownership transition without an independent anchor."""
         low, high = sorted((self.event_time(parent), self.event_time(candidate)))
         latest_time, latest_conflicts = None, []
         for k in self.correlator.by_scoped_resource.get(
@@ -324,6 +347,7 @@ class _CaseCorrelation:
         resource: ResourceRef | None = None,
         forced_reason: str | None = None,
     ) -> None:
+        """Record a provenance chain; only an independent grounded link promotes a candidate."""
         if not self.visible(i):
             return
         reason = forced_reason or self.conflict(i)
@@ -370,6 +394,7 @@ class _CaseCorrelation:
     def run(
         self, workflow_seeds: Iterable[int]
     ) -> tuple[list[AssociatedObservation], list[AssociatedResource], list[str]]:
+        """Expand in fixed stages, ending at resource versions rather than recursive discovery."""
         self.seed_identifiers(workflow_seeds)
         self.expand_scoped_traces()
         self.follow_resource_references()
@@ -377,6 +402,7 @@ class _CaseCorrelation:
         return self.bundle()
 
     def seed_identifiers(self, workflow_seeds: Iterable[int]) -> None:
+        """Seed exact aliases and potential workflow candidates without trusting batch status."""
         candidates = set().union(
             *(self.correlator.index.by_identifier.get(value, set()) for value in self.alias_map)
         )
@@ -401,10 +427,11 @@ class _CaseCorrelation:
                 # Independent identity anchors may promote the same resource later.
                 self.add(i, "WORKFLOW_BATCH", forced_reason="workflow_batch_ownership_unproven")
 
-        # Only direct anchors may seed a trace. Detect conflicting subjects over
-        # the entire visible scoped trace before accepting any trace-only result.
-
     def expand_scoped_traces(self) -> None:
+        """Expand direct anchors within the same file/service trace.
+
+        Check all visible trace members first: a second subject contaminates trace-only
+        links even when the result itself contains no identifier."""
         anchors = [
             i for i in self.ordered(self.accepted) if self.accepted[i].association == "CONFIRMED"
         ]
@@ -424,9 +451,11 @@ class _CaseCorrelation:
                         forced_reason="ambiguous_trace_scope" if contaminated else None,
                     )
 
-        # One hop through explicit, typed resource reference fields. Never recurse.
-
     def follow_resource_references(self) -> None:
+        """Follow one hop through explicit resource references, preserving collection scope.
+
+        References encountered during this hop do not recursively seed another hop;
+        this prevents unrelated connected resources from entering the subject's audit."""
         seeds = [
             i for i in self.ordered(self.accepted) if self.accepted[i].association == "CONFIRMED"
         ]
@@ -482,10 +511,8 @@ class _CaseCorrelation:
                         forced_reason=reason,
                     )
 
-        # Collect all visible versions/replicas of established resources. New
-        # resources/identities encountered here cannot trigger further expansion.
-
     def collect_resource_versions(self) -> None:
+        """Collect terminal versions and replicas only across safe ownership intervals."""
         resource_seeds = defaultdict(list)
         for i in self.ordered(self.accepted):
             if self.accepted[i].association == "CONFIRMED":
@@ -531,6 +558,7 @@ class _CaseCorrelation:
                     )
 
     def bundle(self) -> tuple[list[AssociatedObservation], list[AssociatedResource], list[str]]:
+        """Return stable observations, confirmed scoped resources and unresolved reasons."""
         resources: dict[tuple[str, str, str, str], tuple[ResourceRef, list[ObservationLink]]] = {}
         for i in self.ordered(self.accepted):
             if self.accepted[i].association != "CONFIRMED":

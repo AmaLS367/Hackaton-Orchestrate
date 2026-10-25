@@ -26,6 +26,7 @@ class SubmissionPredictor:
     """Coordinate best-supported official predictions using separate collaborators."""
 
     def __init__(self, dataset: Dataset) -> None:
+        """Assemble attribution, batch matching and readback collaborators for one dataset."""
         self.evidence = SubmissionEvidence(dataset)
         self.workflow = WorkflowAssignment(self.evidence)
         self.records = SubmissionRecords(self.evidence)
@@ -132,6 +133,11 @@ class SubmissionPredictor:
     def _assess_resources(
         self, request: DeletionRequest, user: str, resources: dict[str, Resource], notes: list[str]
     ) -> list[ResourceAssessment]:
+        """Select cutoff-visible post-request states and record inherited inference fallbacks.
+
+        If every resource is unknown in that interval, use the latest pre-request facts
+        known by the audit and disclose the fallback. This is a submission assumption,
+        not the strict engine's proof of deletion completion."""
         audit_at = request.audit_at
         assessments = []
         gathered = {
@@ -208,6 +214,11 @@ class SubmissionPredictor:
         assessments: list[ResourceAssessment],
         violations: list[ResourceAssessment],
     ) -> OutputRow:
+        """Serialize official operations while leaving uncertainty in separate diagnostics.
+
+        A known violation yields findings and a future plan. Otherwise only proven
+        compliant assessments become checks; omitted unknown assessments remain a
+        submission confidence limitation, not a guarantee of exhaustive deletion."""
         steps = []
         if violations:
             status: DeletionStatus = "INCOMPLETE"
@@ -276,7 +287,7 @@ def predict_submission(dataset: Dataset) -> list[CasePrediction]:
 
 
 class SubmissionSummary(TypedDict):
-    """Serialized diagnostic fields; reporting never changes prediction state."""
+    """Aggregate submission counts and inference warnings, separate from official rows."""
 
     cases: int
     status_counts: dict[str, int]
@@ -288,7 +299,7 @@ class SubmissionSummary(TypedDict):
 
 
 class SubmissionCaseDiagnostic(TypedDict):
-    """Serialized diagnostic fields; reporting never changes prediction state."""
+    """Identifier-only attribution and uncertainty for one submission prediction."""
 
     case_id: str
     status: str
@@ -299,7 +310,7 @@ class SubmissionCaseDiagnostic(TypedDict):
 
 
 class SubmissionDiagnostics(TypedDict):
-    """Serialized diagnostic fields; reporting never changes prediction state."""
+    """Submission reporting envelope; it never feeds back into state selection."""
 
     summary: SubmissionSummary
     cases: list[SubmissionCaseDiagnostic]

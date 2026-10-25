@@ -19,6 +19,7 @@ class SubmissionEvidence:
     """Index exact identifier and resource statements for the submission strategy."""
 
     def __init__(self, dataset: Dataset) -> None:
+        """Build exact ownership indexes from participant inputs for the submission strategy."""
         self.dataset = dataset
         self.observations = dataset.observations
         self.resolver = IdentityResolver(dataset.identities, dataset.identity_changes)
@@ -69,7 +70,10 @@ class SubmissionEvidence:
         return found
 
     def user_for(self, request: DeletionRequest) -> tuple[str | None, str | None]:
-        """Resolve the request subject and disclose the submission cutoff fallback."""
+        """Resolve the subject, recording any submission-only cutoff fallback.
+
+        The fallback can use an identifier learned after audit_at to locate the resource;
+        state selection must still exclude every fact captured after that cutoff."""
         identity = self.resolver.resolve(request)
         if identity.status == "RESOLVED":
             return identity.user_id, None

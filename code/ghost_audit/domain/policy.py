@@ -219,6 +219,7 @@ class PolicyEvaluator:
     """Apply supplied policy facts without treating missing conditions as permission."""
 
     def __init__(self, rules: list[DeletionRule]) -> None:
+        """Group supplied policy rules in stable order; missing applicability stays unknown."""
         self.rules = defaultdict(list)
         for rule in sorted(rules, key=lambda r: r.rule_id):
             self.rules[rule.data_category].append(rule)
@@ -230,8 +231,11 @@ class PolicyEvaluator:
         *,
         fallback: bool = True,
     ) -> str | None:
-        """Record type from explicit evidence of the resource (any confirmed observation,
-        including linkage-only rows), most specific signal first."""
+        """Select one supported policy category without changing resource ownership.
+
+        Explicit types and known schemas must agree, except for a supported profile-to-
+        tombstone transition. Linkage-only observations may describe a schema or category,
+        but their existence does not prove compliant record state at audit_at."""
         system = history.scope.system_id
         typed = [
             o for o in observations if o.record_type in self.rules or o.record_type == "DATA_FLOW"
@@ -303,7 +307,11 @@ class PolicyEvaluator:
         history: ResourceHistory,
         bundle: CaseStateBundle,
     ) -> bool | None:
-        """True/False from supplied facts; omitted conditions remain unknown."""
+        """Evaluate supplied applicability facts as True, False or unknown.
+
+        Missing flags and insufficient identifier coverage never imply permission to
+        delete. Retention is judged at audit_at, and a released hold is not reactivated
+        by a future deadline."""
         a = attributes(obs)
         fields = [f for o in obs for f in o.fields]
         if kind == "always":

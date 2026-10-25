@@ -59,11 +59,36 @@ uv run lint-imports
 
 Use `uv run ruff format .` and `uv run ruff check . --fix` for routine formatting/imports.
 Review fixes, especially pytest fixture imports; tests must never disappear because a
-fixture was mistaken for an unused symbol. Mypy targets are configured in `pyproject.toml`:
-all production modules, evaluation, the script entry point, packaging and regression.
-Domain definitions require typed signatures and collections. Remaining outer-layer
-JSON diagnostic dictionaries and schema callbacks are checked but not universally strict.
-No package-wide ignore, unchecked cast or `type: ignore` is needed.
+fixture was mistaken for an unused symbol. The normal `uv run mypy` command uses:
+
+```toml
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "$MYPY_CONFIG_FILE_DIR/code"
+explicit_package_bases = true
+files = ["code"]
+strict = true
+```
+
+This discovers every first-party Python file recursively: domain, application,
+infrastructure, interfaces, both engines, evaluation, all four root scripts, tests
+and fixtures (99 files). There are no exclusions, relaxed overrides, missing-import
+ignores, casts, `Any` annotations or typing suppressions. Recount after adding modules:
+
+```text
+uv run python -c "from pathlib import Path; print(len(list(Path('code').rglob('*.py'))))"
+```
+
+Use precise model/collection types inside the engines and `TypedDict` for diagnostic
+envelopes. Raw evidence uses recursive `JsonValue` until schema validation or explicit
+narrowing establishes a field's type. Tests pass raw timestamp strings and malformed
+payloads through the existing `model_validate` boundary, preserving parsed datetime
+types and the negative validation scenarios. Check optional values before dereferencing
+them; an absent observation or identifier is a business distinction, not a typing escape.
+
+Use concise Google-style docstrings for public interfaces and non-obvious algorithms.
+Explain cutoff availability, scope, policy or inference assumptions; avoid narrating
+obvious assignments. Keep diagnostic confidence separate from proof of deletion.
 
 Run the protected comparison after a structural change. Investigate every changed case,
 step, citation, uncertainty diagnostic and sample metric before proceeding. A correctness

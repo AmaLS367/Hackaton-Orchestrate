@@ -42,7 +42,10 @@ def deduplicate(steps: list[OutputStep]) -> list[OutputStep]:
 
 
 def dependency_conflicts(bundle: CaseStateBundle, steps: list[OutputStep]) -> list[str]:
-    """Reject dependency orders that cannot fit the official canonical operation order."""
+    """Find cleanup dependencies that cannot fit the official canonical order.
+
+    Downstream copies must precede their sources. If that order is not representable,
+    block publication rather than silently reorder official operation groups."""
     positions = {
         (s.system_id, s.resource_id): i
         for i, s in enumerate(steps)
@@ -84,7 +87,11 @@ def dependency_conflicts(bundle: CaseStateBundle, steps: list[OutputStep]) -> li
 
 
 def plan_case(bundle: CaseStateBundle, assessments: list[PolicyAssessment]) -> CaseDecision:
-    """Plan grounded findings and final checks, or retain explicit publication blockers."""
+    """Build a grounded official row or retain explicit publication blockers.
+
+    Process safety precedes record cleanup; retained records receive presence checks.
+    Unknown applicability cannot become COMPLETE. Future remediation/verification
+    steps have empty citations, while current findings cite visible evidence."""
     unresolved = sorted(
         {reason for a in assessments if a.compliance == "UNKNOWN" for reason in a.reasons}
     )

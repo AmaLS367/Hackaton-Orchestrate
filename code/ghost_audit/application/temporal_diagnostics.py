@@ -7,7 +7,7 @@ from ghost_audit.domain.temporal_models import CaseStateBundle
 
 
 class TemporalDiagnostics(TypedDict):
-    """Serialized diagnostic fields; reporting never changes prediction state."""
+    """Observed state and conflict coverage, without claims of deletion accuracy."""
 
     cases: int
     authorized_cases: int

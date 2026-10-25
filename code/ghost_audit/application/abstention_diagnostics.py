@@ -374,7 +374,7 @@ def diagnose(
 
 
 class AbstentionSummary(TypedDict):
-    """Serialized diagnostic fields; reporting never changes prediction state."""
+    """Overlapping root causes and coverage counts for unpublishable strict cases."""
 
     abstentions: int
     earliest_failure_stage: dict[str, int]

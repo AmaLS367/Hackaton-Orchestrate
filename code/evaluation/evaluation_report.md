@@ -464,3 +464,13 @@ strict decisions, abstentions, confidence and public metrics match the protected
 `4476d26` baseline. See the repository-root file `docs/refactor-report.md` for gates,
 architecture, source mapping and archive verification. No correctness correction or
 changed prediction is hidden in the refactor.
+
+
+## Final code quality verification
+
+The final dependency/typing/documentation pass preserves all sample metrics, 518 official
+rows, 3,071 ordered steps and the protected output SHA-256. The complete 99-file Python
+tree, including tests and packaging utilities, passes mypy strict mode; all 527 tests
+pass. See `docs/quality-pass.md` in the repository/archive for the exact configuration,
+dependency export, full coverage inventory and verification results. Existing submission
+inference limitations and failure analysis remain applicable.

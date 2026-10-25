@@ -66,6 +66,7 @@ class WorkflowAttribution:
         correlator: EvidenceCorrelator,
         classifier: IntentClassifier,
     ) -> None:
+        """Index competing authorized requests and worker candidates without assigning ownership."""
         self.index, self.resolver = index, resolver
         self.requests = [
             r

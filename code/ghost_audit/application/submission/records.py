@@ -34,6 +34,7 @@ class SubmissionRecords:
     """Interpret submitted record facts without promoting claims into readbacks."""
 
     def __init__(self, evidence: SubmissionEvidence) -> None:
+        """Load data-driven treatments and snapshot inventories without selecting case relevance."""
         self.evidence = evidence
         # Required treatment per data category comes from deletion_rules.csv. A retained
         # backup must also be unable to restore the subject; a data flow must be stopped.
@@ -151,7 +152,11 @@ class SubmissionRecords:
     def _exposure(
         data: dict[str, JsonValue], user_values: set[str]
     ) -> tuple[bool | None, bool | None, bool]:
-        """(direct identifier present, stable reference present, a subject value present)."""
+        """Return direct exposure, stable-reference exposure and a subject-content match.
+
+        None means a field family was not observed; False means its observed slots are
+        empty. That distinction prevents a missing projection from proving treatment.
+        Stable references may remain in redacted tombstones but defeat anonymization."""
         direct = stable = None
         subject = False
 
@@ -260,7 +265,11 @@ class SubmissionRecords:
 
     @staticmethod
     def assess(action: Action, facts: list[Fact]) -> tuple[Verdict, Fact | None]:
-        """The state at the latest evidence file: any violating replica in it wins."""
+        """Select the latest contributing file while preserving its replica violations.
+
+        Within that file, a surviving physical copy wins over a compliant sibling.
+        A direct readback outranks an omission listing only in the same physical scope.
+        Returns UNKNOWN with no fact when this action has no supporting observations."""
         relevant = [f for f in facts if action in f.verdicts]
         if not relevant:
             return "UNKNOWN", None

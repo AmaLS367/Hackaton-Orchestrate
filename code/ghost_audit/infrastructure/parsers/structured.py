@@ -24,10 +24,6 @@ from ghost_audit.domain.models import (
     SourceTimestamp,
 )
 
-# Participant collections whose owning system is fixed by schema even when an
-# export omits the system; never inferred from resource-ID prefixes.
-# Read surfaces that report on another system's records under their own name.
-
 
 def timestamps(
     payload: dict[str, JsonValue], locator: str, recursive: bool = False

@@ -87,13 +87,10 @@ def linkage_time(o: Observation) -> datetime | None:
 
 
 def known_at(o: Observation) -> datetime | None:
-    """When an auditor could first know an observation's facts, ownership included.
+    """Return the latest availability dependency, including capture and linkage clocks.
 
-    The official contract decides each case only from information available at its
-    audit_at, so a later export or catalogue link never establishes an earlier fact:
-    every clock the observation depends on (capture, packaging, catalogue link,
-    observation and record times) must have passed.
-    """
+    A source clock can order records without proving the containing file was available
+    at that time. This boundary prevents late packages from changing earlier audits."""
     times = [t for t in (o.available_at, linkage_time(o)) if t is not None]
     return max(times) if times else None
 

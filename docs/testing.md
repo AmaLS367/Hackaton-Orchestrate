@@ -6,6 +6,11 @@ adversarial regressions and full submission end-to-end checks. Shared synthetic
 builders live in `code/tests/fixtures/`; conftest supplies reusable datasets and rules.
 No production module imports test fixtures or public sample answers.
 
+The same source tree is checked by `uv run mypy` with strict mode, including every test
+and fixture. Typed fixture envelopes describe raw inputs; runtime schema validation
+still exercises malformed fields and timestamp parsing. Optional-result assertions
+preserve test failure conditions while making missing evidence explicit.
+
 The original 499 parametrized scenarios remain protected by a collection manifest,
 including scenario names and parameter IDs. File moves and the explicitly recorded
 semantic renames do not remove their coverage. New architecture tests check the whole
