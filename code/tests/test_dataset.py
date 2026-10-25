@@ -2,13 +2,12 @@ from collections import Counter
 from pathlib import Path
 
 import pytest
-
-from ghost_audit.infrastructure.serialization.csv_records import load_models
-from ghost_audit.domain.evidence_index import EvidenceIndex
-from ghost_audit.infrastructure.ingestion.dataset_loader import load_dataset
-from ghost_audit.domain.models import DeletionRequest
-from ghost_audit.infrastructure.serialization.csv_output import read_output
 from ghost_audit.domain.citation_validation import validate_output
+from ghost_audit.domain.evidence_index import EvidenceIndex
+from ghost_audit.domain.models import DeletionRequest
+from ghost_audit.infrastructure.ingestion.dataset_loader import load_dataset
+from ghost_audit.infrastructure.serialization.csv_output import read_output
+from ghost_audit.infrastructure.serialization.csv_records import load_models
 
 
 @pytest.fixture(scope="module")
@@ -23,15 +22,27 @@ def test_all_participant_formats_ingest_and_images_are_deferred_or_catalogued_oc
     assert len(dataset.documents) == 94
     assert len({doc.manifest.file_id for doc in dataset.documents}) == 94
     assert Counter(Path(doc.manifest.file_path).suffix for doc in dataset.documents) == {
-        '.json': 28, '.sql': 24, '.log': 26, '.pdf': 4, '.png': 11, '.txt': 1,
+        ".json": 28,
+        ".sql": 24,
+        ".log": 26,
+        ".pdf": 4,
+        ".png": 11,
+        ".txt": 1,
     }
     for doc in dataset.documents:
-        if doc.manifest.file_path.endswith('.png'):
+        if doc.manifest.file_path.endswith(".png"):
             # Without Tesseract an image stays deferred. With OCR it is parsed only into
             # document observations of catalogued resources, original provenance intact.
-            assert doc.status == 'deferred' or doc.observations and all(
-                o.provenance.locator.startswith('document:') and o.provenance.sha256 == doc.sha256
-                and o.provenance.captured_at == doc.manifest.captured_at for o in doc.observations)
+            assert (
+                doc.status == "deferred"
+                or doc.observations
+                and all(
+                    o.provenance.locator.startswith("document:")
+                    and o.provenance.sha256 == doc.sha256
+                    and o.provenance.captured_at == doc.manifest.captured_at
+                    for o in doc.observations
+                )
+            )
     assert all(doc.observations for doc in dataset.documents if doc.status == "parsed")
 
 
@@ -71,7 +82,9 @@ def test_index_queries_do_not_parse_or_read_files_again(loaded_dataset, monkeypa
 
 def test_public_sample_output_matches_strict_schema(dataset_path):
     references = read_output(dataset_path / "sample_output.csv")
-    requests = load_models(dataset_path / "sample_deletion_requests.csv", DeletionRequest, "case_id")
+    requests = load_models(
+        dataset_path / "sample_deletion_requests.csv", DeletionRequest, "case_id"
+    )
     assert len(references) == 32
     validate_output(references, requests)
 

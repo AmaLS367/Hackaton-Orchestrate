@@ -12,14 +12,61 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "import-linter>=2,<3",
+    "mypy>=1.15,<2",
     "pytest>=8,<10",
+    "ruff>=0.11,<1",
 ]
 
 [tool.uv]
-# Scripts run from code/ via pythonpath; the project itself is never installed.
-package = false
+package = true
+
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["code/ghost_audit", "code/evaluation"]
 
 [tool.pytest.ini_options]
 testpaths = ["code/tests"]
 pythonpath = ["code"]
 addopts = "-ra"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "C4", "SIM", "RUF100"]
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "$MYPY_CONFIG_FILE_DIR/code"
+explicit_package_bases = true
+files = ["code/ghost_audit", "code/evaluation", "code/main.py", "code/package_submission.py", "code/regression.py"]
+check_untyped_defs = true
+disallow_incomplete_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[[tool.mypy.overrides]]
+module = ["ghost_audit.domain.*"]
+disallow_untyped_defs = true
+disallow_any_generics = true
+warn_return_any = true
+
+[tool.importlinter]
+root_packages = ["ghost_audit", "evaluation"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Dependencies point inward"
+type = "layers"
+layers = ["ghost_audit.interfaces", "ghost_audit.infrastructure", "ghost_audit.application", "ghost_audit.domain"]
+
+[[tool.importlinter.contracts]]
+name = "Production never imports sample evaluation"
+type = "forbidden"
+source_modules = ["ghost_audit"]
+forbidden_modules = ["evaluation"]

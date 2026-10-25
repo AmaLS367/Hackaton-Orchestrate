@@ -36,7 +36,9 @@ def predict(dataset: Dataset, index: EvidenceIndex | None = None) -> PredictionR
         decision = plan_case(bundle, assessments)
         if decision.prediction is not None:
             try:
-                checks = validate_output([decision.prediction], [request], association_service.index)
+                checks = validate_output(
+                    [decision.prediction], [request], association_service.index
+                )
                 if any(
                     check.resource_support == "unknown" or check.parsing_status != "parsed"
                     for check in checks

@@ -1,18 +1,30 @@
 import pytest
-
 from evaluation.scoring import evaluate
 from ghost_audit.domain.output_contract import OutputRow, OutputStep
 
 
 def complete(case_id="fictional_deletion", evidence_id="fixture_file"):
-    return OutputRow(case_id=case_id, deletion_status="COMPLETE", steps=[OutputStep(
-        step_no=1, phase="VERIFICATION", system_id="account_service", resource_id="fictional_profile",
-        operation="VERIFY_RECORD_ABSENT", state="ABSENT", evidence_id=evidence_id,
-    )])
+    return OutputRow(
+        case_id=case_id,
+        deletion_status="COMPLETE",
+        steps=[
+            OutputStep(
+                step_no=1,
+                phase="VERIFICATION",
+                system_id="account_service",
+                resource_id="fictional_profile",
+                operation="VERIFY_RECORD_ABSENT",
+                state="ABSENT",
+                evidence_id=evidence_id,
+            )
+        ],
+    )
 
 
 def test_custom_case_non_deletion_requires_empty_steps():
-    reference = OutputRow(case_id="fictional_export_only", deletion_status="NOT_APPLICABLE", steps=[])
+    reference = OutputRow(
+        case_id="fictional_export_only", deletion_status="NOT_APPLICABLE", steps=[]
+    )
     result = evaluate([reference], [reference])
     assert result.status_accuracy == result.step_accuracy == result.sequence_accuracy == 1
 
@@ -53,29 +65,45 @@ def test_unknown_or_duplicate_cases_are_rejected():
 
 def test_failure_analysis_distinguishes_wrong_citation_and_missing_case():
     from evaluation.failures import failure_analysis
-    references = [complete('one'), complete('two')]
-    result = failure_analysis([complete('one', 'wrong_file')], references)
-    assert result['missing_steps'] == 2 and result['extra_steps'] == 1
-    assert result['incorrect_evidence_references'] == 1
-    assert result['failure_groups']['Ordering and evidence selection'] == ['one']
-    assert result['cases'][1]['predicted_status'] == 'ABSTAINED'
+
+    references = [complete("one"), complete("two")]
+    result = failure_analysis([complete("one", "wrong_file")], references)
+    assert result["missing_steps"] == 2 and result["extra_steps"] == 1
+    assert result["incorrect_evidence_references"] == 1
+    assert result["failure_groups"]["Ordering and evidence selection"] == ["one"]
+    assert result["cases"][1]["predicted_status"] == "ABSTAINED"
 
 
-def test_sample_run_harness_counts_abstentions_against_all_32_cases(dataset_path, monkeypatch, capsys):
+def test_sample_run_harness_counts_abstentions_against_all_32_cases(
+    dataset_path, monkeypatch, capsys
+):
     import json
-    from evaluation.main import main
-    from ghost_audit.domain.policy_models import CaseDecision, PredictionRun
-    from ghost_audit.application.strict_audit import predict
-    from ghost_audit.infrastructure.serialization.csv_records import load_models
-    from ghost_audit.domain.models import DeletionRequest
-    import ghost_audit.application.strict_audit
 
-    requests = load_models(dataset_path / 'sample_deletion_requests.csv', DeletionRequest, 'case_id')
-    run = PredictionRun(cases=[CaseDecision(case_id=r.case_id, decision='UNDECIDABLE', prediction=None,
-        assessments=[], unresolved=['synthetic_missing_evidence'], blockers=['no_grounded_answer']) for r in requests],
-        elapsed_seconds=0.0)
-    monkeypatch.setattr(ghost_audit.application.strict_audit, 'predict', lambda *a, **k: run)
-    assert main(['--run', '--engine', 'strict', '--json']) == 0
+    import ghost_audit.application.strict_audit
+    from evaluation.main import main
+    from ghost_audit.domain.models import DeletionRequest
+    from ghost_audit.domain.policy_models import CaseDecision, PredictionRun
+    from ghost_audit.infrastructure.serialization.csv_records import load_models
+
+    requests = load_models(
+        dataset_path / "sample_deletion_requests.csv", DeletionRequest, "case_id"
+    )
+    run = PredictionRun(
+        cases=[
+            CaseDecision(
+                case_id=r.case_id,
+                decision="UNDECIDABLE",
+                prediction=None,
+                assessments=[],
+                unresolved=["synthetic_missing_evidence"],
+                blockers=["no_grounded_answer"],
+            )
+            for r in requests
+        ],
+        elapsed_seconds=0.0,
+    )
+    monkeypatch.setattr(ghost_audit.application.strict_audit, "predict", lambda *a, **k: run)
+    assert main(["--run", "--engine", "strict", "--json"]) == 0
     result = json.loads(capsys.readouterr().out)
-    assert result['metrics']['reference_cases'] == result['metrics']['missing_cases'] == 32
-    assert result['metrics']['status_accuracy'] == result['metrics']['exact_case_accuracy'] == 0
+    assert result["metrics"]["reference_cases"] == result["metrics"]["missing_cases"] == 32
+    assert result["metrics"]["status_accuracy"] == result["metrics"]["exact_case_accuracy"] == 0
