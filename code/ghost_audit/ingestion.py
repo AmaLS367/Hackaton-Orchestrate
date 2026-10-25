@@ -16,7 +16,7 @@ from .extraction import (
 from .index import EvidenceRegistry
 from .models import (
     Activity, DeletionRequest, DeletionRule, EvidenceDocument, EvidenceFile, Identity,
-    IdentityChange, Observation, Provenance, ResourceRef,
+    IdentityChange, Observation, Provenance, ResourceRef, SourceTimestamp,
 )
 from .ocr import image_panels, image_text
 from .sql import parse_sql
@@ -41,6 +41,25 @@ def catalog_references(activities: list[Activity]) -> dict[str, tuple[str, str, 
     return references
 
 
+def section_text(text: str, reference: str) -> str:
+    """The document section(s) naming a reference, narrowed to its own lines when mixed.
+
+    Pages are separated by form feeds; a page headed "Continued" extends the previous
+    section. A section naming more than one subject (several emails or user IDs) is a
+    multi-person register: only the lines naming the reference describe its subject.
+    """
+    sections = []
+    for page in text.split('\f'):
+        if sections and re.search(r'\bcontinued\b', page[:200], re.I):
+            sections[-1] += '\n' + page
+        else:
+            sections.append(page)
+    scoped = '\n'.join(section for section in sections if reference in section)
+    if len(set(EMAIL_TOKEN.findall(scoped))) > 1 or len(set(USER_TOKEN.findall(scoped))) > 1:
+        scoped = '\n'.join(line for line in scoped.splitlines() if reference in line)
+    return scoped
+
+
 def document_observations(text: str, context: ExtractionContext, catalog: dict[str, tuple[str, str, object]],
                           *, catalogued_only: bool) -> list[Observation]:
     """One document-level observation per explicitly referenced resource.
@@ -52,6 +71,8 @@ def document_observations(text: str, context: ExtractionContext, catalog: dict[s
     page title) matches only a document captured within a day of its catalogue entry.
     OCR uses catalogued resources only and keeps just the lines naming the reference,
     so neither a misread token nor another customer's row on the same screen is used.
+    A catalogue-derived reference is known only from its catalogue time, which becomes
+    a source timestamp of the observation, so an earlier audit cannot use it.
     """
     origin = context.manifest.origin if context.manifest.origin in set(COLLECTION_SYSTEMS.values()) else None
     found = {}
@@ -60,15 +81,15 @@ def document_observations(text: str, context: ExtractionContext, catalog: dict[s
             continue
         system, resource = catalog[token][:2] if token in catalog else (origin, token)
         if system:
-            found.setdefault((system, resource), token)
+            found.setdefault((system, resource), (token, catalog[token][2] if token in catalog else None))
     captured = context.manifest.captured_at
     for alias, (system, resource, at) in sorted(catalog.items()):
         if alias != resource and re.search(rf'(?<![\w-]){re.escape(alias)}(?![\w-])', text) \
                 and abs(captured - at) <= timedelta(days=1):
-            found.setdefault((system, resource), alias)
+            found.setdefault((system, resource), (alias, at))
     observations = []
-    for (system, resource), reference in sorted(found.items()):
-        scoped = text if not catalogued_only else "\n".join(
+    for (system, resource), (reference, catalogued_at) in sorted(found.items()):
+        scoped = section_text(text, reference) if not catalogued_only else "\n".join(
             line for line in text.splitlines() if reference in line)
         emails = sorted(set(EMAIL_TOKEN.findall(scoped)))
         users = sorted(set(USER_TOKEN.findall(scoped)))
@@ -79,8 +100,11 @@ def document_observations(text: str, context: ExtractionContext, catalog: dict[s
             payload['email'] = emails[0]
         if len(users) == 1:
             payload['subject_reference'] = users[0]
-        observations.append(replace(context, system=system).observation(
-            payload, f'document:{resource}', raw_text=scoped))
+        scope = replace(context, system=system)
+        if catalogued_at is not None:
+            scope = replace(scope, times=(*scope.times, SourceTimestamp(
+                locator=f'catalog:{reference}', field='catalogued_at', value=catalogued_at)))
+        observations.append(scope.observation(payload, f'document:{resource}', raw_text=scoped))
     return observations
 
 
@@ -112,7 +136,8 @@ def parse_document(dataset: Path, manifest: EvidenceFile,
             if not text.strip():
                 status = "deferred"
                 notes.append(f"Page {page_no} has no extractable text; OCR is required.")
-        observations.extend(document_observations("\n".join(pages), context, catalog, catalogued_only=False))
+        # Form feeds keep page boundaries so each resource is scoped to its own section.
+        observations.extend(document_observations("\f".join(pages), context, catalog, catalogued_only=False))
     elif suffix in {".png", ".jpg", ".jpeg"}:
         observations = []
         status = "deferred"

@@ -5,6 +5,7 @@ from collections import Counter
 from pathlib import Path
 from time import perf_counter
 
+from .abstention import diagnose, summarize
 from .index import EvidenceIndex
 from .output import validate_output, write_output
 from .phase2 import Phase2Analyzer
@@ -25,8 +26,10 @@ def predict(dataset, index: EvidenceIndex | None = None) -> PredictionRun:
     policy = PolicyEvaluator(dataset.rules)
     cases = []
     validation_errors = []
+    abstentions = []
     for request in sorted(dataset.requests, key=lambda r: r.case_id):
-        bundle = phase3.analyze(phase2.analyze(request))
+        evidence = phase2.analyze(request)
+        bundle = phase3.analyze(evidence)
         assessments = policy.evaluate(bundle) if bundle.intent.decision == 'DELETE_INTENT' else []
         decision = plan_case(bundle, assessments)
         if decision.prediction is not None:
@@ -40,7 +43,10 @@ def predict(dataset, index: EvidenceIndex | None = None) -> PredictionRun:
                 decision = decision.model_copy(update={'prediction': None, 'decision': 'UNDECIDABLE',
                     'blockers': sorted(set([*decision.blockers, 'prediction_validation_failed']))})
         cases.append(decision)
-    return PredictionRun(cases=cases, elapsed_seconds=perf_counter() - started, validation_errors=validation_errors)
+        if decision.prediction is None:
+            abstentions.append(diagnose(evidence, bundle, decision, phase2.index))
+    return PredictionRun(cases=cases, elapsed_seconds=perf_counter() - started, validation_errors=validation_errors,
+                         abstentions=abstentions)
 
 
 def diagnostics(run: PredictionRun) -> dict:
@@ -59,6 +65,7 @@ def diagnostics(run: PredictionRun) -> dict:
         'operation_counts': dict(sorted(Counter(s.operation for r in run.predictions for s in r.steps).items())),
         'unresolved_causes': dict(sorted(Counter(reason for c in run.cases for reason in c.unresolved).items())),
         'blocker_causes': dict(sorted(Counter(reason for c in run.cases for reason in c.blockers).items())),
+        'abstention_root_causes': summarize(run.abstentions),
         'validation_errors': run.validation_errors,
         'validated_prediction_rows': len(run.predictions),
         'full_output_validation': 'ready_to_publish' if run.publishable else 'blocked_by_abstentions_or_validation_errors',
@@ -75,8 +82,19 @@ def diagnostics(run: PredictionRun) -> dict:
 def write_diagnostics(path: Path, run: PredictionRun) -> None:
     """Explicit diagnostic artifact, including partial predictions; never a submission CSV."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {'summary': diagnostics(run), 'cases': [case.model_dump(mode='json') for case in run.cases]}
+    payload = {'summary': diagnostics(run), 'cases': [case.model_dump(mode='json') for case in run.cases],
+               'abstentions': [record.model_dump(mode='json') for record in run.abstentions]}
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+
+def write_abstention_diagnostics(path: Path, run: PredictionRun) -> None:
+    """Identifier-only case diagnostics and root-cause totals, safe to keep with the code."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # One compact case per line keeps the file small and reviewable as a diff.
+    cases = [json.dumps(record.model_dump(mode='json'), ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+             for record in run.abstentions]
+    summary = json.dumps(summarize(run.abstentions), ensure_ascii=False, sort_keys=True, indent=1)
+    path.write_text('{"summary": ' + summary + ',\n"cases": [\n' + ',\n'.join(cases) + '\n]}\n', encoding='utf-8')
 
 
 def publish(path, run, dataset, index):

@@ -155,11 +155,12 @@ def omitted_from_listing(evidence: EvidenceIndex, evidence_id: str, system_id: s
                    and r.collection}
     if len(collections) != 1:
         return False
-    return any(surface.provenance.evidence_id == evidence_id and at is not None and at <= cutoff
-               and resource_id not in ids
+    return any(item.complete and item.surface.provenance.evidence_id == evidence_id
+               and item.observed_at is not None and item.observed_at <= cutoff
+               and resource_id not in item.resource_ids
                for (system, collection), values in surfaces['surfaces'].items()
                if system == system_id and collection in collections
-               for at, surface, ids in values)
+               for item in values)
 
 
 def check_citation(case_id: str, step: OutputStep, cutoff: datetime,

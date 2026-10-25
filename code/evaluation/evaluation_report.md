@@ -1,4 +1,140 @@
-# Phase 6 evaluation — 2026-10-24
+# Evaluation report
+
+## Recovery round (fix rounds 1–3) — 2026-10-25
+
+**Still not submission-ready.** 518 requests processed; 364 grounded predictions
+(22 COMPLETE, 332 INCOMPLETE, 10 NOT_APPLICABLE) and 154 abstentions. Publication
+exits 2 and writes no root `output.csv`. Base commit `2faccc2`; tests 465 → **491 passing**.
+
+### Before / after
+
+| Metric | Phase 6 (2faccc2) | This round |
+| --- | ---: | ---: |
+| Sample predicted cases | 21/32 | 21/32 |
+| Sample status accuracy | 65.625% | 65.625% |
+| Sample exact cases | 6/32 | 6/32 |
+| Sample step precision | 100% | 100% |
+| Sample step recall | 61.658% | 61.140% |
+| Sample field accuracy | 47.446% | 46.928% |
+| Sample sequence accuracy | 18.750% | 18.750% |
+| Sample missing / extra steps | 74 / 0 | 75 / 0 |
+| Full COMPLETE / INCOMPLETE / NOT_APPLICABLE | 8 / 332 / 10 | 22 / 332 / 10 |
+| Full predictions (coverage) | 350 (67.57%) | 364 (70.27%) |
+| Full abstentions | 168 | 154 |
+| Confirmed associations (Phase 2) | 4020 | 3020 |
+| Distinct confirmed resources (Phase 2) | 1435 | 1247 |
+| Cases with POTENTIAL associations | 143 | 174 |
+| Resource scopes (Phase 3) | 3268 | 2665 |
+| Scopes with established record state | 1562 | 1553 |
+| Scopes with unknown record state | 1706 | 1112 |
+
+### Workstream A — temporal availability and diagnostics
+
+*A1.* The correlator, workflow pins and temporal engine counted an ownership fact from its
+internal source clock even when the file carrying it was captured after `audit_at`
+(`linkage_time`). The official contract decides each case only from information
+available at its cutoff, so retrospective attribution is **not** justified. A new
+`known_at` (latest of observed, effective/record, captured/packaging and catalogue-link
+clocks) now gates linkage exactly like citation; `time_profile` exposes all four clocks.
+Catalogue-derived document references carry a `catalogued_at` source timestamp, so a
+catalogue link made after the audit cannot reveal an earlier document's resource.
+
+Effects, all explained: 1000 late-file associations and 603 late-only scopes disappeared.
+14 cases became **COMPLETE** (`case_79`, `case_80`, `case_113`, `case_117`, `case_121`,
+`case_164`, `case_167`, `case_170`, `case_323`, `case_327`, `case_374`, `case_375`,
+`case_378`, `case_380`): each has a pre-audit exact readback proving the account absent
+and a retained audit record, and was blocked only by UNKNOWN scopes from files captured
+after its audit. 47 INCOMPLETE plans each lost one future verification (46 account
+`VERIFY_RECORD_ABSENT`, one legal-hold `VERIFY_RECORD_PRESENT` in `case_432`): the only link
+to the subject was a post-audit export (example: `case_09`'s `account_3960` is linked only
+by a log exported 2026-09-18, after its 2026-09-16 audit). The sample reference contains
+that step, so sample recall fell by one step; it is the contract-required loss. No status
+changed and no step was added outside those 14 cases.
+
+*A2.* `ghost_audit/abstention.py` writes one identifier-only record per abstention
+(`code/evaluation/abstention_diagnostics.json`, byte-identical across runs, no emails,
+phones, hashes or text). Root causes (overlapping, not additive), before → after:
+
+| Root cause (stage) | Before | After |
+| --- | ---: | ---: |
+| policy_condition_missing (APPLY_POLICY) | 139 | 99 |
+| account_ownership_unproven (ASSOCIATE) | 70 | 85 |
+| primary_profile_candidates_ambiguous (ASSOCIATE) | 54 | 62 |
+| readback_exists_but_unlinked (ASSOCIATE) | 34 | 40 |
+| readback_uninterpreted (INTERPRET; late-capture scopes) | 67 | 1 |
+| state_evidence_outside_audit_cutoff (INTERPRET) | 15 | 30 |
+| no_state_readback / operation_claims_only (INTERPRET) | 2 / 1 | 2 / 1 |
+
+| Earliest failing stage | Before | After |
+| --- | ---: | ---: |
+| ASSOCIATE | 112 | 127 |
+| INTERPRET | 36 | 1 |
+| APPLY_POLICY | 20 | 26 |
+| EXTRACT / PLAN / VALIDATE | 0 | 0 |
+
+Account attribution of the 154 abstentions: 34 confirmed, 54 single workflow candidate,
+60 ambiguous workflow candidates, 6 no account reference. 42 cases have unlinked readbacks
+(a provable state for a resource with no subject link); 66 have subject evidence available
+only after their audit; 99 lack a policy condition.
+
+### Workstream B — associations
+
+Measured first: across all authorized cases, 149 associations are POTENTIAL; 145 are
+deletion-worker seeds, 2 are an earlier request's evidence and 2 unsupported subject
+references. None of the 145 seeds has an independent, pre-audit anchor (exact identifier,
+scoped trace, explicit reference, catalogue link): 119 appear in no evidence file at all
+and 26 only in readbacks whose identifiers are already null. A resource-centric second
+pass would therefore confirm nothing, so none was added; candidates stay POTENTIAL and
+are reported as `readback_exists_but_unlinked` or `account_ownership_unproven`.
+**Newly confirmed associations: 0. Removed: 1000 (post-audit).**
+
+*B3.* PDF resources inherited identifiers from the whole document. `section_text` now
+scopes each resource to its section (a page headed "Continued" extends the previous one)
+and narrows a section naming several subjects to the lines naming the resource. Current
+participant PDFs are single-subject per section, so no prediction changed; the test suite
+pins mixed sections and multi-subject registers.
+
+### Workstream C — states and coverage
+
+*C1.* After A1, one abstention fails first at INTERPRET and four INTERPRET causes remain
+besides the 30 cases whose subject evidence exists only after their audit. Missing
+deletion treatment is ownership (ASSOCIATE) or policy conditions (APPLY_POLICY), not
+unreadable or misscoped state.
+*C2.* Listings are explicit `Listing` records (system, logical collection, physical table,
+observed time, filter scope, truncation, proof provenance). No participant file asserts
+completeness; the 47 unresolved resources with any listing all lack a completeness proof,
+and 324 have no known collection (workflow candidates). Absence-by-omission stays disabled
+for real data; the validator's semantics are unchanged.
+*C3.* A 404/NOT_FOUND/zero-row read now proves absence only when it names the resource and
+declares no subject/collection `query_scope` or filter. All participant negatives already
+name their resource, so no state changed.
+*C4.* Replica scopes remain independent; tests pin a newer primary 404 beside a surviving
+failover row (still a finding) and a replica gap that is never absence.
+
+### Tests added (`code/tests/test_recovery.py`, 26 instances)
+
+Late catalogue link; late document with earlier source clock; email reassigned between
+users; legitimate historical alias with audit origin; interleaved multi-user batch;
+ownership change over time; mixed-subject PDF sections and registers; cross-collection ID
+collision; scoped trace with a foreign unknown subject; direct anchor surviving unrelated
+ambiguity; exact 404; subject-scoped/filtered empty reads; read naming no resource;
+complete listing; paginated/truncated/filtered listings; SQL replica coverage gap; newer
+primary absence plus surviving replica; valid anonymization; partial redaction UNKNOWN;
+future readback excluded; deterministic identifier-only diagnostics; and a participant-
+style end-to-end run (CSV + log + late JSON bundle → COMPLETE at the cutoff, INCOMPLETE
+once the bundle is available). Two Phase 5/temporal tests that asserted retrospective
+linkage were rewritten to assert the stricter contract; no safety test was weakened.
+
+### Remaining blockers and next rounds
+
+- **Policy round:** 99 abstentions lack a supplied condition, mostly security-audit
+  retention without `retention_until` and support conversations without `shared_context`.
+- **Ownership:** 145 cases depend on workflow candidates that no participant evidence
+  links to the subject. Under the current rules they stay unproven; a decision on
+  whether request-batch attribution can ever count is needed before planning work.
+- **Planning:** the official order versus dependency checks are unchanged this round.
+
+## Phase 6 evaluation — 2026-10-24 (history)
 
 ## Release verdict
 
@@ -205,25 +341,8 @@ HackerRank submission or final independent code review has been performed.
 
 ## All final abstentions
 
-Groups list every remaining case and its publication blockers. Missing evidence includes
-independent resource ownership, actual deletion treatment, current physical-scope state,
-policy applicability and/or exhaustive primary-account coverage. Inspect the existing
-`full_prediction_diagnostics.json` and `phase3 --case-id CASE_ID` for scoped evidence.
-
-- `insufficient_evidence_for_complete_or_incomplete`:
-  `case_113`, `case_117`, `case_121`, `case_135`, `case_137`, `case_164`, `case_167`, `case_170`, `case_193`, `case_233`, `case_235`, `case_264`, `case_283`, `case_292`, `case_313`, `case_314`, `case_319`, `case_322`, `case_323`, `case_324`, `case_326`, `case_327`, `case_331`, `case_369`, `case_372`, `case_374`, `case_375`, `case_378`, `case_380`, `case_383`, `case_390`, `case_392`, `case_41`, `case_430`, `case_44`, `case_46`, `case_463`, `case_51`, `case_516`, `case_520`, `case_521`, `case_522`, `case_545`, `case_73`, `case_77`, `case_79`, `case_80`, `case_81`, `case_82`, `case_83`, `case_84`, `case_86`, `case_88`.
-
-- `insufficient_evidence_for_complete_or_incomplete`, `no_verified_deletion_treatment`:
-  `case_108`, `case_111`, `case_124`, `case_126`, `case_150`, `case_160`, `case_162`, `case_178`, `case_179`, `case_183`, `case_190`, `case_204`, `case_206`, `case_213`, `case_221`, `case_253`, `case_260`, `case_274`, `case_276`, `case_280`, `case_335`, `case_336`, `case_339`, `case_342`, `case_343`, `case_354`, `case_39`, `case_393`, `case_403`, `case_423`, `case_424`, `case_427`, `case_45`, `case_452`, `case_456`, `case_458`, `case_460`, `case_462`, `case_479`, `case_484`, `case_493`, `case_494`, `case_497`, `case_502`, `case_503`, `case_506`, `case_508`, `case_524`, `case_53`, `case_530`, `case_532`, `case_55`, `case_57`, `case_61`, `case_63`, `case_64`, `case_66`, `case_69`, `case_70`, `case_76`, `case_97`.
-
-- `insufficient_evidence_for_complete_or_incomplete`, `no_verified_deletion_treatment`, `primary_profile_ownership_or_search_coverage_unproven`:
-  `case_103`, `case_107`, `case_112`, `case_127`, `case_151`, `case_155`, `case_157`, `case_175`, `case_191`, `case_215`, `case_218`, `case_219`, `case_225`, `case_226`, `case_231`, `case_232`, `case_257`, `case_277`, `case_282`, `case_297`, `case_304`, `case_308`, `case_309`, `case_351`, `case_362`, `case_408`, `case_409`, `case_411`, `case_412`, `case_457`, `case_480`, `case_512`, `case_58`, `case_59`, `case_60`.
-
-- `insufficient_evidence_for_complete_or_incomplete`, `primary_profile_ownership_or_search_coverage_unproven`:
-  `case_265`, `case_267`, `case_464`, `case_467`, `case_470`, `case_543`, `case_547`, `case_549`.
-
-- `no_verified_deletion_treatment`, `primary_profile_ownership_or_search_coverage_unproven`:
-  `case_152`, `case_243`, `case_244`, `case_294`, `case_295`, `case_299`, `case_345`, `case_346`, `case_395`, `case_398`, `case_448`.
+The Phase 6 case list is superseded. The current 154 abstentions, each with its blockers,
+root causes and earliest failing stage, are in `code/evaluation/abstention_diagnostics.json`.
 
 
 ## Source archive execution check

@@ -4,18 +4,18 @@ Offline deletion-audit pipeline for HackerRank Orchestrate October 2026. It read
 participant files in `dataset/`, resolves current and historical identifiers, reconstructs
 resource state at `audit_at`, applies the supplied policies, and builds ordered plans.
 
-## Phase 6 release status
+## Release status (recovery round, 2026-10-25)
 
-The final measured run processes 518 requests: **8 COMPLETE, 332 INCOMPLETE,
-10 NOT_APPLICABLE, and 168 abstentions**. A root `output.csv` is **not available**:
+The final measured run processes 518 requests: **22 COMPLETE, 332 INCOMPLETE,
+10 NOT_APPLICABLE, and 154 abstentions**. A root `output.csv` is **not available**:
 not every case has a justified prediction. Exit code **2** is the expected publication
 block, not an unofficial submission status. Partial decisions remain in
 `code/evaluation/full_prediction_diagnostics.json`; they are not a submission CSV.
+Every abstention's root causes are in `code/evaluation/abstention_diagnostics.json`.
 
 On 32 public samples: 21 predictions, 65.625% status accuracy, 6/32 exact cases,
-100% step precision and 61.658% recall. These are sample measurements, not hidden-test
-accuracy. Phase 6 withdraws unsupported Phase 5 conclusions; the lower coverage is
-intentional and documented in [the evaluation report](code/evaluation/evaluation_report.md).
+100% step precision and 61.140% recall. These are sample measurements, not hidden-test
+accuracy. See [the evaluation report](code/evaluation/evaluation_report.md).
 
 ## Setup
 
@@ -62,12 +62,18 @@ from the repository root. Dataset/output paths otherwise resolve from the source
   are **not ownership evidence** and are not an exhaustive account inventory. Independent
   linkage is required. All-candidates-absent alone cannot establish COMPLETE.
 - `temporal.py` separates states from claims and retains physical replicas. A newer
-  observation of a different scope cannot erase a surviving copy. Late-packaged evidence
-  may supply earlier linkage but cannot prove current state or be cited after `audit_at`.
+  observation of a different scope cannot erase a surviving copy. A fact counts only from
+  its `known_at` time (the latest of its observation, record, capture/packaging and
+  catalogue-link clocks): evidence captured after `audit_at` neither links ownership nor
+  supplies state, however early its internal timestamps are.
 - Listing absence requires an explicit `complete_listing: true` assertion, a matching
   known collection, no filter/truncation/pagination, and a citable capture. An empty array,
   schema, snapshot label, or row count alone is insufficient. Current SQL exports do not
-  provide this assertion and are not used as negative inventory proof.
+  provide this assertion and are not used as negative inventory proof. A 404, NOT_FOUND
+  or zero-row read proves absence only when it names the resource and declares no
+  subject/collection query scope or filter.
+- Documents are scoped per section (a "Continued" page extends the previous one); a
+  section naming several subjects is narrowed to the lines naming the resource.
 - `policy.py` requires supplied conditions for shared support context, subject-only
   attachments, retention, and legal holds. Missing facts stay UNKNOWN. Required retention
   is preserved; an unknown condition does not authorize deletion or a compliance claim.
@@ -108,6 +114,14 @@ The last command applies only when a complete prediction file exists. `dataset/o
 is the untouched blank template, not the root submission. Publication never writes a partial
 CSV and does not replace an existing file when the run is blocked. Diagnostics contain
 fictional participant evidence and should be handled separately from source archives.
+
+Each prediction run also writes `abstention_diagnostics.json` beside the diagnostics file:
+one identifier-only record per unsupported case (confirmed and candidate resources, proven
+and unknown states, verified treatment, missing policy conditions, account attribution,
+listing coverage, unlinked readbacks, post-audit evidence IDs, unresolved obligations,
+root causes and the earliest failing stage of EXTRACT → ASSOCIATE → INTERPRET →
+APPLY_POLICY → PLAN → VALIDATE). It never contains names, emails, phones, hashes or text.
+Candidate resources and unlinked readbacks are leads, not confirmed ownership.
 
 ## Submission artifacts
 

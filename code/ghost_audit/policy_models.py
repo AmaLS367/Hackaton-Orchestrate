@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import Field
 
+from .abstention import AbstentionDiagnostic
 from .models import StrictModel
 from .output import OutputRow
 from .phase2_models import ObservationLink
@@ -38,6 +39,8 @@ class PredictionRun(StrictModel):
     cases: list[CaseDecision]
     elapsed_seconds: float
     validation_errors: list[str] = Field(default_factory=list)
+    # One record per case without a grounded prediction (identifiers only).
+    abstentions: list[AbstentionDiagnostic] = Field(default_factory=list)
 
     @property
     def predictions(self) -> list[OutputRow]:

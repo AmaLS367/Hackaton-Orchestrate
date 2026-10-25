@@ -152,15 +152,21 @@ def test_crowded_window_blocks_per_resource_attribution(rules):
     assert crowded.workflow.attributed(a) == []
 
 
-def test_late_packaged_earlier_snapshot_links_but_is_never_cited(rules):
+def test_late_packaged_earlier_snapshot_neither_links_nor_is_cited(rules):
+    # Captured after the audit, the bundle is later evidence even though its inner
+    # snapshot clock is earlier: it must not add a record to the answer at the cutoff.
     a = request('case_a', 'a@example.test')
     present = ('search_service', 'customer_search_documents', LISTING,
                [{'resource_id': 'search_1', 'document': {'email': 'a@example.test'}}])
     late = snapshot('late_bundle', AFTER, [audit_record('audit_a', 'user_a', at=LISTING)])
     case = predict(build(rules, [a], [*snapshot('current', LISTING, [present]), *late])).cases[0]
     assert case.decision == 'INCOMPLETE'
+    assert all(rid != 'audit_a' and e != 'late_bundle' for _, _, rid, e in steps(case))
+    assert all(x.scope.resource_id != 'audit_a' for x in case.assessments)
+    # At a cutoff after the bundle's capture, the same fact links and is citable.
+    later = request('case_a', 'a@example.test', audit='2026-03-13T12:00:00Z')
+    case = predict(build(rules, [later], [*snapshot('current', LISTING, [present]), *late])).cases[0]
     assert ('V', 'VERIFY_RECORD_PRESENT', 'audit_a', '') in steps(case)
-    assert all(e != 'late_bundle' for *_, e in steps(case))
 
 
 def test_complete_listing_proves_absence_and_validator_accepts_coverage(rules):

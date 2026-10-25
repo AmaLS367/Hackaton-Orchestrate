@@ -14,7 +14,7 @@ from .phase2_models import (
     AssociatedObservation, AssociatedResource, CorrelationLink, ObservationLink,
     ResolvedIdentity,
 )
-from .temporal_adapters import linkage_time
+from .temporal_adapters import known_at
 from .time import parse_timestamp
 
 RESOURCE_FIELDS = {'source_resource_id', 'target_resource_id', 'related_resource_id'}
@@ -45,9 +45,9 @@ class EvidenceCorrelator:
         self.tokens = [identifier_values(o.payload) | identifier_values(o.raw_text)
                        for o in index.observations]
         self.subjects = [self._subject_identifiers(o) for o in index.observations]
-        # Ownership facts are visible from the time they were observed. A late export
-        # can carry an earlier scoped snapshot; its later capture limits citation, not linkage.
-        self.times = [linkage_time(o) for o in index.observations]
+        # Ownership facts count only once known: a late export carrying an earlier scoped
+        # snapshot cannot establish that earlier ownership at an audit before its capture.
+        self.times = [known_at(o) for o in index.observations]
         self.by_scoped_resource = defaultdict(set)
         for i, item in enumerate(index.observations):
             for r in item.resources:

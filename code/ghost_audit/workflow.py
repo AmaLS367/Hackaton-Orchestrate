@@ -17,7 +17,7 @@ The correlator keeps these candidates POTENTIAL until an independent link exists
 from collections import defaultdict
 from datetime import timedelta
 
-from .temporal_adapters import linkage_time, observation_time
+from .temporal_adapters import known_at, observation_time
 
 WORKER = 'deletion_worker'
 # Primary profiles are submitted well before the report (or within minutes of it);
@@ -50,7 +50,7 @@ class WorkflowAttribution:
             if o.kind == 'identity' or o.kind == 'activity_claim' and \
                     o.payload.get('event_type') != 'LINK_RESOURCE_IDENTITY':
                 continue
-            at = linkage_time(o)
+            at = known_at(o)
             if at is None:
                 continue
             tokens = correlator.tokens[i] | correlator.subjects[i]

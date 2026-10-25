@@ -96,15 +96,15 @@ def test_future_observation_excluded(event_time, capture_time):
     assert result.unresolved_states
 
 
-def test_late_packaged_earlier_observation_is_linkage_only():
-    # Observed before the cutoff but exported after it: it identifies the record,
-    # yet never supplies a citable state at the cutoff.
+def test_late_packaged_earlier_observation_is_unavailable():
+    # Observed before the cutoff but exported after it: later evidence neither
+    # identifies the record nor supplies its state at the cutoff.
     o = record('future', EARLY).model_copy(update={
         'provenance': record('future', EARLY).provenance.model_copy(update={
             'captured_at': context(time=FUTURE).manifest.captured_at})})
-    h = only(analyze(o))
-    assert h.record.state == 'UNKNOWN' and not h.record.supporting_evidence
-    assert all(f.support == 'UNKNOWN' and f.reason.startswith('late_capture_linkage_only') for f in h.observations)
+    result = analyze(o)
+    assert not result.resource_histories
+    assert {u.reason for u in result.unresolved_states} >= {'evidence_unavailable_at_audit_cutoff'}
 
 
 def test_observation_time_differs_from_export_and_updated_time():

@@ -29,11 +29,16 @@ def main(argv=None) -> int:
     dataset = load_dataset(args.dataset, samples=args.samples)
     index = EvidenceIndex(dataset.observations, registry=dataset.registry)
     if args.command == 'predict':
-        from ghost_audit.prediction import PredictionBlocked, diagnostics, predict, publish, write_diagnostics
+        from ghost_audit.prediction import (
+            PredictionBlocked, diagnostics, predict, publish, write_abstention_diagnostics, write_diagnostics,
+        )
 
         run = predict(dataset, index)
         diagnostic_path = args.diagnostics or ROOT / 'code/evaluation' / (
             'sample_prediction_diagnostics.json' if args.samples else 'full_prediction_diagnostics.json')
+        # Identifier-only root causes of every abstention, written beside the diagnostics.
+        write_abstention_diagnostics(diagnostic_path.with_name(
+            ('sample_' if args.samples else '') + 'abstention_diagnostics.json'), run)
         output_path = args.predictions or ROOT / ('sample_predictions.csv' if args.samples else 'output.csv')
         if diagnostic_path.resolve() == output_path.resolve():
             parser.error('diagnostics and predictions must use different paths')

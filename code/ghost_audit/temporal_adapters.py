@@ -82,14 +82,34 @@ def observation_time(o: Observation):
 
 
 def linkage_time(o: Observation):
-    """When an observation's facts were known: its own observation clock, never earlier
-    than a record time it reports. A later packaging/export clock does not delay it."""
+    """The source-side time of an observation's facts: its own observation clock, never
+    earlier than a record time it reports. This orders facts; it is not availability."""
     at = observation_time(o)
     if at is None:
         return None
     record_times = [t.value for t in o.provenance.timestamps
                     if t.role == 'source' and t.field.lower() in {'updated_at', 'created_at'}]
     return max([at, *record_times])
+
+
+def known_at(o: Observation):
+    """When an auditor could first know an observation's facts, ownership included.
+
+    The official contract decides each case only from information available at its
+    audit_at, so a later export or catalogue link never establishes an earlier fact:
+    every clock the observation depends on (capture, packaging, catalogue link,
+    observation and record times) must have passed.
+    """
+    times = [t for t in (o.available_at, linkage_time(o)) if t is not None]
+    return max(times) if times else None
+
+
+def time_profile(o: Observation) -> dict:
+    """observed_at/effective_at/captured_at/known_at of one observation, for diagnostics."""
+    effective = [t.value for t in o.provenance.timestamps
+                 if t.role == 'source' and t.field.lower() in {'updated_at', 'created_at'}]
+    return {'observed_at': observation_time(o), 'effective_at': max(effective, default=None),
+            'captured_at': o.provenance.captured_at, 'known_at': known_at(o)}
 
 
 def boolean(value):
@@ -196,6 +216,11 @@ def interpret(item: AssociatedObservation, reference: ResourceRef) -> TemporalOb
                         data.get('query_resource_id') == reference.resource_id or
                         isinstance(query, dict) and query.get('resource_id') == reference.resource_id)
         negative = result == 'NOT_FOUND' or status == 404 or rows == 0 or hits == 0
+        # A read declaring a subject/collection query scope or a filter answers that
+        # query; its emptiness says nothing exact about this one record.
+        declared = data.get('query_scope')
+        broad = (declared not in (None, '', 'RESOURCE_ID') and data.get('query_resource_id') != reference.resource_id
+                 or any(data.get(k) for k in ('filter', 'filters', 'where')))
         positive = (snapshot or result in {'FOUND', 'HIT', 'IDENTIFIABLE', 'REDACTED', 'ANONYMIZED'}
                     or rows is not None and rows > 0 or status == 200 and not negative
                     or hits is not None and hits > 0)
@@ -205,10 +230,11 @@ def interpret(item: AssociatedObservation, reference: ResourceRef) -> TemporalOb
                        for doc in documents):
                 positive = False
                 reason = 'search_documents_do_not_establish_this_resource'
-        if negative and (not search or exact_search):
+        if negative and (not search or exact_search) and not broad:
             record = 'ABSENT'
         elif negative:
-            reason = 'negative_search_lacks_explicit_resource_query_scope'
+            reason = ('negative_read_lacks_exact_resource_scope' if not search
+                      else 'negative_search_lacks_explicit_resource_query_scope')
         elif positive:
             record = 'PRESENT'
         elif not search and (resource_read or json_read or config_read) and (

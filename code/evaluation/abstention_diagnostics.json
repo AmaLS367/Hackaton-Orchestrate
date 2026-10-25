@@ -1,0 +1,21 @@
+{"summary": {
+ "abstentions": 0,
+ "account_attribution": {},
+ "cases_with_late_evidence": 0,
+ "cases_with_missing_policy_conditions": 0,
+ "cases_with_unlinked_readbacks": 0,
+ "earliest_failure_stage": {
+  "APPLY_POLICY": 0,
+  "ASSOCIATE": 0,
+  "EXTRACT": 0,
+  "INTERPRET": 0,
+  "PLAN": 0,
+  "VALIDATE": 0
+ },
+ "listing_coverage_of_unresolved_resources": {},
+ "note": "Candidate resources and unlinked readbacks are leads, not confirmed ownership.",
+ "root_causes": {}
+},
+"cases": [
+
+]}
