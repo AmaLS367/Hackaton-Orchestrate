@@ -2,11 +2,11 @@
  "summary": {
   "cases": 518,
   "status_counts": {
-   "COMPLETE": 152,
-   "INCOMPLETE": 356,
+   "COMPLETE": 154,
+   "INCOMPLETE": 354,
    "NOT_APPLICABLE": 10
   },
-  "steps": 3071,
+  "steps": 3067,
   "attribution_methods": {
    "explicit_identifier": 1245,
    "explicit_identifier_after_audit": 224,
@@ -6793,7 +6793,7 @@
   },
   {
    "case_id": "case_390",
-   "status": "INCOMPLETE",
+   "status": "COMPLETE",
    "user_id": "user_388",
    "resources": {
     "account_7618": [
@@ -11235,7 +11235,7 @@
   },
   {
    "case_id": "case_86",
-   "status": "INCOMPLETE",
+   "status": "COMPLETE",
    "user_id": "user_84",
    "resources": {
     "account_8473": [

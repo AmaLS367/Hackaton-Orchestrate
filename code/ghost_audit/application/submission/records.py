@@ -1,6 +1,7 @@
 """Interpret submission readbacks, policy categories and replica verdicts."""
 
 import re
+from datetime import datetime
 
 from pydantic import JsonValue
 
@@ -264,22 +265,76 @@ class SubmissionRecords:
         return facts
 
     @staticmethod
-    def assess(action: Action, facts: list[Fact]) -> tuple[Verdict, Fact | None]:
-        """Select the latest contributing file while preserving its replica violations.
+    def assess(
+        action: Action,
+        facts: list[Fact],
+        audit_at: datetime | None = None,
+    ) -> tuple[Verdict, Fact | None]:
+        """Establish the latest temporal state per physical scope.
 
-        Within that file, a surviving physical copy wins over a compliant sibling.
-        A direct readback outranks an omission listing only in the same physical scope.
-        Returns UNKNOWN with no fact when this action has no supporting observations."""
+        Within each physical scope, select the latest supported observation.
+        A direct readback outranks an omission listing at the same observation time.
+        Preserve explicit same-time conflicts within a scope as uncertainty.
+        Across scopes, any surviving violation outranks compliant scopes, and
+        uncertainty prevents confirming compliance.
+        """
         relevant = [f for f in facts if action in f.verdicts]
+        if audit_at is not None:
+            relevant = [f for f in relevant if f.at <= audit_at and f.captured_at <= audit_at]
         if not relevant:
             return "UNKNOWN", None
-        newest = max(f.at for f in relevant)
-        files = {f.evidence_id for f in relevant if f.at == newest}
-        current = [f for f in relevant if f.evidence_id in files]
-        # Readbacks of the same file outrank its listings for the same scope.
-        readbacks = {f.scope for f in current if f.kind == "readback"}
-        current = [f for f in current if f.kind == "readback" or f.scope not in readbacks]
-        violations = [f for f in current if f.verdicts[action] == "VIOLATION"]
-        chosen = violations or current
-        best = max(chosen, key=lambda f: (f.at, f.kind == "readback", f.evidence_id))
-        return ("VIOLATION" if violations else "COMPLIANT"), best
+
+        by_scope: dict[str, list[Fact]] = {}
+        for f in relevant:
+            by_scope.setdefault(f.scope, []).append(f)
+
+        scope_results: list[tuple[Verdict, Fact | None]] = []
+        for scope_facts in by_scope.values():
+            latest_at = max(f.at for f in scope_facts)
+            at_latest = [f for f in scope_facts if f.at == latest_at]
+
+            readbacks = [f for f in at_latest if f.kind == "readback"]
+            candidates = readbacks if readbacks else at_latest
+
+            verdicts = {f.verdicts[action] for f in candidates}
+            if "VIOLATION" in verdicts and "COMPLIANT" in verdicts:
+                scope_results.append(("UNKNOWN", None))
+            elif "VIOLATION" in verdicts:
+                best_fact = max(
+                    (f for f in candidates if f.verdicts[action] == "VIOLATION"),
+                    key=lambda f: (f.at, f.captured_at, f.kind == "readback", f.evidence_id),
+                )
+                scope_results.append(("VIOLATION", best_fact))
+            elif "COMPLIANT" in verdicts:
+                best_fact = max(
+                    (f for f in candidates if f.verdicts[action] == "COMPLIANT"),
+                    key=lambda f: (f.at, f.captured_at, f.kind == "readback", f.evidence_id),
+                )
+                scope_results.append(("COMPLIANT", best_fact))
+            else:
+                scope_results.append(("UNKNOWN", None))
+
+        violations = [
+            fact for verdict, fact in scope_results if verdict == "VIOLATION" and fact is not None
+        ]
+        if violations:
+            best_violation = max(
+                violations,
+                key=lambda f: (f.at, f.captured_at, f.kind == "readback", f.evidence_id),
+            )
+            return "VIOLATION", best_violation
+
+        if any(verdict == "UNKNOWN" for verdict, _ in scope_results):
+            return "UNKNOWN", None
+
+        compliant_facts = [
+            fact for verdict, fact in scope_results if verdict == "COMPLIANT" and fact is not None
+        ]
+        if compliant_facts:
+            best_compliant = max(
+                compliant_facts,
+                key=lambda f: (f.at, f.captured_at, f.kind == "readback", f.evidence_id),
+            )
+            return "COMPLIANT", best_compliant
+
+        return "UNKNOWN", None
