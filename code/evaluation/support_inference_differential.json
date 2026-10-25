@@ -1,0 +1,1421 @@
+{
+ "change": "weak support-category fallback from the request's own pre-audit DELETE_RECORD operation",
+ "baseline": {
+  "commit": "7e890b2",
+  "output_sha256": "807803941b11aa438f36365a98c77fcb9de447887fd830aba10ce9a2166343a5"
+ },
+ "after": {
+  "output_sha256": "1bc68692b30cfc7d23efb502c8ad6ba03bfecf75452415d11eae0d4639c3666c"
+ },
+ "cases_compared": 518,
+ "cases_changed": 15,
+ "status_changes": 0,
+ "steps_total": {
+  "before": 3067,
+  "after": 3067
+ },
+ "rejected_inferences": 0,
+ "sample_metrics_unchanged": true,
+ "strict_engine_unchanged": true,
+ "cases": [
+  {
+   "case_id": "case_47",
+   "resource_id": "support_5742",
+   "requested_at": "2026-09-11T11:00:00+00:00",
+   "audit_at": "2026-09-26T11:00:00+00:00",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_MESSAGE",
+   "category_after": "SUPPORT_ATTACHMENT",
+   "action_before": "REDACT",
+   "action_after": "DELETE",
+   "workflow_operation": {
+    "activity_id": "activity_3809",
+    "event_type": "DELETE_RECORD",
+    "event_time": "2026-09-12T11:54:30+00:00",
+    "reported_result": "FAILED",
+    "attributed_to_request_batch": true,
+    "other_treatments_by_audit_at": []
+   },
+   "attribution_methods": [
+    "explicit_identifier",
+    "workflow_batch_downstream"
+   ],
+   "time_valid_category_evidence": {
+    "record_types": [],
+    "collections": [],
+    "conversation_fields": [],
+    "message_excerpts": [],
+    "subjects": [
+     "user_45"
+    ]
+   },
+   "finding_evidence": {
+    "evidence_id": "evidence_94",
+    "file_path": "evidence/logs/resource_lookup_trace_20260926_103856.log",
+    "captured_at": "2026-09-26T10:38:56Z"
+   },
+   "removed_steps": [
+    [
+     "FINDING",
+     "REPORT_EXPOSED_PII",
+     "PRESENT",
+     "support_platform",
+     "support_5742",
+     "evidence_94"
+    ],
+    [
+     "REMEDIATION",
+     "REDACT_RECORD",
+     "REDACTED",
+     "support_platform",
+     "support_5742",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_5742",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "FINDING",
+     "REPORT_REMAINING_RECORD",
+     "PRESENT",
+     "support_platform",
+     "support_5742",
+     "evidence_94"
+    ],
+    [
+     "REMEDIATION",
+     "DELETE_RECORD",
+     "ABSENT",
+     "support_platform",
+     "support_5742",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_5742",
+     ""
+    ]
+   ],
+   "uncertainty": "Category inferred from a workflow operation claim (result FAILED), not from record content; marked low-confidence in submission diagnostics."
+  },
+  {
+   "case_id": "case_71",
+   "resource_id": "support_1370",
+   "requested_at": "2026-08-28T09:00:00+00:00",
+   "audit_at": "2026-09-16T09:00:00+00:00",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_MESSAGE",
+   "category_after": "SUPPORT_ATTACHMENT",
+   "action_before": "REDACT",
+   "action_after": "DELETE",
+   "workflow_operation": {
+    "activity_id": "activity_3505",
+    "event_type": "DELETE_RECORD",
+    "event_time": "2026-08-29T09:38:48+00:00",
+    "reported_result": "FAILED",
+    "attributed_to_request_batch": true,
+    "other_treatments_by_audit_at": []
+   },
+   "attribution_methods": [
+    "explicit_identifier",
+    "workflow_batch_downstream"
+   ],
+   "time_valid_category_evidence": {
+    "record_types": [],
+    "collections": [
+     "support_records"
+    ],
+    "conversation_fields": [],
+    "message_excerpts": [
+     "Customer asked support to correct delivery details."
+    ],
+    "subjects": [
+     "user_69"
+    ]
+   },
+   "finding_evidence": {
+    "evidence_id": "evidence_93",
+    "file_path": "evidence/databases/customer_data_inventory_20260916.sql",
+    "captured_at": "2026-09-16T08:37:39Z"
+   },
+   "removed_steps": [
+    [
+     "FINDING",
+     "REPORT_EXPOSED_PII",
+     "PRESENT",
+     "support_platform",
+     "support_1370",
+     "evidence_93"
+    ],
+    [
+     "REMEDIATION",
+     "REDACT_RECORD",
+     "REDACTED",
+     "support_platform",
+     "support_1370",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_1370",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "FINDING",
+     "REPORT_REMAINING_RECORD",
+     "PRESENT",
+     "support_platform",
+     "support_1370",
+     "evidence_93"
+    ],
+    [
+     "REMEDIATION",
+     "DELETE_RECORD",
+     "ABSENT",
+     "support_platform",
+     "support_1370",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_1370",
+     ""
+    ]
+   ],
+   "uncertainty": "Category inferred from a workflow operation claim (result FAILED), not from record content; marked low-confidence in submission diagnostics."
+  },
+  {
+   "case_id": "case_95",
+   "resource_id": "support_5750",
+   "requested_at": "2026-08-09T06:00:00+00:00",
+   "audit_at": "2026-09-01T06:00:00+00:00",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_MESSAGE",
+   "category_after": "SUPPORT_ATTACHMENT",
+   "action_before": "REDACT",
+   "action_after": "DELETE",
+   "workflow_operation": {
+    "activity_id": "activity_3190",
+    "event_type": "DELETE_RECORD",
+    "event_time": "2026-08-10T06:45:39+00:00",
+    "reported_result": "FAILED",
+    "attributed_to_request_batch": true,
+    "other_treatments_by_audit_at": []
+   },
+   "attribution_methods": [
+    "explicit_identifier",
+    "workflow_batch_downstream"
+   ],
+   "time_valid_category_evidence": {
+    "record_types": [],
+    "collections": [],
+    "conversation_fields": [],
+    "message_excerpts": [
+     "Customer contacted support about account access."
+    ],
+    "subjects": [
+     "user_93"
+    ]
+   },
+   "finding_evidence": {
+    "evidence_id": "evidence_89",
+    "file_path": "evidence/records/service_resource_export_20260901_053316.json",
+    "captured_at": "2026-09-01T05:33:16Z"
+   },
+   "removed_steps": [
+    [
+     "FINDING",
+     "REPORT_EXPOSED_PII",
+     "PRESENT",
+     "support_platform",
+     "support_5750",
+     "evidence_89"
+    ],
+    [
+     "REMEDIATION",
+     "REDACT_RECORD",
+     "REDACTED",
+     "support_platform",
+     "support_5750",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_5750",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "FINDING",
+     "REPORT_REMAINING_RECORD",
+     "PRESENT",
+     "support_platform",
+     "support_5750",
+     "evidence_89"
+    ],
+    [
+     "REMEDIATION",
+     "DELETE_RECORD",
+     "ABSENT",
+     "support_platform",
+     "support_5750",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_5750",
+     ""
+    ]
+   ],
+   "uncertainty": "Category inferred from a workflow operation claim (result FAILED), not from record content; marked low-confidence in submission diagnostics."
+  },
+  {
+   "case_id": "case_119",
+   "resource_id": "support_9309",
+   "requested_at": "2026-07-26T11:00:00+00:00",
+   "audit_at": "2026-08-22T11:00:00+00:00",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_MESSAGE",
+   "category_after": "SUPPORT_ATTACHMENT",
+   "action_before": "REDACT",
+   "action_after": "DELETE",
+   "workflow_operation": {
+    "activity_id": "activity_2979",
+    "event_type": "DELETE_RECORD",
+    "event_time": "2026-07-27T11:52:29+00:00",
+    "reported_result": "FAILED",
+    "attributed_to_request_batch": true,
+    "other_treatments_by_audit_at": []
+   },
+   "attribution_methods": [
+    "explicit_identifier",
+    "workflow_batch_downstream"
+   ],
+   "time_valid_category_evidence": {
+    "record_types": [],
+    "collections": [],
+    "conversation_fields": [],
+    "message_excerpts": [],
+    "subjects": [
+     "user_117"
+    ]
+   },
+   "finding_evidence": {
+    "evidence_id": "evidence_88",
+    "file_path": "evidence/logs/resource_lookup_trace_20260822_103910.log",
+    "captured_at": "2026-08-22T10:39:10Z"
+   },
+   "removed_steps": [
+    [
+     "FINDING",
+     "REPORT_EXPOSED_PII",
+     "PRESENT",
+     "support_platform",
+     "support_9309",
+     "evidence_88"
+    ],
+    [
+     "REMEDIATION",
+     "REDACT_RECORD",
+     "REDACTED",
+     "support_platform",
+     "support_9309",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_9309",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "FINDING",
+     "REPORT_REMAINING_RECORD",
+     "PRESENT",
+     "support_platform",
+     "support_9309",
+     "evidence_88"
+    ],
+    [
+     "REMEDIATION",
+     "DELETE_RECORD",
+     "ABSENT",
+     "support_platform",
+     "support_9309",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_9309",
+     ""
+    ]
+   ],
+   "uncertainty": "Category inferred from a workflow operation claim (result FAILED), not from record content; marked low-confidence in submission diagnostics."
+  },
+  {
+   "case_id": "case_131",
+   "resource_id": "support_2315",
+   "requested_at": "2026-07-29T10:00:00+00:00",
+   "audit_at": "2026-08-17T10:00:00+00:00",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_MESSAGE",
+   "category_after": "SUPPORT_ATTACHMENT",
+   "action_before": "REDACT",
+   "action_after": "DELETE",
+   "workflow_operation": {
+    "activity_id": "activity_3021",
+    "event_type": "DELETE_RECORD",
+    "event_time": "2026-07-30T10:44:12+00:00",
+    "reported_result": "FAILED",
+    "attributed_to_request_batch": true,
+    "other_treatments_by_audit_at": []
+   },
+   "attribution_methods": [
+    "explicit_identifier",
+    "workflow_batch_downstream"
+   ],
+   "time_valid_category_evidence": {
+    "record_types": [],
+    "collections": [
+     "support_records"
+    ],
+    "conversation_fields": [],
+    "message_excerpts": [
+     "Customer supplied contact details for a delivery query."
+    ],
+    "subjects": [
+     "user_129"
+    ]
+   },
+   "finding_evidence": {
+    "evidence_id": "evidence_87",
+    "file_path": "evidence/databases/customer_data_inventory_20260817.sql",
+    "captured_at": "2026-08-17T09:42:50Z"
+   },
+   "removed_steps": [
+    [
+     "FINDING",
+     "REPORT_EXPOSED_PII",
+     "PRESENT",
+     "support_platform",
+     "support_2315",
+     "evidence_87"
+    ],
+    [
+     "REMEDIATION",
+     "REDACT_RECORD",
+     "REDACTED",
+     "support_platform",
+     "support_2315",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_2315",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "FINDING",
+     "REPORT_REMAINING_RECORD",
+     "PRESENT",
+     "support_platform",
+     "support_2315",
+     "evidence_87"
+    ],
+    [
+     "REMEDIATION",
+     "DELETE_RECORD",
+     "ABSENT",
+     "support_platform",
+     "support_2315",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_2315",
+     ""
+    ]
+   ],
+   "uncertainty": "Category inferred from a workflow operation claim (result FAILED), not from record content; marked low-confidence in submission diagnostics."
+  },
+  {
+   "case_id": "case_143",
+   "resource_id": "support_6560",
+   "requested_at": "2026-07-27T08:00:00+00:00",
+   "audit_at": "2026-08-07T08:00:00+00:00",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_MESSAGE",
+   "category_after": "SUPPORT_ATTACHMENT",
+   "action_before": "REDACT",
+   "action_after": "DELETE",
+   "workflow_operation": {
+    "activity_id": "activity_2992",
+    "event_type": "DELETE_RECORD",
+    "event_time": "2026-07-28T08:59:20+00:00",
+    "reported_result": "FAILED",
+    "attributed_to_request_batch": true,
+    "other_treatments_by_audit_at": []
+   },
+   "attribution_methods": [
+    "explicit_identifier",
+    "workflow_batch_downstream"
+   ],
+   "time_valid_category_evidence": {
+    "record_types": [],
+    "collections": [],
+    "conversation_fields": [],
+    "message_excerpts": [
+     "Customer contacted support about account access."
+    ],
+    "subjects": [
+     "user_141"
+    ]
+   },
+   "finding_evidence": {
+    "evidence_id": "evidence_86",
+    "file_path": "evidence/records/service_resource_export_20260807_074104.json",
+    "captured_at": "2026-08-07T07:41:04Z"
+   },
+   "removed_steps": [
+    [
+     "FINDING",
+     "REPORT_EXPOSED_PII",
+     "PRESENT",
+     "support_platform",
+     "support_6560",
+     "evidence_86"
+    ],
+    [
+     "REMEDIATION",
+     "REDACT_RECORD",
+     "REDACTED",
+     "support_platform",
+     "support_6560",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_6560",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "FINDING",
+     "REPORT_REMAINING_RECORD",
+     "PRESENT",
+     "support_platform",
+     "support_6560",
+     "evidence_86"
+    ],
+    [
+     "REMEDIATION",
+     "DELETE_RECORD",
+     "ABSENT",
+     "support_platform",
+     "support_6560",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_6560",
+     ""
+    ]
+   ],
+   "uncertainty": "Category inferred from a workflow operation claim (result FAILED), not from record content; marked low-confidence in submission diagnostics."
+  },
+  {
+   "case_id": "case_179",
+   "resource_id": "support_2283",
+   "requested_at": "2026-06-26T12:00:00+00:00",
+   "audit_at": "2026-07-23T12:00:00+00:00",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_MESSAGE",
+   "category_after": "SUPPORT_ATTACHMENT",
+   "action_before": "REDACT",
+   "action_after": "DELETE",
+   "workflow_operation": {
+    "activity_id": "activity_2549",
+    "event_type": "DELETE_RECORD",
+    "event_time": "2026-06-27T12:58:23+00:00",
+    "reported_result": "FAILED",
+    "attributed_to_request_batch": true,
+    "other_treatments_by_audit_at": []
+   },
+   "attribution_methods": [
+    "explicit_identifier",
+    "workflow_batch_downstream"
+   ],
+   "time_valid_category_evidence": {
+    "record_types": [],
+    "collections": [
+     "support_records"
+    ],
+    "conversation_fields": [],
+    "message_excerpts": [
+     "Customer contacted support about account access."
+    ],
+    "subjects": [
+     "user_177"
+    ]
+   },
+   "finding_evidence": {
+    "evidence_id": "evidence_84",
+    "file_path": "evidence/databases/customer_data_inventory_20260723.sql",
+    "captured_at": "2026-07-23T11:43:30Z"
+   },
+   "removed_steps": [
+    [
+     "FINDING",
+     "REPORT_EXPOSED_PII",
+     "PRESENT",
+     "support_platform",
+     "support_2283",
+     "evidence_84"
+    ],
+    [
+     "REMEDIATION",
+     "REDACT_RECORD",
+     "REDACTED",
+     "support_platform",
+     "support_2283",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_2283",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "FINDING",
+     "REPORT_REMAINING_RECORD",
+     "PRESENT",
+     "support_platform",
+     "support_2283",
+     "evidence_84"
+    ],
+    [
+     "REMEDIATION",
+     "DELETE_RECORD",
+     "ABSENT",
+     "support_platform",
+     "support_2283",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_2283",
+     ""
+    ]
+   ],
+   "uncertainty": "Category inferred from a workflow operation claim (result FAILED), not from record content; marked low-confidence in submission diagnostics."
+  },
+  {
+   "case_id": "case_227",
+   "resource_id": "support_5830",
+   "requested_at": "2026-06-13T07:00:00+00:00",
+   "audit_at": "2026-06-28T07:00:00+00:00",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_MESSAGE",
+   "category_after": "SUPPORT_ATTACHMENT",
+   "action_before": "REDACT",
+   "action_after": "DELETE",
+   "workflow_operation": {
+    "activity_id": "activity_2360",
+    "event_type": "DELETE_RECORD",
+    "event_time": "2026-06-14T07:49:28+00:00",
+    "reported_result": "FAILED",
+    "attributed_to_request_batch": true,
+    "other_treatments_by_audit_at": []
+   },
+   "attribution_methods": [
+    "explicit_identifier",
+    "workflow_batch_downstream"
+   ],
+   "time_valid_category_evidence": {
+    "record_types": [],
+    "collections": [],
+    "conversation_fields": [],
+    "message_excerpts": [
+     "Customer contacted support about account access."
+    ],
+    "subjects": [
+     "user_225"
+    ]
+   },
+   "finding_evidence": {
+    "evidence_id": "evidence_80",
+    "file_path": "evidence/records/service_resource_export_20260628_062556.json",
+    "captured_at": "2026-06-28T06:25:56Z"
+   },
+   "removed_steps": [
+    [
+     "FINDING",
+     "REPORT_EXPOSED_PII",
+     "PRESENT",
+     "support_platform",
+     "support_5830",
+     "evidence_80"
+    ],
+    [
+     "REMEDIATION",
+     "REDACT_RECORD",
+     "REDACTED",
+     "support_platform",
+     "support_5830",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_5830",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "FINDING",
+     "REPORT_REMAINING_RECORD",
+     "PRESENT",
+     "support_platform",
+     "support_5830",
+     "evidence_80"
+    ],
+    [
+     "REMEDIATION",
+     "DELETE_RECORD",
+     "ABSENT",
+     "support_platform",
+     "support_5830",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_5830",
+     ""
+    ]
+   ],
+   "uncertainty": "Category inferred from a workflow operation claim (result FAILED), not from record content; marked low-confidence in submission diagnostics."
+  },
+  {
+   "case_id": "case_251",
+   "resource_id": "support_4541",
+   "requested_at": "2026-05-30T12:00:00+00:00",
+   "audit_at": "2026-06-18T12:00:00+00:00",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_MESSAGE",
+   "category_after": "SUPPORT_ATTACHMENT",
+   "action_before": "REDACT",
+   "action_after": "DELETE",
+   "workflow_operation": {
+    "activity_id": "activity_2158",
+    "event_type": "DELETE_RECORD",
+    "event_time": "2026-05-31T12:56:17+00:00",
+    "reported_result": "FAILED",
+    "attributed_to_request_batch": true,
+    "other_treatments_by_audit_at": []
+   },
+   "attribution_methods": [
+    "explicit_identifier",
+    "workflow_batch_downstream"
+   ],
+   "time_valid_category_evidence": {
+    "record_types": [],
+    "collections": [
+     "support_records"
+    ],
+    "conversation_fields": [],
+    "message_excerpts": [
+     "Customer contacted support about account access."
+    ],
+    "subjects": [
+     "user_249"
+    ]
+   },
+   "finding_evidence": {
+    "evidence_id": "evidence_78",
+    "file_path": "evidence/databases/customer_data_inventory_20260618.sql",
+    "captured_at": "2026-06-18T11:44:03Z"
+   },
+   "removed_steps": [
+    [
+     "FINDING",
+     "REPORT_EXPOSED_PII",
+     "PRESENT",
+     "support_platform",
+     "support_4541",
+     "evidence_78"
+    ],
+    [
+     "REMEDIATION",
+     "REDACT_RECORD",
+     "REDACTED",
+     "support_platform",
+     "support_4541",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_4541",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "FINDING",
+     "REPORT_REMAINING_RECORD",
+     "PRESENT",
+     "support_platform",
+     "support_4541",
+     "evidence_78"
+    ],
+    [
+     "REMEDIATION",
+     "DELETE_RECORD",
+     "ABSENT",
+     "support_platform",
+     "support_4541",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_4541",
+     ""
+    ]
+   ],
+   "uncertainty": "Category inferred from a workflow operation claim (result FAILED), not from record content; marked low-confidence in submission diagnostics."
+  },
+  {
+   "case_id": "case_275",
+   "resource_id": "support_3684",
+   "requested_at": "2026-05-11T09:00:00+00:00",
+   "audit_at": "2026-06-03T09:00:00+00:00",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_MESSAGE",
+   "category_after": "SUPPORT_ATTACHMENT",
+   "action_before": "REDACT",
+   "action_after": "DELETE",
+   "workflow_operation": {
+    "activity_id": "activity_1860",
+    "event_type": "DELETE_RECORD",
+    "event_time": "2026-05-12T09:40:36+00:00",
+    "reported_result": "FAILED",
+    "attributed_to_request_batch": true,
+    "other_treatments_by_audit_at": []
+   },
+   "attribution_methods": [
+    "explicit_identifier",
+    "workflow_batch_downstream"
+   ],
+   "time_valid_category_evidence": {
+    "record_types": [],
+    "collections": [],
+    "conversation_fields": [],
+    "message_excerpts": [
+     "Customer supplied contact details for a delivery query."
+    ],
+    "subjects": [
+     "user_273"
+    ]
+   },
+   "finding_evidence": {
+    "evidence_id": "evidence_77",
+    "file_path": "evidence/records/service_resource_export_20260603_083457.json",
+    "captured_at": "2026-06-03T08:34:57Z"
+   },
+   "removed_steps": [
+    [
+     "FINDING",
+     "REPORT_EXPOSED_PII",
+     "PRESENT",
+     "support_platform",
+     "support_3684",
+     "evidence_77"
+    ],
+    [
+     "REMEDIATION",
+     "REDACT_RECORD",
+     "REDACTED",
+     "support_platform",
+     "support_3684",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_3684",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "FINDING",
+     "REPORT_REMAINING_RECORD",
+     "PRESENT",
+     "support_platform",
+     "support_3684",
+     "evidence_77"
+    ],
+    [
+     "REMEDIATION",
+     "DELETE_RECORD",
+     "ABSENT",
+     "support_platform",
+     "support_3684",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_3684",
+     ""
+    ]
+   ],
+   "uncertainty": "Category inferred from a workflow operation claim (result FAILED), not from record content; marked low-confidence in submission diagnostics."
+  },
+  {
+   "case_id": "case_287",
+   "resource_id": "support_7432",
+   "requested_at": "2026-05-14T08:00:00+00:00",
+   "audit_at": "2026-05-29T08:00:00+00:00",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_MESSAGE",
+   "category_after": "SUPPORT_ATTACHMENT",
+   "action_before": "REDACT",
+   "action_after": "DELETE",
+   "workflow_operation": {
+    "activity_id": "activity_1912",
+    "event_type": "DELETE_RECORD",
+    "event_time": "2026-05-15T08:55:45+00:00",
+    "reported_result": "FAILED",
+    "attributed_to_request_batch": true,
+    "other_treatments_by_audit_at": []
+   },
+   "attribution_methods": [
+    "explicit_identifier",
+    "workflow_batch_downstream"
+   ],
+   "time_valid_category_evidence": {
+    "record_types": [],
+    "collections": [],
+    "conversation_fields": [],
+    "message_excerpts": [],
+    "subjects": [
+     "user_285"
+    ]
+   },
+   "finding_evidence": {
+    "evidence_id": "evidence_76",
+    "file_path": "evidence/logs/resource_lookup_trace_20260529_074313.log",
+    "captured_at": "2026-05-29T07:43:13Z"
+   },
+   "removed_steps": [
+    [
+     "FINDING",
+     "REPORT_EXPOSED_PII",
+     "PRESENT",
+     "support_platform",
+     "support_7432",
+     "evidence_76"
+    ],
+    [
+     "REMEDIATION",
+     "REDACT_RECORD",
+     "REDACTED",
+     "support_platform",
+     "support_7432",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_7432",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "FINDING",
+     "REPORT_REMAINING_RECORD",
+     "PRESENT",
+     "support_platform",
+     "support_7432",
+     "evidence_76"
+    ],
+    [
+     "REMEDIATION",
+     "DELETE_RECORD",
+     "ABSENT",
+     "support_platform",
+     "support_7432",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_7432",
+     ""
+    ]
+   ],
+   "uncertainty": "Category inferred from a workflow operation claim (result FAILED), not from record content; marked low-confidence in submission diagnostics."
+  },
+  {
+   "case_id": "case_347",
+   "resource_id": "support_9474",
+   "requested_at": "2026-04-14T09:00:00+00:00",
+   "audit_at": "2026-04-29T09:00:00+00:00",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_MESSAGE",
+   "category_after": "SUPPORT_ATTACHMENT",
+   "action_before": "REDACT",
+   "action_after": "DELETE",
+   "workflow_operation": {
+    "activity_id": "activity_1446",
+    "event_type": "DELETE_RECORD",
+    "event_time": "2026-04-15T09:38:05+00:00",
+    "reported_result": "FAILED",
+    "attributed_to_request_batch": true,
+    "other_treatments_by_audit_at": []
+   },
+   "attribution_methods": [
+    "explicit_identifier",
+    "workflow_batch_downstream"
+   ],
+   "time_valid_category_evidence": {
+    "record_types": [],
+    "collections": [],
+    "conversation_fields": [],
+    "message_excerpts": [
+     "Customer contacted support about account access."
+    ],
+    "subjects": [
+     "user_345"
+    ]
+   },
+   "finding_evidence": {
+    "evidence_id": "evidence_71",
+    "file_path": "evidence/records/service_resource_export_20260429_083222.json",
+    "captured_at": "2026-04-29T08:32:22Z"
+   },
+   "removed_steps": [
+    [
+     "FINDING",
+     "REPORT_EXPOSED_PII",
+     "PRESENT",
+     "support_platform",
+     "support_9474",
+     "evidence_71"
+    ],
+    [
+     "REMEDIATION",
+     "REDACT_RECORD",
+     "REDACTED",
+     "support_platform",
+     "support_9474",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_9474",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "FINDING",
+     "REPORT_REMAINING_RECORD",
+     "PRESENT",
+     "support_platform",
+     "support_9474",
+     "evidence_71"
+    ],
+    [
+     "REMEDIATION",
+     "DELETE_RECORD",
+     "ABSENT",
+     "support_platform",
+     "support_9474",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_9474",
+     ""
+    ]
+   ],
+   "uncertainty": "Category inferred from a workflow operation claim (result FAILED), not from record content; marked low-confidence in submission diagnostics."
+  },
+  {
+   "case_id": "case_431",
+   "resource_id": "support_3615",
+   "requested_at": "2026-03-01T08:00:00+00:00",
+   "audit_at": "2026-03-20T08:00:00+00:00",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_MESSAGE",
+   "category_after": "SUPPORT_ATTACHMENT",
+   "action_before": "REDACT",
+   "action_after": "DELETE",
+   "workflow_operation": {
+    "activity_id": "activity_806",
+    "event_type": "DELETE_RECORD",
+    "event_time": "2026-03-02T08:51:38+00:00",
+    "reported_result": "FAILED",
+    "attributed_to_request_batch": true,
+    "other_treatments_by_audit_at": []
+   },
+   "attribution_methods": [
+    "explicit_identifier",
+    "workflow_batch_downstream"
+   ],
+   "time_valid_category_evidence": {
+    "record_types": [],
+    "collections": [],
+    "conversation_fields": [],
+    "message_excerpts": [
+     "Customer contacted support about account access."
+    ],
+    "subjects": [
+     "user_429"
+    ]
+   },
+   "finding_evidence": {
+    "evidence_id": "evidence_68",
+    "file_path": "evidence/records/service_resource_export_20260320_072349.json",
+    "captured_at": "2026-03-20T07:23:49Z"
+   },
+   "removed_steps": [
+    [
+     "FINDING",
+     "REPORT_EXPOSED_PII",
+     "PRESENT",
+     "support_platform",
+     "support_3615",
+     "evidence_68"
+    ],
+    [
+     "REMEDIATION",
+     "REDACT_RECORD",
+     "REDACTED",
+     "support_platform",
+     "support_3615",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_3615",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "FINDING",
+     "REPORT_REMAINING_RECORD",
+     "PRESENT",
+     "support_platform",
+     "support_3615",
+     "evidence_68"
+    ],
+    [
+     "REMEDIATION",
+     "DELETE_RECORD",
+     "ABSENT",
+     "support_platform",
+     "support_3615",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_3615",
+     ""
+    ]
+   ],
+   "uncertainty": "Category inferred from a workflow operation claim (result FAILED), not from record content; marked low-confidence in submission diagnostics."
+  },
+  {
+   "case_id": "case_443",
+   "resource_id": "support_8341",
+   "requested_at": "2026-02-27T06:00:00+00:00",
+   "audit_at": "2026-03-10T06:00:00+00:00",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_MESSAGE",
+   "category_after": "SUPPORT_ATTACHMENT",
+   "action_before": "REDACT",
+   "action_after": "DELETE",
+   "workflow_operation": {
+    "activity_id": "activity_771",
+    "event_type": "DELETE_RECORD",
+    "event_time": "2026-02-28T06:43:46+00:00",
+    "reported_result": "FAILED",
+    "attributed_to_request_batch": true,
+    "other_treatments_by_audit_at": []
+   },
+   "attribution_methods": [
+    "explicit_identifier",
+    "workflow_batch_downstream"
+   ],
+   "time_valid_category_evidence": {
+    "record_types": [],
+    "collections": [
+     "support_records"
+    ],
+    "conversation_fields": [],
+    "message_excerpts": [
+     "Customer contacted support about account access."
+    ],
+    "subjects": [
+     "user_441"
+    ]
+   },
+   "finding_evidence": {
+    "evidence_id": "evidence_66",
+    "file_path": "evidence/databases/customer_data_inventory_20260310.sql",
+    "captured_at": "2026-03-10T05:38:48Z"
+   },
+   "removed_steps": [
+    [
+     "FINDING",
+     "REPORT_EXPOSED_PII",
+     "PRESENT",
+     "support_platform",
+     "support_8341",
+     "evidence_66"
+    ],
+    [
+     "REMEDIATION",
+     "REDACT_RECORD",
+     "REDACTED",
+     "support_platform",
+     "support_8341",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_8341",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "FINDING",
+     "REPORT_REMAINING_RECORD",
+     "PRESENT",
+     "support_platform",
+     "support_8341",
+     "evidence_66"
+    ],
+    [
+     "REMEDIATION",
+     "DELETE_RECORD",
+     "ABSENT",
+     "support_platform",
+     "support_8341",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_8341",
+     ""
+    ]
+   ],
+   "uncertainty": "Category inferred from a workflow operation claim (result FAILED), not from record content; marked low-confidence in submission diagnostics."
+  },
+  {
+   "case_id": "case_527",
+   "resource_id": "support_3896",
+   "requested_at": "2026-01-14T12:00:00+00:00",
+   "audit_at": "2026-01-29T12:00:00+00:00",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_MESSAGE",
+   "category_after": "SUPPORT_ATTACHMENT",
+   "action_before": "REDACT",
+   "action_after": "DELETE",
+   "workflow_operation": {
+    "activity_id": "activity_142",
+    "event_type": "DELETE_RECORD",
+    "event_time": "2026-01-15T13:15:30+00:00",
+    "reported_result": "FAILED",
+    "attributed_to_request_batch": true,
+    "other_treatments_by_audit_at": []
+   },
+   "attribution_methods": [
+    "explicit_identifier",
+    "workflow_batch_downstream"
+   ],
+   "time_valid_category_evidence": {
+    "record_types": [],
+    "collections": [],
+    "conversation_fields": [],
+    "message_excerpts": [
+     "Customer contacted support about account access."
+    ],
+    "subjects": [
+     "user_525"
+    ]
+   },
+   "finding_evidence": {
+    "evidence_id": "evidence_62",
+    "file_path": "evidence/records/service_resource_export_20260129_114459.json",
+    "captured_at": "2026-01-29T11:44:59Z"
+   },
+   "removed_steps": [
+    [
+     "FINDING",
+     "REPORT_EXPOSED_PII",
+     "PRESENT",
+     "support_platform",
+     "support_3896",
+     "evidence_62"
+    ],
+    [
+     "REMEDIATION",
+     "REDACT_RECORD",
+     "REDACTED",
+     "support_platform",
+     "support_3896",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_3896",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "FINDING",
+     "REPORT_REMAINING_RECORD",
+     "PRESENT",
+     "support_platform",
+     "support_3896",
+     "evidence_62"
+    ],
+    [
+     "REMEDIATION",
+     "DELETE_RECORD",
+     "ABSENT",
+     "support_platform",
+     "support_3896",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_3896",
+     ""
+    ]
+   ],
+   "uncertainty": "Category inferred from a workflow operation claim (result FAILED), not from record content; marked low-confidence in submission diagnostics."
+  }
+ ]
+}

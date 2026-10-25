@@ -326,17 +326,26 @@ def test_future_absence_of_one_copy_cannot_erase_another_surviving_copy() -> Non
     assert chosen is not None and chosen.evidence_id == "replica_present"
 
 
-# Support resources whose only attachment evidence was captured after audit_at; the
-# time-valid evidence is a support record without attachment schema, type or link.
-LATE_ATTACHMENT_EVIDENCE = {
-    "case_71": "support_1370",
-    "case_119": "support_9309",
-    "case_131": "support_2315",
-    "case_179": "support_2283",
-    "case_227": "support_5830",
-    "case_275": "support_3684",
-    "case_431": "support_3615",
-    "case_527": "support_3896",
+# Support records with no time-valid category evidence (the first eight also have
+# attachment evidence captured only after audit_at). Their category rests on the
+# request's own pre-audit DELETE_RECORD operation; the finding cites the pre-audit
+# readback: (resource, worker operation, cited evidence).
+WORKFLOW_INFERRED = {
+    "case_71": ("support_1370", "activity_3505", "evidence_93"),
+    "case_119": ("support_9309", "activity_2979", "evidence_88"),
+    "case_131": ("support_2315", "activity_3021", "evidence_87"),
+    "case_179": ("support_2283", "activity_2549", "evidence_84"),
+    "case_227": ("support_5830", "activity_2360", "evidence_80"),
+    "case_275": ("support_3684", "activity_1860", "evidence_77"),
+    "case_431": ("support_3615", "activity_806", "evidence_68"),
+    "case_527": ("support_3896", "activity_142", "evidence_62"),
+    "case_47": ("support_5742", "activity_3809", "evidence_94"),
+    "case_95": ("support_5750", "activity_3190", "evidence_89"),
+    "case_143": ("support_6560", "activity_2992", "evidence_86"),
+    "case_251": ("support_4541", "activity_2158", "evidence_78"),
+    "case_287": ("support_7432", "activity_1912", "evidence_76"),
+    "case_347": ("support_9474", "activity_1446", "evidence_71"),
+    "case_443": ("support_8341", "activity_771", "evidence_66"),
 }
 
 
@@ -348,11 +357,16 @@ def test_participant_support_records_use_the_policy_known_at_audit(
     submission_cases: list[CasePrediction],
 ) -> None:
     by_case = {case.case_id: case for case in submission_cases}
-    for case_id, resource in LATE_ATTACHMENT_EVIDENCE.items():
+    for case_id, (resource, operation, evidence) in WORKFLOW_INFERRED.items():
         case = by_case[case_id]
         assert case.row.deletion_status == "INCOMPLETE"
-        operations = [operation for operation, _ in _operations(case, resource)]
-        assert operations == ["REPORT_EXPOSED_PII", "REDACT_RECORD", "VERIFY_RECORD_REDACTED"]
+        assert _operations(case, resource) == [
+            ("REPORT_REMAINING_RECORD", evidence),
+            ("DELETE_RECORD", ""),
+            ("VERIFY_RECORD_ABSENT", ""),
+        ]
+        assert f"inferred_support_category:{resource}:{operation}" in case.notes
+        assert resource in case.low_confidence
     # A catalogue link recorded before the cutoff still establishes an attachment, while
     # a resource first linked after it gets no policy from that later document.
     case_61 = by_case["case_61"]

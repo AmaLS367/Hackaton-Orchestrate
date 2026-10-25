@@ -6,7 +6,7 @@ from ghost_audit.application.submission.evidence import SubmissionEvidence
 from ghost_audit.application.submission.records import SubmissionRecords
 from ghost_audit.application.submission.workflow import WorkflowAssignment
 from ghost_audit.domain.dataset import Dataset
-from ghost_audit.domain.models import DeletionRequest
+from ghost_audit.domain.models import Activity, DeletionRequest
 from ghost_audit.domain.output_contract import FINDINGS as FINDING
 from ghost_audit.domain.output_contract import (
     OPERATIONS,
@@ -18,8 +18,17 @@ from ghost_audit.domain.output_contract import (
     OutputStep,
     canonical_steps,
 )
-from ghost_audit.domain.submission_models import CasePrediction, Resource, ResourceAssessment
+from ghost_audit.domain.submission_models import (
+    CasePrediction,
+    RecordSignals,
+    Resource,
+    ResourceAssessment,
+)
 from ghost_audit.domain.submission_semantics import prefix
+
+# Deletion-worker operations that state a record treatment; any non-DELETE one contradicts
+# a DELETE-based category inference.
+RECORD_TREATMENTS = {"DELETE_RECORD", "REDACT_RECORD", "ANONYMIZE_RECORD", "RETAIN_RECORD"}
 
 
 class SubmissionPredictor:
@@ -116,6 +125,8 @@ class SubmissionPredictor:
         assessments = self._assess_resources(request, user, resources, notes)
         violations = [a for a in assessments if a.verdict == "VIOLATION"]
         low = [a.resource.resource_id for a in assessments if a.verdict == "UNKNOWN"]
+        # A category inferred from a workflow operation stays a low-confidence resource.
+        low.extend(n.split(":")[1] for n in notes if n.startswith("inferred_support_category:"))
         flips = self._ambiguous_status_risks(request, user, resources, notes)
         if flips and not violations:
             notes.append("status_depends_on_ambiguous_attribution:" + ",".join(flips))
@@ -148,6 +159,9 @@ class SubmissionPredictor:
         for resource in sorted(resources.values(), key=lambda r: (r.system_id, r.resource_id)):
             facts, signals = gathered[resource.resource_id]
             category = self.records.category(resource.resource_id, signals, audit_at)
+            inferred = self._workflow_delete(request, resource, signals)
+            if inferred is not None:
+                category = "SUPPORT_ATTACHMENT"
             action = self.records.required.get(category)
             if action is None:
                 notes.append("unsupported_category:" + resource.resource_id)
@@ -159,6 +173,7 @@ class SubmissionPredictor:
                     ResourceAssessment(resource, category, action, "UNKNOWN", None, [])
                 )
                 continue
+            readbacks = facts
             if action == "DELETE":
                 # Snapshot contents prove absence only in a file that captured this case's
                 # other records; a file about unrelated subjects is not a full inventory.
@@ -176,6 +191,18 @@ class SubmissionPredictor:
                 if request.requested_at <= f.captured_at <= audit_at and f.at <= audit_at
             ]
             verdict, fact = self.records.assess(action, visible)
+            if inferred is not None:
+                safer = self.records.assess("REDACT", [f for f in visible if f in readbacks])
+                if verdict == "VIOLATION" and safer[0] == "COMPLIANT":
+                    # The weak inference alone would report a record that already meets the
+                    # conversation policy; keep the safer, evidence-supported treatment.
+                    notes.append("rejected_support_category_inference:" + resource.resource_id)
+                    category, action, facts = "SUPPORT_MESSAGE", "REDACT", readbacks
+                    verdict, fact = safer
+                else:
+                    notes.append(
+                        f"inferred_support_category:{resource.resource_id}:{inferred.activity_id}"
+                    )
             assessments.append(ResourceAssessment(resource, category, action, verdict, fact, facts))
         if assessments and all(a.verdict == "UNKNOWN" for a in assessments):
             # Nothing observed since the request: the latest state known by audit_at is the
@@ -186,6 +213,36 @@ class SubmissionPredictor:
                 )
             notes.append("state_from_pre_request_evidence")
         return assessments
+
+    def _workflow_delete(
+        self, request: DeletionRequest, resource: Resource, signals: RecordSignals
+    ) -> Activity | None:
+        """The request's own pre-audit DELETE_RECORD behind a weak support-category inference.
+
+        It applies only to a timely attributed support record without time-valid category
+        evidence, when every deletion-worker treatment of it known by audit_at is a
+        DELETE_RECORD assigned to this request's batch. The operation suggests the
+        category only; it never proves deletion or any record state."""
+        rid = resource.resource_id
+        if resource.methods == {"explicit_identifier_after_audit"}:
+            return None
+        if not self.records.unclassified_support(rid, signals, request.audit_at):
+            return None
+        if len(signals["subjects"]) > 1:
+            return None  # rule_06 deletes only an attachment belonging to the subject alone
+        treatments = [
+            a
+            for a in self.evidence.activities_by_resource.get(rid, ())
+            if a.source_system == "deletion_worker"
+            and a.event_type in RECORD_TREATMENTS
+            and a.event_time <= request.audit_at
+        ]
+        own = self.workflow.downstream_operations.get(request.case_id, set())
+        if treatments and all(
+            a.event_type == "DELETE_RECORD" and a.activity_id in own for a in treatments
+        ):
+            return min(treatments, key=lambda a: (a.event_time, a.activity_id))
+        return None
 
     def _ambiguous_status_risks(
         self, request: DeletionRequest, user: str, resources: dict[str, Resource], notes: list[str]

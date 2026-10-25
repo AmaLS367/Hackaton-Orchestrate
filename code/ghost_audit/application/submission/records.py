@@ -30,6 +30,9 @@ from ghost_audit.domain.submission_semantics import (
 )
 from ghost_audit.domain.temporal_models import TemporalObservation
 
+# rule_05 retains conversations with shared customer, agent or order context.
+SHARED_CONTEXT = re.compile(r"\b(order|agent|shared)\b", re.I)
+
 
 class SubmissionRecords:
     """Interpret submitted record facts without promoting claims into readbacks."""
@@ -62,6 +65,8 @@ class SubmissionRecords:
             "collections": set(),
             "keys": set(),
             "documents": set(),
+            "texts": set(),
+            "subjects": set(),
         }
         user_values = self.evidence.user_values.get(user, set())
         for i in self.evidence.by_resource.get(resource_id, ()):
@@ -92,6 +97,10 @@ class SubmissionRecords:
                 signals["types"].add(str(data.get("record_type") or "").upper())
                 signals["collections"].add(str(refs[0].collection or ""))
                 signals["keys"].update(data)
+                signals["texts"].update(
+                    str(data[k]) for k in ("message_excerpt", "message_text") if data.get(k)
+                )
+                signals["subjects"].update(self.evidence.obs_users[i])
                 if t.category == "DOCUMENT":
                     signals["documents"].add(o.provenance.file_path)
             if t.support in {"CLAIM_ONLY", "UNKNOWN"} and t.category != "DOCUMENT":
@@ -259,6 +268,23 @@ class SubmissionRecords:
                 return "SUPPORT_ATTACHMENT"
             return "SUPPORT_MESSAGE"
         return "UNKNOWN"
+
+    def unclassified_support(
+        self, resource_id: str, signals: RecordSignals, audit_at: datetime
+    ) -> bool:
+        """Whether a support record has no time-valid category evidence either way.
+
+        Named types, attachment evidence, conversation collections or fields, and shared
+        customer, agent or order context all classify the record; only their absence
+        leaves room for the submission's weak workflow-operation fallback."""
+        return (
+            prefix(resource_id) == "support"
+            and self.category(resource_id, signals, audit_at) == "SUPPORT_MESSAGE"
+            and not signals["types"] & self.required.keys()
+            and "support_conversations" not in signals["collections"]
+            and not signals["keys"] & {"message_text", "channel"}
+            and not any(SHARED_CONTEXT.search(text) for text in signals["texts"])
+        )
 
     def listing_facts(self, resource_id: str, system_id: str) -> list[Fact]:
         """Preserve submission inventory-omission facts and their original clocks."""

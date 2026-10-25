@@ -125,6 +125,7 @@ class WorkflowAssignment:
         of the same kind removes a request from consideration; unresolved overlaps stay
         in diagnostics instead of generating unsupported findings."""
         self.downstream = defaultdict(set)
+        self.downstream_operations: defaultdict[str, set[str]] = defaultdict(set)
         self.downstream_ambiguous = defaultdict(set)
         for a in worker:
             if a in submissions or "Target resource:" in a.details:
@@ -152,6 +153,7 @@ class WorkflowAssignment:
                 batch = [r for r in batch if prefix(a.resource_id) not in kinds[r.case_id]]
             if len(batch) == 1:
                 self.downstream[batch[0].case_id].add(a.resource_id)
+                self.downstream_operations[batch[0].case_id].add(a.activity_id)
             else:
                 for r in batch:
                     self.downstream_ambiguous[r.case_id].add(a.resource_id)

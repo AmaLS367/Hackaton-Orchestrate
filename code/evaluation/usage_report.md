@@ -46,8 +46,9 @@ No credentials or sensitive configuration values belong in the submission artifa
 ## Refactor validation run
 
 The final full-dataset default command again processed all 518 requests (SHA-256
-`807803941b11aa438f36365a98c77fcb9de447887fd830aba10ce9a2166343a5` after the
-temporal-state and audit-cutoff policy fixes; see `policy_cutoff_differential.md`).
+`1bc68692b30cfc7d23efb502c8ad6ba03bfecf75452415d11eae0d4639c3666c` after the
+temporal-state and audit-cutoff policy fixes and the support-category workflow fallback;
+see `policy_cutoff_differential.md` and `support_inference_differential.md`).
 Both pathways still use 0 providers, 0 models, 0 calls, 0 input/output/total tokens,
 0 average tokens per request, and USD 0 total/per-request model cost. Refactor work
 used Codex Desktop / gpt-6.1-sol, verified from session metadata; assistant token and

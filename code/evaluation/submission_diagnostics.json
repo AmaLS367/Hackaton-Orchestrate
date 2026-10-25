@@ -18,10 +18,11 @@
    "ambiguous_workflow_account": 104,
    "ambiguous_workflow_downstream": 211,
    "ignored_lookup_only_account": 1,
+   "inferred_support_category": 15,
    "pre_request_context_only": 1,
    "status_depends_on_ambiguous_attribution": 1
   },
-  "cases_with_low_confidence_resources": 138,
+  "cases_with_low_confidence_resources": 145,
   "status_depends_on_ambiguous_attribution": [
    "case_369"
   ]
@@ -465,10 +466,13 @@
      "workflow_batch_downstream"
     ]
    },
-   "notes": [],
+   "notes": [
+    "inferred_support_category:support_9309:activity_2979"
+   ],
    "low_confidence": [
     "account_8058",
-    "audit_record_9445"
+    "audit_record_9445",
+    "support_9309"
    ]
   },
   {
@@ -745,9 +749,12 @@
      "workflow_batch_downstream"
     ]
    },
-   "notes": [],
+   "notes": [
+    "inferred_support_category:support_2315:activity_3021"
+   ],
    "low_confidence": [
-    "audit_record_8457"
+    "audit_record_8457",
+    "support_2315"
    ]
   },
   {
@@ -1021,9 +1028,12 @@
     ]
    },
    "notes": [
-    "ambiguous_workflow_account:account_2900,account_5572"
+    "ambiguous_workflow_account:account_2900,account_5572",
+    "inferred_support_category:support_6560:activity_2992"
    ],
-   "low_confidence": []
+   "low_confidence": [
+    "support_6560"
+   ]
   },
   {
    "case_id": "case_144",
@@ -1811,9 +1821,12 @@
      "workflow_batch_downstream"
     ]
    },
-   "notes": [],
+   "notes": [
+    "inferred_support_category:support_2283:activity_2549"
+   ],
    "low_confidence": [
-    "audit_record_919"
+    "audit_record_919",
+    "support_2283"
    ]
   },
   {
@@ -2895,10 +2908,12 @@
     ]
    },
    "notes": [
-    "ambiguous_workflow_account:account_4552,account_5549,account_7146"
+    "ambiguous_workflow_account:account_4552,account_5549,account_7146",
+    "inferred_support_category:support_5830:activity_2360"
    ],
    "low_confidence": [
-    "audit_record_9043"
+    "audit_record_9043",
+    "support_5830"
    ]
   },
   {
@@ -3433,9 +3448,12 @@
     ]
    },
    "notes": [
-    "ambiguous_workflow_account:account_4643,account_7518"
+    "ambiguous_workflow_account:account_4643,account_7518",
+    "inferred_support_category:support_4541:activity_2158"
    ],
-   "low_confidence": []
+   "low_confidence": [
+    "support_4541"
+   ]
   },
   {
    "case_id": "case_252",
@@ -3974,10 +3992,12 @@
    },
    "notes": [
     "ambiguous_workflow_account:account_2352,account_731",
-    "ambiguous_workflow_downstream:analytics_5923,analytics_6191"
+    "ambiguous_workflow_downstream:analytics_5923,analytics_6191",
+    "inferred_support_category:support_3684:activity_1860"
    ],
    "low_confidence": [
-    "audit_record_4188"
+    "audit_record_4188",
+    "support_3684"
    ]
   },
   {
@@ -4252,9 +4272,12 @@
    },
    "notes": [
     "ambiguous_workflow_downstream:legal_hold_1745",
-    "absence_from_unlinked_snapshot:account_4485"
+    "absence_from_unlinked_snapshot:account_4485",
+    "inferred_support_category:support_7432:activity_1912"
    ],
-   "low_confidence": []
+   "low_confidence": [
+    "support_7432"
+   ]
   },
   {
    "case_id": "case_288",
@@ -5668,9 +5691,12 @@
     ]
    },
    "notes": [
-    "ambiguous_workflow_account:account_3372,account_9881"
+    "ambiguous_workflow_account:account_3372,account_9881",
+    "inferred_support_category:support_9474:activity_1446"
    ],
-   "low_confidence": []
+   "low_confidence": [
+    "support_9474"
+   ]
   },
   {
    "case_id": "case_348",
@@ -7778,10 +7804,13 @@
      "workflow_batch_downstream"
     ]
    },
-   "notes": [],
+   "notes": [
+    "inferred_support_category:support_3615:activity_806"
+   ],
    "low_confidence": [
     "account_6101",
-    "audit_record_3236"
+    "audit_record_3236",
+    "support_3615"
    ]
   },
   {
@@ -8095,9 +8124,12 @@
     ]
    },
    "notes": [
-    "ambiguous_workflow_account:account_1776,account_4042"
+    "ambiguous_workflow_account:account_1776,account_4042",
+    "inferred_support_category:support_8341:activity_771"
    ],
-   "low_confidence": []
+   "low_confidence": [
+    "support_8341"
+   ]
   },
   {
    "case_id": "case_444",
@@ -8717,9 +8749,12 @@
     ]
    },
    "notes": [
-    "ambiguous_workflow_account:account_483,account_617"
+    "ambiguous_workflow_account:account_483,account_617",
+    "inferred_support_category:support_5742:activity_3809"
    ],
-   "low_confidence": []
+   "low_confidence": [
+    "support_5742"
+   ]
   },
   {
    "case_id": "case_470",
@@ -10137,11 +10172,13 @@
     ]
    },
    "notes": [
-    "ambiguous_workflow_account:account_3693,account_4063"
+    "ambiguous_workflow_account:account_3693,account_4063",
+    "inferred_support_category:support_3896:activity_142"
    ],
    "low_confidence": [
     "audit_record_2758",
-    "search_2979"
+    "search_2979",
+    "support_3896"
    ]
   },
   {
@@ -10914,9 +10951,12 @@
      "workflow_batch_downstream"
     ]
    },
-   "notes": [],
+   "notes": [
+    "inferred_support_category:support_1370:activity_3505"
+   ],
    "low_confidence": [
-    "audit_record_1096"
+    "audit_record_1096",
+    "support_1370"
    ]
   },
   {
@@ -11472,9 +11512,12 @@
     ]
    },
    "notes": [
-    "ambiguous_workflow_account:account_4176,account_5815"
+    "ambiguous_workflow_account:account_4176,account_5815",
+    "inferred_support_category:support_5750:activity_3190"
    ],
-   "low_confidence": []
+   "low_confidence": [
+    "support_5750"
+   ]
   },
   {
    "case_id": "case_96",
