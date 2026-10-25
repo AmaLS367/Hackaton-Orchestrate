@@ -472,5 +472,5 @@ The final dependency/typing/documentation pass preserves all sample metrics, 518
 rows, 3,071 ordered steps and the protected output SHA-256. The complete 99-file Python
 tree, including tests and packaging utilities, passes mypy strict mode; all 527 tests
 pass. See `docs/quality-pass.md` in the repository/archive for the exact configuration,
-dependency export, full coverage inventory and verification results. Existing submission
+direct dependency installation, full coverage inventory and verification results. Existing submission
 inference limitations and failure analysis remain applicable.

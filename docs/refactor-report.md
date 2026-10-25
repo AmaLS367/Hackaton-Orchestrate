@@ -1,5 +1,8 @@
 # Refactor verification report
 
+This records the earlier refactor. For current installation use README.md: the final
+dependency pass removed the requirements file and installs directly from pyproject.toml.
+
 Reference: `4476d2605a45186e27eba709262db7869a1c7e76` on `master`.
 All implementation commits are local; no push or submission was performed.
 

@@ -4,20 +4,20 @@ Use Python 3.12 and `uv sync --locked`. The editable install exposes `ghost_audi
 `evaluation`; scripts also remain runnable directly. All direct constraints live in
 `pyproject.toml`: runtime requirements under `project.dependencies`, quality tools under
 `dependency-groups.dev`, and the wheel backend under `build-system.requires`.
-`uv.lock` records the resolution. `code/requirements.txt` is generated, includes every
-development tool, and supports pip in both the checkout and extracted archive:
+`uv.lock` records the resolution. Pip installs runtime dependencies and development
+tools directly from the same metadata in both the checkout and extracted archive:
 
 ```text
-uv lock
-uv export --locked --all-groups --no-emit-project --output-file code/requirements.txt
-python -m pip install -r code/requirements.txt
-python -m pip install --no-deps -e .
+python -m pip install --upgrade pip
+python -m pip install -e . --group dev
 ```
 
-Run exports from the repository root. The project install uses the build requirements
-in `pyproject.toml`; dependency installation uses the hashed, locked export. Never edit
-the export manually or add ad hoc tool versions to installation commands. Verify
-metadata with `uv sync --locked`; runtime-only uv users may add `--no-dev`.
+Upgrade pip first for dependency-group support and run installation from the project
+root. Runtime-only pip users can run `python -m pip install .`. Build isolation also
+reads its backend requirement from `pyproject.toml`. Pip resolves its constraints;
+use uv for the exact locked resolution. After changing metadata, run `uv lock` and
+verify `uv sync --locked`; runtime-only uv users may add `--no-dev`. No dependency
+export or separate requirements file is maintained or packaged.
 
 ## Conventions
 

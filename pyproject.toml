@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Ghost Data Still Exists deletion-audit agent (HackerRank Orchestrate October 2026)"
 readme = "README.md"
 requires-python = ">=3.12"
-# Authoritative runtime constraints; code/requirements.txt is exported from uv.lock.
+# All direct dependency constraints live in this file; uv.lock pins their resolution.
 dependencies = [
     "pydantic>=2.10,<3",
     "pypdf>=5,<7",

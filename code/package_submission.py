@@ -21,11 +21,7 @@ def contents(root: Path) -> dict[str, bytes]:
             if not path.is_file() or path.is_symlink() or not path.resolve().is_relative_to(root):
                 continue
             fixture = relative.is_relative_to("code/tests/fixtures") and path.suffix == ".json"
-            if (
-                path.suffix in {".py", ".md"}
-                or fixture
-                or relative.as_posix() == "code/requirements.txt"
-            ):
+            if path.suffix in {".py", ".md"} or fixture:
                 files[relative.as_posix()] = path.read_bytes()
     # The challenge requires these archive-root paths; source locations stay intact.
     for name in REPORTS:

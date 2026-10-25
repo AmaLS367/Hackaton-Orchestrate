@@ -8,8 +8,9 @@ contracts passed. An independent output copy and full behavioral capture were sa
 outside the checkout before editing. The stored original golden master matched with
 zero differences. No deadline is configured.
 
-Local commits: dependency consolidation `d7fa240`; strict typing `01a0f5f`; the third
-commit contains these docs and the append-only transcript. Nothing was pushed.
+Initial local commits: dependency consolidation `d7fa240`, strict typing `01a0f5f`,
+and documentation `b7aa00e`. A follow-up removes the requirements export entirely
+and installs directly from pyproject.toml. Nothing was pushed.
 
 ## Dependencies
 
@@ -39,18 +40,19 @@ build-backend = "hatchling.build"
 
 No dependencies or versions were added. `uv lock` and `uv sync --locked` confirmed
 that the existing 24-package lock resolution remains valid; uv.lock is byte-unchanged.
-The pip artifact is a hashed, pinned export containing runtime and all dev tools:
+The separate requirements file was removed following the final dependency clarification.
+All runtime, development and build requirements are maintained only in pyproject.toml.
+Pip reads the runtime metadata and development group directly:
 
 ```text
-uv lock
-uv export --locked --all-groups --no-emit-project --output-file code/requirements.txt
-python -m pip install --require-hashes -r code/requirements.txt
-python -m pip install --no-deps -e .
+python -m pip install --upgrade pip
+python -m pip install -e . --group dev
 ```
 
-Regenerating the export reproduced identical bytes. A fresh Python 3.12 pip environment
-installed it with hash verification, passed `pip check`, and imported every runtime/dev
-dependency. Build isolation reads its backend requirement from pyproject.toml.
+Run this from the checkout or extracted archive root. Runtime-only pip installation is
+`python -m pip install .`. Upgrading pip supplies dependency-group support; uv remains
+the path for exact locked versions. No dependency export is generated or packaged.
+Build isolation reads its backend requirement from pyproject.toml.
 
 ## Strict typing and documentation
 
@@ -133,20 +135,21 @@ in evaluation/. No new runtime model calls, tokens or costs were introduced.
 
 ## Archive and isolated execution
 
-The source archive passed member/CRC/source-byte checks and contains 117 entries,
-including all 99 Python modules, pyproject.toml, uv.lock, the generated pip export,
+The source archive contains 116 entries after removing the dependency export,
+including all 99 Python modules, pyproject.toml, uv.lock,
 developer docs, synthetic regression fixtures and both required evaluation reports.
 It excludes participant data, predictions, environments, caches, credentials, transcripts
 and nested archives.
 
-A fresh extraction outside the checkout passed `uv sync --locked`. A second fresh
-Python 3.12 pip environment installed the hashed export and the extracted editable
-project, then passed `pip check`, strict mypy (99 files), Ruff lint/format, both import
-contracts and **244 unit tests**. All 99 modules imported from the extracted source
-path with no original checkout/PYTHONPATH fallback. Full prediction and output validation
-succeeded with an explicit external read-only dataset path; the output hash and every
-public-sample metric exactly matched the baseline. Repeat archive builds have identical
-bytes; archive-root report paths and source membership are verified separately.
+The original isolated archive check passed uv installation, strict checks, all 99
+module imports and 244 unit tests. After removal of the export, a new 116-entry archive
+was extracted into another clean directory. A fresh Python 3.12 pip environment ran
+`python -m pip install -e . --group dev` directly against that extraction, then passed
+`pip check`, strict mypy (99 files) and all three packaging integration tests.
+Full prediction from this installation reproduced the baseline output byte for byte.
+No original checkout or PYTHONPATH fallback supplied the extracted package. Repeat
+archive builds have identical bytes; required report paths and absence of the removed
+dependency file are verified separately.
 
 No official dataset or AGENTS.md changes were made. No remaining issues block this
 quality pass; inherited uncertainty and the unchanged sample failure cases remain
@@ -329,6 +332,7 @@ module). Reproduce the count with the command in development.md.
 - `docs/development.md`
 - `docs/evidence-model.md`
 - `docs/quality-pass.md`
+- `docs/refactor-report.md`
 - `docs/testing.md`
 - `log.txt`
 - `pyproject.toml`

@@ -15,7 +15,6 @@ def test_submission_archive_is_deterministic_and_excludes_private_or_generated_f
         "uv.lock",
         ".python-version",
         "code/main.py",
-        "code/requirements.txt",
         "code/tests/test_example.py",
         "code/evaluation/evaluation_report.md",
         "code/evaluation/usage_report.md",
@@ -37,6 +36,9 @@ def test_submission_archive_is_deterministic_and_excludes_private_or_generated_f
     assert first.read_bytes() == second.read_bytes()
     with zipfile.ZipFile(first) as archive:
         assert "code/main.py" in archive.namelist()
+        assert "pyproject.toml" in archive.namelist()
+        assert "uv.lock" in archive.namelist()
+        assert not any(Path(name).name == "requirements.txt" for name in archive.namelist())
         assert "code/tests/test_example.py" in archive.namelist()
         assert "evaluation/evaluation_report.md" in archive.namelist()
         assert "evaluation/usage_report.md" in archive.namelist()

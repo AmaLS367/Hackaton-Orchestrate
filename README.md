@@ -22,22 +22,19 @@ Pip fallback:
 
 ```text
 python -m venv .venv
-python -m pip install -r code/requirements.txt
-python -m pip install --no-deps -e .
+python -m pip install --upgrade pip
+python -m pip install -e . --group dev
 python code/main.py
 ```
 
 Activate the environment first: `.venv\Scripts\Activate.ps1` on PowerShell or
 `source .venv/bin/activate` on Linux/macOS. Use `py -3.12` / `python3.12` when necessary.
-The generated export includes runtime dependencies and all development tools, so the
-same environment supports tests and quality checks. `pyproject.toml` owns all direct
-constraints; `uv.lock` pins their resolution. After changing dependencies, regenerate
-the pip artifact from the repository root (never edit it manually):
-
-```text
-uv lock
-uv export --locked --all-groups --no-emit-project --output-file code/requirements.txt
-```
+Upgrade pip first for dependency-group support. The install command reads runtime
+dependencies and the `dev` group directly from `pyproject.toml`, so the environment
+supports tests and quality checks. For runtime-only pip installation use
+`python -m pip install .`. Run these commands from the checkout or extracted archive
+root. `uv.lock` pins uv's resolution; pip resolves the constraints in `pyproject.toml`.
+After changing dependencies, run `uv lock` and verify `uv sync --locked`.
 
 ## Predict and inspect
 
@@ -89,7 +86,7 @@ uv run python code/evaluation/main.py --check-reference
 `uv run mypy` applies `strict = true` to all 99 Python files under `code/`, including
 tests, fixtures, both packaging scripts and regression tools. No packages are excluded
 or configured with weaker checks. See [development](docs/development.md) for the exact
-configuration and dependency-export workflow.
+configuration and installation workflow.
 
 Generate an independent sample file with
 `uv run python code/main.py --samples --predictions sample_predictions.csv` before
@@ -127,7 +124,7 @@ uv run python code/package_submission.py
 ```
 
 The deterministic `code.zip` includes runtime code, tests and fixtures, configuration,
-lockfile, pip requirements, this README, developer docs and the required reports at
+lockfile, this README, developer docs and the required reports at
 `evaluation/evaluation_report.md` and `evaluation/usage_report.md`. It excludes dataset,
 outputs, environments, caches, diagnostics, credentials, transcripts and nested archives.
 After extraction, install dependencies and supply `--dataset PATH`; see

@@ -7168,3 +7168,25 @@ branch=master
 repo_root=C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-october26
 worktree=C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-october26
 parent_agent=none
+
+## [2026-10-25T07:39:23.094562+00:00] Remove requirements export and install directly from pyproject
+
+User Prompt (verbatim, secrets redacted):
+Стоп. Я хотел, чтобы `requirements.txt`  вообще не было и все зависимости записывались в pypoject.toml
+
+
+Agent Response Summary:
+Removed code/requirements.txt entirely and removed its packaging allowance. Updated the supported pip installation to read runtime dependencies and the dev group directly from pyproject.toml, and corrected current documentation and the quality report. A fresh extracted archive installed with pip --group dev, passed pip check, strict mypy and packaging tests, and reproduced the unchanged full prediction output; Ruff, import contracts and locked uv synchronization also pass.
+
+Actions:
+* Deleted code/requirements.txt; updated pyproject.toml comment, packaging and its integration test.
+* Updated README, development documentation, release reports and historical-report navigation.
+* Verified fresh direct-metadata pip installation, 99-file strict typing, three packaging tests, full extracted prediction, archive membership and baseline output hash.
+
+Context:
+tool=Codex
+model=gpt-6.1-sol
+branch=master
+repo_root=C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-october26
+worktree=C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-october26
+parent_agent=none
