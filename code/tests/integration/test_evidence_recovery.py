@@ -5,6 +5,8 @@ Fixtures are constructed, never copied from sample answers. They pin the new lin
 freshest surface) and policy behaviour, including the cases that must still abstain.
 """
 
+from pathlib import Path
+
 import pytest
 from ghost_audit.application.evidence_association import EvidenceAssociationService
 from ghost_audit.application.strict_audit import predict
@@ -12,6 +14,7 @@ from ghost_audit.domain.citation_validation import validate_output
 from ghost_audit.domain.evidence_index import EvidenceIndex
 from ghost_audit.domain.models import (
     Activity,
+    DeletionRule,
     EvidenceFile,
 )
 from ghost_audit.infrastructure.parsers.documents import (
@@ -36,7 +39,7 @@ from tests.fixtures.evidence_cases import (
 )
 
 
-def test_result_status_consistency_is_only_a_candidate_search(rules):
+def test_result_status_consistency_is_only_a_candidate_search(rules: list[DeletionRule]) -> None:
     # The window/status heuristic cannot prove ownership of either primary profile.
     a, b = (
         request("case_a", "a@example.test", "COMPLETE"),
@@ -65,7 +68,9 @@ def test_result_status_consistency_is_only_a_candidate_search(rules):
     )
 
 
-def test_ambiguous_profiles_all_absent_do_not_prove_search_coverage(rules):
+def test_ambiguous_profiles_all_absent_do_not_prove_search_coverage(
+    rules: list[DeletionRule],
+) -> None:
     a, c = request("case_a", "a@example.test"), request("case_c", "c@example.test")
     acts = [
         worker("act_1", "2026-03-02T11:00:00Z", "account_1"),
@@ -102,7 +107,7 @@ def test_ambiguous_profiles_all_absent_do_not_prove_search_coverage(rules):
     assert case.prediction is None and "no_verified_deletion_treatment" in case.blockers
 
 
-def test_identity_exclusion_observed_after_audit_is_not_used(rules):
+def test_identity_exclusion_observed_after_audit_is_not_used(rules: list[DeletionRule]) -> None:
     a, c = request("case_a", "a@example.test"), request("case_c", "c@example.test", audit=AFTER)
     acts = [
         worker("act_1", "2026-03-02T11:00:00Z", "account_1"),
@@ -122,7 +127,7 @@ def test_identity_exclusion_observed_after_audit_is_not_used(rules):
     assert len(analyzer.workflow.attributed(c)) == 1
 
 
-def test_crowded_window_blocks_per_resource_attribution(rules):
+def test_crowded_window_blocks_per_resource_attribution(rules: list[DeletionRule]) -> None:
     a = request("case_a", "a@example.test")
     action = worker(
         "act_3",
@@ -151,7 +156,9 @@ def test_crowded_window_blocks_per_resource_attribution(rules):
     assert crowded.workflow.attributed(a) == []
 
 
-def test_late_packaged_earlier_snapshot_neither_links_nor_is_cited(rules):
+def test_late_packaged_earlier_snapshot_neither_links_nor_is_cited(
+    rules: list[DeletionRule],
+) -> None:
     # Captured after the audit, the bundle is later evidence even though its inner
     # snapshot clock is earlier: it must not add a record to the answer at the cutoff.
     a = request("case_a", "a@example.test")
@@ -174,7 +181,9 @@ def test_late_packaged_earlier_snapshot_neither_links_nor_is_cited(rules):
     assert ("V", "VERIFY_RECORD_PRESENT", "audit_a", "") in steps(case)
 
 
-def test_complete_listing_proves_absence_and_validator_accepts_coverage(rules):
+def test_complete_listing_proves_absence_and_validator_accepts_coverage(
+    rules: list[DeletionRule],
+) -> None:
     a = request("case_a", "a@example.test")
     acts = [worker("act_1", "2026-03-02T11:00:00Z", "account_1")]
     listing = (
@@ -229,7 +238,9 @@ def test_complete_listing_proves_absence_and_validator_accepts_coverage(rules):
         )
 
 
-def test_explicit_read_outranks_listing_and_listed_record_remains(rules):
+def test_explicit_read_outranks_listing_and_listed_record_remains(
+    rules: list[DeletionRule],
+) -> None:
     a = request("case_a", "a@example.test")
     acts = [worker("act_1", "2026-03-02T11:00:00Z", "account_1")]
     read = lookups(
@@ -257,7 +268,7 @@ def test_explicit_read_outranks_listing_and_listed_record_remains(rules):
     assert ("F", "REPORT_REMAINING_RECORD", "account_1", "state") in steps(case)
 
 
-def test_newest_surface_supersedes_stale_replica(rules):
+def test_newest_surface_supersedes_stale_replica(rules: list[DeletionRule]) -> None:
     a = request("case_a", "a@example.test")
     old = snapshot(
         "old_replica",
@@ -276,7 +287,7 @@ def test_newest_surface_supersedes_stale_replica(rules):
     assert steps(case) == [("V", "VERIFY_RECORD_ABSENT", "account_1", "new_export")]
 
 
-def test_backup_has_only_a_restore_obligation(rules):
+def test_backup_has_only_a_restore_obligation(rules: list[DeletionRule]) -> None:
     a = request("case_a", "a@example.test")
     rows = [
         (
@@ -303,7 +314,7 @@ def test_backup_has_only_a_restore_obligation(rules):
     ]
 
 
-def test_worker_delete_types_an_otherwise_untyped_support_record(rules):
+def test_worker_delete_types_an_otherwise_untyped_support_record(rules: list[DeletionRule]) -> None:
     a = request("case_a", "a@example.test")
     row = parse_json(
         {
@@ -315,8 +326,13 @@ def test_worker_delete_types_an_otherwise_untyped_support_record(rules):
             "observed_at": LISTING,
         },
         ExtractionContext(
-            EvidenceFile(
-                file_id="log", file_path="evidence/log.json", origin="x", captured_at=LISTING
+            EvidenceFile.model_validate(
+                {
+                    "file_id": "log",
+                    "file_path": "evidence/log.json",
+                    "origin": "x",
+                    "captured_at": LISTING,
+                }
             ),
             "e" * 64,
             system="support_replica",
@@ -327,7 +343,7 @@ def test_worker_delete_types_an_otherwise_untyped_support_record(rules):
     assert ("F", "REPORT_REMAINING_RECORD", "support_1", "log") in steps(case)
 
 
-def test_earlier_request_of_same_subject_keeps_its_evidence(rules):
+def test_earlier_request_of_same_subject_keeps_its_evidence(rules: list[DeletionRule]) -> None:
     early = request(
         "case_early",
         "a@example.test",
@@ -356,13 +372,15 @@ def test_earlier_request_of_same_subject_keeps_its_evidence(rules):
     assert all(rid != "account_old" for _, _, rid, _ in steps(by["case_later"]))
 
 
-def test_document_observation_links_subject_and_resource_across_lines():
+def test_document_observation_links_subject_and_resource_across_lines() -> None:
     context = ExtractionContext(
-        EvidenceFile(
-            file_id="pdf",
-            file_path="evidence/documents/x.pdf",
-            origin="support_platform",
-            captured_at=LISTING,
+        EvidenceFile.model_validate(
+            {
+                "file_id": "pdf",
+                "file_path": "evidence/documents/x.pdf",
+                "origin": "support_platform",
+                "captured_at": LISTING,
+            }
         ),
         "f" * 64,
     )
@@ -375,35 +393,45 @@ def test_document_observation_links_subject_and_resource_across_lines():
         "support_001",
     )
     assert o.payload["email"] == "priya@example.test"
+    assert o.provenance.captured_at is not None
     assert o.provenance.captured_at.isoformat().startswith("2026-03-05")
 
 
-def test_catalog_reference_text_matches_only_near_its_catalogue_time():
+def test_catalog_reference_text_matches_only_near_its_catalogue_time() -> None:
     acts = [
-        Activity(
-            activity_id="cat_1",
-            event_time="2026-03-05T10:07:00Z",
-            event_type="LINK_RESOURCE_IDENTITY",
-            source_system="data_catalog",
-            target_system="export_service",
-            resource_id="export_1",
-            reported_result="SUCCESS",
-            details="Data catalog linked export_1 (NST-1) to a@example.test and user_a.",
+        Activity.model_validate(
+            {
+                "activity_id": "cat_1",
+                "event_time": "2026-03-05T10:07:00Z",
+                "event_type": "LINK_RESOURCE_IDENTITY",
+                "source_system": "data_catalog",
+                "target_system": "export_service",
+                "resource_id": "export_1",
+                "reported_result": "SUCCESS",
+                "details": "Data catalog linked export_1 (NST-1) to a@example.test and user_a.",
+            }
         )
     ]
     catalog = catalog_references(acts)
     near = ExtractionContext(
-        EvidenceFile(
-            file_id="d1", file_path="evidence/d1.pdf", origin="history", captured_at=LISTING
+        EvidenceFile.model_validate(
+            {
+                "file_id": "d1",
+                "file_path": "evidence/d1.pdf",
+                "origin": "history",
+                "captured_at": LISTING,
+            }
         ),
         "f" * 64,
     )
     far = ExtractionContext(
-        EvidenceFile(
-            file_id="d2",
-            file_path="evidence/d2.pdf",
-            origin="history",
-            captured_at="2026-06-01T00:00:00Z",
+        EvidenceFile.model_validate(
+            {
+                "file_id": "d2",
+                "file_path": "evidence/d2.pdf",
+                "origin": "history",
+                "captured_at": "2026-06-01T00:00:00Z",
+            }
         ),
         "f" * 64,
     )
@@ -414,14 +442,19 @@ def test_catalog_reference_text_matches_only_near_its_catalogue_time():
     assert document_observations("Register row NST-1", far, catalog, catalogued_only=False) == []
 
 
-def test_ocr_text_keeps_only_catalogued_resources_and_their_lines():
+def test_ocr_text_keeps_only_catalogued_resources_and_their_lines() -> None:
     catalog = {
         "account_5": ("account_service", "account_5", None),
         "backup_1": ("backup_service", "backup_1", None),
     }
     image = ExtractionContext(
-        EvidenceFile(
-            file_id="img", file_path="evidence/images/x.png", origin="admin", captured_at=LISTING
+        EvidenceFile.model_validate(
+            {
+                "file_id": "img",
+                "file_path": "evidence/images/x.png",
+                "origin": "admin",
+                "captured_at": LISTING,
+            }
         ),
         "f" * 64,
     )
@@ -432,25 +465,32 @@ def test_ocr_text_keeps_only_catalogued_resources_and_their_lines():
     assert "other@example.test" not in o.raw_text
 
 
-def test_images_stay_deferred_without_ocr(tmp_path, monkeypatch):
+def test_images_stay_deferred_without_ocr(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GHOST_AUDIT_OCR", "0")
     (tmp_path / "evidence/images").mkdir(parents=True)
     (tmp_path / "evidence/images/screen.png").write_bytes(b"\x89PNG\r\n\x1a\nnot really an image")
-    manifest = EvidenceFile(
-        file_id="img", file_path="evidence/images/screen.png", origin="admin", captured_at=LISTING
+    manifest = EvidenceFile.model_validate(
+        {
+            "file_id": "img",
+            "file_path": "evidence/images/screen.png",
+            "origin": "admin",
+            "captured_at": LISTING,
+        }
     )
     document = parse_document(tmp_path, manifest)
     assert document.status == "deferred" and document.observations == []
 
 
-def test_collection_system_fallback_alias_and_envelope_scope():
+def test_collection_system_fallback_alias_and_envelope_scope() -> None:
     rows = parse_json(
         {"collection": "customer_export_jobs", "records": [{"resource_id": "export_1"}]},
         ctx("jobs", LISTING),
     )
     assert rows[-1].resources[0].system_id == "export_service"
     replica = ExtractionContext(
-        EvidenceFile(file_id="r", file_path="evidence/r.log", origin="x", captured_at=LISTING),
+        EvidenceFile.model_validate(
+            {"file_id": "r", "file_path": "evidence/r.log", "origin": "x", "captured_at": LISTING}
+        ),
         "f" * 64,
         system="support_replica",
     )

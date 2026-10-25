@@ -103,7 +103,9 @@ class SubmissionRecords:
         return result, signals
 
     @staticmethod
-    def _document_state(t, data, resource_id):
+    def _document_state(
+        t: TemporalObservation, data: dict[str, JsonValue], resource_id: str
+    ) -> TemporalObservation:
         """A console or business document rendering a connector or archive states its
         operating status in words; no status words leave the dimension unknown."""
         text = str(data.get("document_text", ""))
@@ -146,12 +148,14 @@ class SubmissionRecords:
         return verdicts
 
     @staticmethod
-    def _exposure(data, user_values):
+    def _exposure(
+        data: dict[str, JsonValue], user_values: set[str]
+    ) -> tuple[bool | None, bool | None, bool]:
         """(direct identifier present, stable reference present, a subject value present)."""
         direct = stable = None
         subject = False
 
-        def visit(value, key=None):
+        def visit(value: JsonValue, key: str | None = None) -> None:
             nonlocal direct, stable, subject
             if isinstance(value, dict):
                 for k, v in value.items():

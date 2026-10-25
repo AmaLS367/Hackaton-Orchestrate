@@ -1,11 +1,17 @@
 import csv
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from ghost_audit.domain.citation_validation import validate_output
 from ghost_audit.domain.evidence_index import EvidenceIndex
+from ghost_audit.domain.models import (
+    Activity,
+    IdentityChange,
+)
 from ghost_audit.domain.output_contract import OutputRow
 from ghost_audit.infrastructure.parsers.documents import parse_document
+from ghost_audit.infrastructure.parsers.structured import ExtractionContext
 from ghost_audit.infrastructure.serialization.csv_output import write_output
 from pypdf import PdfWriter
 
@@ -13,7 +19,9 @@ from tests.fixtures.output_cases import request, step
 
 
 @pytest.mark.parametrize("suffix", ["png", "pdf"])
-def test_deferred_citation_uses_manifest_availability(tmp_path, context, suffix):
+def test_deferred_citation_uses_manifest_availability(
+    tmp_path: Path, context: ExtractionContext, suffix: str
+) -> None:
     from ghost_audit.domain.evidence_index import EvidenceRegistry
 
     manifest = context.manifest.model_copy(update={"file_path": f"evidence/fixture.{suffix}"})
@@ -30,6 +38,7 @@ def test_deferred_citation_uses_manifest_availability(tmp_path, context, suffix)
     assert not document.observations
     registry = EvidenceRegistry(documents=[document])
     entry = registry.get("fixture_file")
+    assert entry is not None
     assert entry.file_path == manifest.file_path
     assert entry.origin == manifest.origin
     assert entry.captured_at == manifest.captured_at
@@ -49,27 +58,30 @@ def test_deferred_citation_uses_manifest_availability(tmp_path, context, suffix)
     assert output.exists()
 
 
-def test_audit_and_activity_registered_without_observations():
+def test_audit_and_activity_registered_without_observations() -> None:
     from ghost_audit.domain.evidence_index import EvidenceRegistry
-    from ghost_audit.domain.models import Activity, IdentityChange
 
-    activity = Activity(
-        activity_id="activity_x",
-        event_time="2026-01-02T00:00:00Z",
-        event_type="lookup",
-        source_system="",
-        target_system="account_service",
-        resource_id="record_x",
-        reported_result="COMPLETE",
-        details="Claim only",
+    activity = Activity.model_validate(
+        {
+            "activity_id": "activity_x",
+            "event_time": "2026-01-02T00:00:00Z",
+            "event_type": "lookup",
+            "source_system": "",
+            "target_system": "account_service",
+            "resource_id": "record_x",
+            "reported_result": "COMPLETE",
+            "details": "Claim only",
+        }
     )
-    audit = IdentityChange(
-        audit_id="audit_x",
-        user_id="user_x",
-        event_time="2026-01-02T00:00:00Z",
-        field_name="email",
-        old_value="old@example.invalid",
-        new_value="new@example.invalid",
+    audit = IdentityChange.model_validate(
+        {
+            "audit_id": "audit_x",
+            "user_id": "user_x",
+            "event_time": "2026-01-02T00:00:00Z",
+            "field_name": "email",
+            "old_value": "old@example.invalid",
+            "new_value": "new@example.invalid",
+        }
     )
     registry = EvidenceRegistry(activities=[activity], identity_changes=[audit])
     index = EvidenceIndex([], registry=registry)
@@ -77,7 +89,8 @@ def test_audit_and_activity_registered_without_observations():
         ("activity_x", "system_activity.csv"),
         ("audit_x", "user_audit_log.csv"),
     ]:
-        assert registry.get(evidence_id).file_path == source
+        entry = registry.get(evidence_id)
+        assert entry is not None and entry.file_path == source
         row = OutputRow(
             case_id="fixture_case",
             deletion_status="COMPLETE",
@@ -90,7 +103,7 @@ def test_audit_and_activity_registered_without_observations():
             validate_output([row], [request(audit_at="2026-01-01T12:00:00Z")], index)
 
 
-def test_current_identity_id_is_not_a_citation(context):
+def test_current_identity_id_is_not_a_citation(context: ExtractionContext) -> None:
     from ghost_audit.infrastructure.parsers.structured import parse_json
 
     context = replace(
@@ -110,7 +123,9 @@ def test_current_identity_id_is_not_a_citation(context):
         validate_output([row], [request()], EvidenceIndex(items))
 
 
-def test_cli_validates_manifest_only_citation_offline(tmp_path, capsys):
+def test_cli_validates_manifest_only_citation_offline(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     from ghost_audit.interfaces.cli import main
 
     dataset = tmp_path / "dataset"

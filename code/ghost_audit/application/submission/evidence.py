@@ -31,7 +31,7 @@ class SubmissionEvidence:
         self._index_identifiers()
         self._index_observations()
 
-    def _index_identifiers(self):
+    def _index_identifiers(self) -> None:
         values = defaultdict(set)
         names = defaultdict(set)
         for row in self.dataset.identities:
@@ -78,7 +78,7 @@ class SubmissionEvidence:
             return next(iter(owners)), "identity_resolved_without_cutoff"
         return None, "identity_unresolved"
 
-    def _index_observations(self):
+    def _index_observations(self) -> None:
         self.by_resource = defaultdict(list)
         groups = defaultdict(list)
         for i, o in enumerate(self.observations):

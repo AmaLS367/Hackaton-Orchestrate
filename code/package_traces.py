@@ -10,7 +10,10 @@ import json
 import os
 import re
 import zipfile
+from collections.abc import Collection
 from pathlib import Path
+
+from pydantic import JsonValue
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN = re.compile(
@@ -32,7 +35,7 @@ PRIVATE_KEYS = {
 }
 
 
-def redact(value):
+def redact(value: JsonValue) -> JsonValue:
     if isinstance(value, dict):
         return {
             k: "[REDACTED]"
@@ -56,7 +59,7 @@ def redact(value):
     return value
 
 
-def sanitized_jsonl(path):
+def sanitized_jsonl(path: Path) -> tuple[bytes, int]:
     lines, changes = [], 0
     for raw in path.read_text(encoding="utf-8").splitlines(keepends=True):
         original = json.loads(raw)
@@ -69,14 +72,16 @@ def sanitized_jsonl(path):
     return "".join(lines).encode("utf-8"), changes
 
 
-def same_checkout(cwd, root):
+def same_checkout(cwd: object, root: Path) -> bool:
     return (
         str(cwd).replace("\\", "/").rstrip("/").casefold()
         == str(root).replace("\\", "/").rstrip("/").casefold()
     )
 
 
-def discover(root, codex_home, claude_home, excluded=()):
+def discover(
+    root: Path, codex_home: Path, claude_home: Path, excluded: Collection[str] = ()
+) -> dict[str, Path]:
     result = {}
     sessions = codex_home / "sessions"
     for path in sorted(sessions.rglob("rollout-*.jsonl")):
@@ -114,7 +119,7 @@ def discover(root, codex_home, claude_home, excluded=()):
     return result
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--codex-home",

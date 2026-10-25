@@ -5,6 +5,8 @@ from pathlib import Path
 
 from ghost_audit.application.abstention_diagnostics import summarize
 from ghost_audit.application.strict_audit import PredictionBlocked, diagnostics
+from ghost_audit.domain.dataset import Dataset
+from ghost_audit.domain.evidence_index import EvidenceIndex
 from ghost_audit.domain.policy_models import PredictionRun
 from ghost_audit.infrastructure.serialization.csv_output import write_output
 
@@ -40,7 +42,7 @@ def write_abstention_diagnostics(path: Path, run: PredictionRun) -> None:
     )
 
 
-def publish(path, run, dataset, index):
+def publish(path: Path, run: PredictionRun, dataset: Dataset, index: EvidenceIndex) -> None:
     """Preserve the destination when a strict run has abstentions or validation errors."""
     if not run.publishable:
         raise PredictionBlocked(

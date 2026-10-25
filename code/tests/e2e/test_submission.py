@@ -4,25 +4,27 @@ import pytest
 from evaluation.scoring import evaluate
 from ghost_audit.application.submission_service import predict_submission
 from ghost_audit.domain.citation_validation import validate_output
+from ghost_audit.domain.dataset import Dataset
 from ghost_audit.domain.evidence_index import EvidenceIndex
 from ghost_audit.domain.snapshot_inventory import snapshot_listings
+from ghost_audit.domain.submission_models import CasePrediction
 from ghost_audit.infrastructure.serialization.csv_output import read_output
 
 from tests.fixtures.paths import DATASET_ROOT
 
 
 @pytest.fixture(scope="module")
-def full(participant_dataset):
+def full(participant_dataset: Dataset) -> Dataset:
     return participant_dataset
 
 
 @pytest.fixture(scope="module")
-def samples(sample_dataset):
+def samples(sample_dataset: Dataset) -> tuple[Dataset, dict[str, CasePrediction]]:
     data = sample_dataset
     return data, {c.case_id: c for c in predict_submission(data)}
 
 
-def test_full_submission_covers_every_request_with_valid_citations(full):
+def test_full_submission_covers_every_request_with_valid_citations(full: Dataset) -> None:
     cases = predict_submission(full)
     rows = [c.row for c in cases]
     assert [r.case_id for r in rows] == sorted(r.case_id for r in full.requests)
@@ -35,7 +37,7 @@ def test_full_submission_covers_every_request_with_valid_citations(full):
     assert [r.model_dump() for r in rows] == [c.row.model_dump() for c in predict_submission(full)]
 
 
-def test_sample_regression_floor(samples):
+def test_sample_regression_floor(samples: tuple[Dataset, dict[str, CasePrediction]]) -> None:
     _, cases = samples
     metrics = evaluate(
         [c.row for c in cases.values()], read_output(DATASET_ROOT / "sample_output.csv")
@@ -45,27 +47,35 @@ def test_sample_regression_floor(samples):
     assert metrics.step_recall >= 0.93
 
 
-def test_unique_batch_submission_attributes_the_primary_profile(samples):
+def test_unique_batch_submission_attributes_the_primary_profile(
+    samples: tuple[Dataset, dict[str, CasePrediction]],
+) -> None:
     _, cases = samples
     # One SUCCESS submission ~1h before reported_at matches this COMPLETE report.
     assert cases["case_21"].resources["account_6440"] == ["workflow_batch_unique"]
 
 
-def test_old_lookup_does_not_override_the_request_batch(samples):
+def test_old_lookup_does_not_override_the_request_batch(
+    samples: tuple[Dataset, dict[str, CasePrediction]],
+) -> None:
     _, cases = samples
     # A March lookup by the subject's key touched another request's account.
     assert "account_6523" not in cases["case_17"].resources
     assert "account_4092" in cases["case_17"].resources
 
 
-def test_ambiguous_batch_candidates_are_never_attributed(samples):
+def test_ambiguous_batch_candidates_are_never_attributed(
+    samples: tuple[Dataset, dict[str, CasePrediction]],
+) -> None:
     _, cases = samples
     for case_id in ("case_28", "case_29"):
         assert not {"account_5482", "account_7012"} & set(cases[case_id].resources)
         assert any(n.startswith("ambiguous_workflow_account:") for n in cases[case_id].notes)
 
 
-def test_replica_copy_in_the_case_file_outranks_an_unrelated_inventory(samples):
+def test_replica_copy_in_the_case_file_outranks_an_unrelated_inventory(
+    samples: tuple[Dataset, dict[str, CasePrediction]],
+) -> None:
     _, cases = samples
     row = cases["case_05"].row
     assert row.deletion_status == "INCOMPLETE"
@@ -74,7 +84,7 @@ def test_replica_copy_in_the_case_file_outranks_an_unrelated_inventory(samples):
     ]
 
 
-def test_snapshot_listings_read_tables_and_collection_envelopes(full):
+def test_snapshot_listings_read_tables_and_collection_envelopes(full: Dataset) -> None:
     listings = snapshot_listings(full.observations)
     # An empty JSON collection snapshot still lists its (empty) account collection.
     assert any(

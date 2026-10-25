@@ -11,6 +11,46 @@ import subprocess
 import sys
 from collections import Counter
 from pathlib import Path
+from typing import Literal, NotRequired, TypedDict
+
+from pydantic import JsonValue
+
+
+class CapturedCase(TypedDict):
+    """Official row decoded solely for exact ordered comparison."""
+
+    case_id: str
+    deletion_status: str
+    steps_json: list[dict[str, str | int]]
+
+
+class CapturedArtifact(TypedDict):
+    """Shared envelope of strict and submission diagnostic snapshots."""
+
+    summary: dict[str, JsonValue]
+    cases: list[dict[str, JsonValue]]
+    abstentions: NotRequired[list[dict[str, JsonValue]]]
+
+
+class CapturedCommand(TypedDict):
+    """Stable terminal result, including expected nonzero exit codes."""
+
+    exit_code: int
+    stdout: JsonValue
+
+
+class Snapshot(TypedDict):
+    """Required behavioral fields persisted by capture and read by compare."""
+
+    output_sha256: str
+    counts: dict[str, int]
+    steps: int
+    dataset_sha256: dict[str, str]
+    cases: list[CapturedCase]
+    strict: CapturedArtifact
+    submission: CapturedArtifact
+    commands: dict[str, CapturedCommand]
+
 
 ROOT = Path(__file__).resolve().parents[1]
 VOLATILE_KEYS = {"runtime_seconds", "elapsed_seconds"}
@@ -36,17 +76,22 @@ def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def output_cases(path: Path) -> list[dict]:
+def output_cases(path: Path) -> list[CapturedCase]:
     """Decode ordered step arrays for exact per-case regression comparisons."""
     with path.open(encoding="utf-8", newline="") as stream:
         return [
-            {**row, "steps_json": json.loads(row["steps_json"])} for row in csv.DictReader(stream)
+            {
+                "case_id": row["case_id"],
+                "deletion_status": row["deletion_status"],
+                "steps_json": json.loads(row["steps_json"]),
+            }
+            for row in csv.DictReader(stream)
         ]
 
 
-def source_inventory(root: Path) -> dict:
+def source_inventory(root: Path) -> dict[str, object]:
     """Record imports, public interfaces and large functions before changing structure."""
-    inventory = {}
+    inventory: dict[str, object] = {}
     for path in sorted((root / "code").rglob("*.py")):
         if "__pycache__" in path.parts:
             continue
@@ -72,7 +117,7 @@ def source_inventory(root: Path) -> dict:
     return inventory
 
 
-def capture(destination: Path, *, root: Path = ROOT, run_tests: bool = True) -> dict:
+def capture(destination: Path, *, root: Path = ROOT, run_tests: bool = True) -> dict[str, object]:
     """Run the supported interfaces against unchanged participant inputs."""
     destination.mkdir(parents=True, exist_ok=True)
     if (destination / "snapshot.json").exists():
@@ -191,11 +236,21 @@ def capture(destination: Path, *, root: Path = ROOT, run_tests: bool = True) -> 
     return snapshot
 
 
-def compare(baseline: Path, current: Path) -> list[dict]:
+def records_by_case(records: list[dict[str, JsonValue]]) -> dict[str, dict[str, JsonValue]]:
+    """Index opaque diagnostic records after validating the comparison key."""
+    result = {}
+    for record in records:
+        case_id = record["case_id"]
+        assert isinstance(case_id, str), "captured diagnostic case_id must be a string"
+        result[case_id] = record
+    return result
+
+
+def compare(baseline: Path, current: Path) -> list[dict[str, object]]:
     """Produce a structured per-case diff; exact arrays include all seven step fields."""
-    old = json.loads((baseline / "snapshot.json").read_text(encoding="utf-8"))
-    new = json.loads((current / "snapshot.json").read_text(encoding="utf-8"))
-    changes = []
+    old: Snapshot = json.loads((baseline / "snapshot.json").read_text(encoding="utf-8"))
+    new: Snapshot = json.loads((current / "snapshot.json").read_text(encoding="utf-8"))
+    changes: list[dict[str, object]] = []
     for field in ("output_sha256", "counts", "steps", "dataset_sha256"):
         if old[field] != new[field]:
             changes.append({"field": field, "before": old[field], "after": new[field]})
@@ -209,13 +264,10 @@ def compare(baseline: Path, current: Path) -> list[dict]:
                     "after": after_artifact["summary"],
                 }
             )
-        for collection in ("cases", "abstentions"):
-            before_records = {
-                record["case_id"]: record for record in before_artifact.get(collection, [])
-            }
-            after_records = {
-                record["case_id"]: record for record in after_artifact.get(collection, [])
-            }
+        collections: tuple[Literal["cases", "abstentions"], ...] = ("cases", "abstentions")
+        for collection in collections:
+            before_records = records_by_case(before_artifact.get(collection, []))
+            after_records = records_by_case(after_artifact.get(collection, []))
             for case_id in sorted(before_records.keys() | after_records.keys()):
                 if before_records.get(case_id) != after_records.get(case_id):
                     changes.append(

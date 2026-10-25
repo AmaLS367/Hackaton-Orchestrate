@@ -2,6 +2,7 @@
 
 from collections import Counter, defaultdict
 from datetime import datetime
+from typing import TypedDict
 
 from ghost_audit.domain.association_models import AssociatedObservation, CaseEvidenceBundle
 from ghost_audit.domain.correlation import EvidenceCorrelator
@@ -16,7 +17,7 @@ from ghost_audit.domain.workflow_attribution import WorkflowAttribution
 class EvidenceAssociationService:
     """Coordinate identity, bounded discovery and per-case evidence bundles."""
 
-    def __init__(self, dataset: Dataset, index: EvidenceIndex | None = None):
+    def __init__(self, dataset: Dataset, index: EvidenceIndex | None = None) -> None:
         self.dataset = dataset
         self.index = (
             index
@@ -117,13 +118,37 @@ class EvidenceAssociationService:
         )
 
 
-def diagnostics(bundles: list[CaseEvidenceBundle]) -> dict:
+class AssociationDiagnostics(TypedDict):
+    """Serialized diagnostic fields; reporting never changes prediction state."""
+
+    cases: int
+    intent: dict[str, int]
+    identity: dict[str, int]
+    cases_with_confirmed_associations: int
+    cases_with_potential_associations: int
+    cases_without_confirmed_associations: int
+    correlated_observations: int
+    distinct_correlated_observations: int
+    distinct_resources: int
+    deferred_files_available: int
+    cases_with_unassigned_deferred_evidence: int
+    deferred_files_confirmed_by_content: int
+    unresolved_cases: list[str]
+    ambiguous_identity_cases: list[str]
+    potentially_ambiguous_cases: list[str]
+    uncertain_intent_cases: list[str]
+    cases_requiring_additional_interpretation: list[str]
+    cases_requiring_additional_interpretation_count: int
+    prediction_accuracy: str
+
+
+def diagnostics(bundles: list[CaseEvidenceBundle]) -> AssociationDiagnostics:
     """Summarize intent, identity and association coverage without claiming prediction accuracy."""
 
-    def confirmed(b):
+    def confirmed(b: CaseEvidenceBundle) -> bool:
         return any(o.association == "CONFIRMED" for o in b.observations)
 
-    def potential(b):
+    def potential(b: CaseEvidenceBundle) -> bool:
         return any(o.association == "POTENTIAL" for o in b.observations)
 
     additional = [

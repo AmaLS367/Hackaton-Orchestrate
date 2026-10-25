@@ -56,7 +56,7 @@ def build_archive(root: Path, destination: Path) -> str:
     return hashlib.sha256(destination.read_bytes()).hexdigest()
 
 
-def main():
+def main() -> None:
     """Run this terminal command and preserve its documented exit behavior."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--destination", type=Path, default=ROOT / "code.zip")

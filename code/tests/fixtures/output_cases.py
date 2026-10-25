@@ -4,8 +4,9 @@ from ghost_audit.domain.models import DeletionRequest
 from ghost_audit.domain.output_contract import OPERATIONS, OutputStep
 
 
-def step(operation="VERIFY_RECORD_ABSENT", **overrides):
-    phase, state = OPERATIONS.get(operation, ("VERIFICATION", "ABSENT"))
+def step(operation: str = "VERIFY_RECORD_ABSENT", **overrides: object) -> OutputStep:
+    operations: dict[str, tuple[str, str]] = dict(OPERATIONS.items())
+    phase, state = operations.get(operation, ("VERIFICATION", "ABSENT"))
     return OutputStep.model_validate(
         {
             "step_no": 1,
@@ -20,7 +21,7 @@ def step(operation="VERIFY_RECORD_ABSENT", **overrides):
     )
 
 
-def request(**overrides):
+def request(**overrides: object) -> DeletionRequest:
     return DeletionRequest.model_validate(
         {
             "case_id": "fixture_case",

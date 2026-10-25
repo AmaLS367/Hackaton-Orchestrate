@@ -1,7 +1,9 @@
 """Constructed temporal cases use the same parsed structures as participant files."""
 
 import json
+from collections.abc import Sequence
 from random import Random
+from typing import Literal
 
 import pytest
 from ghost_audit.application.evidence_association import EvidenceAssociationService
@@ -15,13 +17,16 @@ from ghost_audit.domain.association_models import (
     ObservationLink,
     ResolvedIdentity,
 )
+from ghost_audit.domain.dataset import Dataset
 from ghost_audit.domain.evidence_index import EvidenceIndex
-from ghost_audit.domain.models import EvidenceFile, ResourceRef
-from ghost_audit.domain.temporal_models import CaseStateBundle
+from ghost_audit.domain.models import DeletionRequest, EvidenceFile, Observation, ResourceRef
+from ghost_audit.domain.temporal_models import CaseStateBundle, ResourceHistory
 from ghost_audit.infrastructure.ingestion.dataset_loader import load_dataset
 from ghost_audit.infrastructure.parsers.sql_snapshot import parse_sql
 from ghost_audit.infrastructure.parsers.structured import ExtractionContext, parse_json, parse_text
+from pydantic import JsonValue
 
+from tests.fixtures.contracts import LookupFields
 from tests.fixtures.paths import DATASET_ROOT
 
 EARLY = "2026-01-01T10:00:00Z"
@@ -30,19 +35,23 @@ CUTOFF = "2026-01-03T10:00:00Z"
 FUTURE = "2026-01-04T10:00:00Z"
 
 
-def context(file="a", time=EARLY, suffix="json"):
+def context(file: str = "a", time: str = EARLY, suffix: str = "json") -> ExtractionContext:
     return ExtractionContext(
-        EvidenceFile(
-            file_id=file,
-            file_path=f"evidence/{file}.{suffix}",
-            origin="fixture_service",
-            captured_at=time,
+        EvidenceFile.model_validate(
+            {
+                "file_id": file,
+                "file_path": f"evidence/{file}.{suffix}",
+                "origin": "fixture_service",
+                "captured_at": time,
+            }
         ),
         "a" * 64,
     )
 
 
-def record(file="a", time=EARLY, collection="profiles", **fields):
+def record(
+    file: str = "a", time: str = EARLY, collection: str = "profiles", **fields: JsonValue
+) -> Observation:
     return parse_json(
         {
             "system": "account_service",
@@ -55,8 +64,12 @@ def record(file="a", time=EARLY, collection="profiles", **fields):
 
 
 def readback(
-    file="a", time=EARLY, collection="profiles", event="profile_lookup_completed", **fields
-):
+    file: str = "a",
+    time: str = EARLY,
+    collection: str = "profiles",
+    event: str = "profile_lookup_completed",
+    **fields: JsonValue,
+) -> Observation:
     return parse_text(
         f"{time} level=INFO service=account_service event={event} "
         f"resource_id=resource_x collection={collection} "
@@ -65,7 +78,13 @@ def readback(
     )[0]
 
 
-def bundle(observations, *, potential=(), cutoff=CUTOFF, intent="DELETE_INTENT"):
+def bundle(
+    observations: Sequence[Observation],
+    *,
+    potential: Sequence[int] = (),
+    cutoff: str = CUTOFF,
+    intent: Literal["DELETE_INTENT", "NO_DELETE_INTENT", "UNCERTAIN"] = "DELETE_INTENT",
+) -> CaseEvidenceBundle:
     items = [
         AssociatedObservation(
             observation=o,
@@ -79,37 +98,46 @@ def bundle(observations, *, potential=(), cutoff=CUTOFF, intent="DELETE_INTENT")
         )
         for i, o in enumerate(observations)
     ]
-    return CaseEvidenceBundle(
-        case_id="synthetic",
-        audit_at=cutoff,
-        intent=IntentResult(
-            decision=intent, reason_id="fixture", confidence="HIGH", fallback_recommended=False
-        ),
-        identity=ResolvedIdentity(status="RESOLVED", user_id="subject_x"),
-        user_id="subject_x",
-        aliases=[],
-        observations=items,
-        resources=[],
-        supporting_evidence_ids=sorted({o.provenance.evidence_id for o in observations}),
-        deferred_evidence=[],
-        ambiguities=[],
-        limitations=[],
-        unrelated_observation_count=0,
+    return CaseEvidenceBundle.model_validate(
+        {
+            "case_id": "synthetic",
+            "audit_at": cutoff,
+            "intent": IntentResult.model_validate(
+                {
+                    "decision": intent,
+                    "reason_id": "fixture",
+                    "confidence": "HIGH",
+                    "fallback_recommended": False,
+                }
+            ),
+            "identity": ResolvedIdentity(status="RESOLVED", user_id="subject_x"),
+            "user_id": "subject_x",
+            "aliases": [],
+            "observations": items,
+            "resources": [],
+            "supporting_evidence_ids": sorted({o.provenance.evidence_id for o in observations}),
+            "deferred_evidence": [],
+            "ambiguities": [],
+            "limitations": [],
+            "unrelated_observation_count": 0,
+        }
     )
 
 
-def analyze(*observations, potential=(), cutoff=CUTOFF):
+def analyze(
+    *observations: Observation, potential: Sequence[int] = (), cutoff: str = CUTOFF
+) -> CaseStateBundle:
     return TemporalStateEngine(EvidenceIndex(observations)).analyze(
         bundle(observations, potential=potential, cutoff=cutoff)
     )
 
 
-def only(result):
+def only(result: CaseStateBundle) -> ResourceHistory:
     assert len(result.resource_histories) == 1
     return result.resource_histories[0]
 
 
-def test_present_record_with_grounded_evidence_and_serializable_result():
+def test_present_record_with_grounded_evidence_and_serializable_result() -> None:
     result = analyze(record(email="fictional@example.test"))
     h = only(result)
     assert (h.record.state, h.record.support) == ("PRESENT", "PROVEN")
@@ -119,7 +147,7 @@ def test_present_record_with_grounded_evidence_and_serializable_result():
     assert "deletion_status" not in CaseStateBundle.model_fields
 
 
-def test_deleted_then_recreated_preserves_chronology():
+def test_deleted_then_recreated_preserves_chronology() -> None:
     a = record()
     b = readback("b", LATE, rows=0, http_status=404)
     deleted = only(analyze(a, b))
@@ -131,7 +159,7 @@ def test_deleted_then_recreated_preserves_chronology():
 
 
 @pytest.mark.parametrize("event_time,capture_time", [(FUTURE, EARLY), (FUTURE, FUTURE)])
-def test_future_observation_excluded(event_time, capture_time):
+def test_future_observation_excluded(event_time: str, capture_time: str) -> None:
     o = record("future", event_time).model_copy(
         update={
             "provenance": record("future", event_time).provenance.model_copy(
@@ -144,7 +172,7 @@ def test_future_observation_excluded(event_time, capture_time):
     assert result.unresolved_states
 
 
-def test_late_packaged_earlier_observation_is_unavailable():
+def test_late_packaged_earlier_observation_is_unavailable() -> None:
     # Observed before the cutoff but exported after it: later evidence neither
     # identifies the record nor supplies its state at the cutoff.
     o = record("future", EARLY).model_copy(
@@ -159,7 +187,7 @@ def test_late_packaged_earlier_observation_is_unavailable():
     assert {u.reason for u in result.unresolved_states} >= {"evidence_unavailable_at_audit_cutoff"}
 
 
-def test_observation_time_differs_from_export_and_updated_time():
+def test_observation_time_differs_from_export_and_updated_time() -> None:
     observations = parse_json(
         {
             "exported_at": CUTOFF,
@@ -184,7 +212,7 @@ def test_observation_time_differs_from_export_and_updated_time():
     assert h.record.state == "ABSENT"
 
 
-def test_success_is_a_claim_and_cannot_override_record():
+def test_success_is_a_claim_and_cannot_override_record() -> None:
     claim = readback("claim", LATE, event="delete_completed", reported_result="SUCCESS")
     h = only(analyze(record(), claim))
     assert (h.record.state, h.record.support) == ("PRESENT", "PROVEN")
@@ -204,18 +232,18 @@ def test_success_is_a_claim_and_cannot_override_record():
         {"rows": 0, "http_status": 200},
     ],
 )
-def test_explicit_negative_resource_readback(fields):
+def test_explicit_negative_resource_readback(fields: LookupFields) -> None:
     h = only(analyze(readback(**fields)))
     assert (h.record.state, h.record.support) == ("ABSENT", "PROVEN")
 
 
 @pytest.mark.parametrize("fields", [{"result": "miss"}, {"total_hits": 0}, {"rows": 0}])
-def test_unscoped_search_miss_cannot_establish_absence(fields):
+def test_unscoped_search_miss_cannot_establish_absence(fields: LookupFields) -> None:
     h = only(analyze(readback(event="index_query_completed", **fields)))
     assert h.record.state == "UNKNOWN"
 
 
-def test_exact_resource_scoped_search_negative_and_hit():
+def test_exact_resource_scoped_search_negative_and_hit() -> None:
     assert (
         only(
             analyze(
@@ -232,7 +260,7 @@ def test_exact_resource_scoped_search_negative_and_hit():
     )
 
 
-def test_cache_miss_and_failed_lookup_do_not_prove_absence():
+def test_cache_miss_and_failed_lookup_do_not_prove_absence() -> None:
     assert only(analyze(readback(event="cache_lookup", result="miss"))).record.state == "UNKNOWN"
     assert (
         only(analyze(readback(event="delete_completed", result="SUCCESS"))).record.state
@@ -240,7 +268,9 @@ def test_cache_miss_and_failed_lookup_do_not_prove_absence():
     )
 
 
-def sql_observations(replica="read_replica", *, empty_primary=False, collection=None):
+def sql_observations(
+    replica: str = "read_replica", *, empty_primary: bool = False, collection: str | None = None
+) -> list[Observation]:
     if collection:
         schema = "resource_id TEXT, origin_system TEXT, collection_name TEXT, record_json TEXT"
         row = "'resource_x', 'account_service', 'profiles', '{\"user_id\":\"subject_x\",\"email\":null}'"
@@ -262,7 +292,7 @@ def sql_observations(replica="read_replica", *, empty_primary=False, collection=
 @pytest.mark.parametrize(
     "replica", ["read_replica", "regional_replica", "reporting_replica", "failover_replica"]
 )
-def test_sql_replica_tables_preserve_physical_and_logical_identity(replica):
+def test_sql_replica_tables_preserve_physical_and_logical_identity(replica: str) -> None:
     observations = [o for o in sql_observations(replica) if o.resources]
     result = analyze(*observations)
     assert len(result.resource_histories) == 2
@@ -275,12 +305,12 @@ def test_sql_replica_tables_preserve_physical_and_logical_identity(replica):
     assert not result.replica_drift
 
 
-def test_explicit_logical_collection_across_generic_replica_tables():
+def test_explicit_logical_collection_across_generic_replica_tables() -> None:
     result = analyze(*(o for o in sql_observations(collection="profiles") if o.resources))
     assert {h.scope.collection for h in result.resource_histories} == {"profiles"}
 
 
-def test_missing_row_in_incomplete_sql_snapshot_remains_unknown():
+def test_missing_row_in_incomplete_sql_snapshot_remains_unknown() -> None:
     observations = sql_observations("failover_replica", empty_primary=True)
     index = EvidenceIndex(observations)
     result = TemporalStateEngine(index).analyze(bundle([o for o in observations if o.resources]))
@@ -291,7 +321,7 @@ def test_missing_row_in_incomplete_sql_snapshot_remains_unknown():
 
 
 @pytest.mark.parametrize("replica", ["read_replica", "failover_replica"])
-def test_primary_and_replica_disagreement(replica):
+def test_primary_and_replica_disagreement(replica: str) -> None:
     a = readback(rows=0, replica_scope="primary")
     b = readback("b", rows=1, replica_scope=replica)
     result = analyze(a, b)
@@ -301,7 +331,7 @@ def test_primary_and_replica_disagreement(replica):
     assert len(drift.evidence) == 2
 
 
-def test_replica_field_drift_and_temporal_skew():
+def test_replica_field_drift_and_temporal_skew() -> None:
     a = record(replica_scope="primary", email=None)
     b = record("b", LATE, replica_scope="regional_replica", email="fictional@example.test")
     result = analyze(a, b)
@@ -309,14 +339,14 @@ def test_replica_field_drift_and_temporal_skew():
     assert not result.replica_drift[0].contemporaneous
 
 
-def test_same_resource_id_in_different_collections_cannot_join():
+def test_same_resource_id_in_different_collections_cannot_join() -> None:
     result = analyze(record(collection="profiles"), readback("b", collection="contacts", rows=0))
     assert len(result.resource_histories) == 2
     assert {h.record.state for h in result.resource_histories} == {"PRESENT", "ABSENT"}
     assert not result.replica_drift
 
 
-def test_partial_redaction_tombstone_preserves_stable_reference():
+def test_partial_redaction_tombstone_preserves_stable_reference() -> None:
     h = only(
         analyze(
             record(
@@ -337,7 +367,7 @@ def test_partial_redaction_tombstone_preserves_stable_reference():
 
 
 @pytest.mark.parametrize("email", [None, "fictional@example.test"])
-def test_analytics_nulls_and_pii_are_field_facts_not_anonymization(email):
+def test_analytics_nulls_and_pii_are_field_facts_not_anonymization(email: None | str) -> None:
     h = only(
         analyze(
             record(
@@ -356,7 +386,7 @@ def test_analytics_nulls_and_pii_are_field_facts_not_anonymization(email):
     )
 
 
-def test_explicit_anonymized_and_redacted_readbacks():
+def test_explicit_anonymized_and_redacted_readbacks() -> None:
     for state in ("ANONYMIZED", "REDACTED"):
         o = parse_json(
             {
@@ -372,14 +402,14 @@ def test_explicit_anonymized_and_redacted_readbacks():
         assert only(analyze(o)).record.state == state
 
 
-def test_false_anonymized_label_preserves_field_contradiction():
+def test_false_anonymized_label_preserves_field_contradiction() -> None:
     o = record(observed_state="ANONYMIZED", email="fictional@example.test")
     h = only(analyze(o))
     assert h.record.state == "UNKNOWN" and h.record.support == "CONFLICTED"
     assert h.observations[0].conflicts
 
 
-def test_security_retained_reference_is_observed_not_classified():
+def test_security_retained_reference_is_observed_not_classified() -> None:
     h = only(
         analyze(
             record(
@@ -396,7 +426,7 @@ def test_security_retained_reference_is_observed_not_classified():
 
 
 @pytest.mark.parametrize("enabled,expected", [(True, "ACTIVE"), (False, "INACTIVE")])
-def test_connector_state_independent_of_account_deletion(enabled, expected):
+def test_connector_state_independent_of_account_deletion(enabled: bool, expected: str) -> None:
     a = readback(rows=0)
     b = readback(
         "connector",
@@ -415,7 +445,7 @@ def test_connector_state_independent_of_account_deletion(enabled, expected):
 
 
 @pytest.mark.parametrize("allowed,expected", [(True, "ALLOWED"), (False, "BLOCKED")])
-def test_existing_backup_and_restore_permission_separate(allowed, expected):
+def test_existing_backup_and_restore_permission_separate(allowed: bool, expected: str) -> None:
     h = only(
         analyze(
             record(
@@ -427,13 +457,13 @@ def test_existing_backup_and_restore_permission_separate(allowed, expected):
     assert (h.restore.state, h.restore.support) == (expected, "PROVEN")
 
 
-def test_restore_authorization_does_not_establish_archive_existence():
+def test_restore_authorization_does_not_establish_archive_existence() -> None:
     h = only(analyze(readback(event="restore_authorization_completed", decision="deny")))
     assert h.record.state == "UNKNOWN"
     assert h.restore.state == "BLOCKED"
 
 
-def test_same_time_conflicts_not_broken_by_evidence_id():
+def test_same_time_conflicts_not_broken_by_evidence_id() -> None:
     a = record()
     b = readback("b", rows=0)
     result = analyze(a, b)
@@ -442,7 +472,7 @@ def test_same_time_conflicts_not_broken_by_evidence_id():
     assert len(h.record.conflicting_evidence) == 2
 
 
-def test_potential_association_never_establishes_definitive_state():
+def test_potential_association_never_establishes_definitive_state() -> None:
     a = record()
     h = only(analyze(a, potential=(0,)))
     assert h.observations[0].record_state == "PRESENT"
@@ -454,7 +484,7 @@ def test_potential_association_never_establishes_definitive_state():
     assert not h.record.conflicting_evidence
 
 
-def test_missing_or_future_correlation_anchor_cannot_prove_ownership():
+def test_missing_or_future_correlation_anchor_cannot_prove_ownership() -> None:
     a, future = record(), record("future", FUTURE)
     b = bundle([a])
     link = (
@@ -469,7 +499,7 @@ def test_missing_or_future_correlation_anchor_cannot_prove_ownership():
     assert ObservationLink.of(future) not in result.supporting_evidence
 
 
-def test_newer_summary_readback_supersedes_older_snapshot():
+def test_newer_summary_readback_supersedes_older_snapshot() -> None:
     # The newest supported read decides; the older snapshot stays in the history.
     summary = parse_json(
         {
@@ -488,7 +518,7 @@ def test_newer_summary_readback_supersedes_older_snapshot():
     assert [o.record_state for o in h.observations] == ["PRESENT", "ABSENT"]
 
 
-def test_precise_snapshot_outranks_simultaneous_summary_label():
+def test_precise_snapshot_outranks_simultaneous_summary_label() -> None:
     summary = parse_json(
         {
             "recorded_at": EARLY,
@@ -508,7 +538,7 @@ def test_precise_snapshot_outranks_simultaneous_summary_label():
 @pytest.mark.parametrize(
     "value,expected", [(1, "ACTIVE"), (0, "INACTIVE"), ("1", "ACTIVE"), ("0", "INACTIVE")]
 )
-def test_sql_boolean_representations(value, expected):
+def test_sql_boolean_representations(value: int | str, expected: str) -> None:
     h = only(analyze(record(enabled=value, restore_allowed=value)))
     assert h.flow.state == expected
     assert h.restore.state == ("ALLOWED" if expected == "ACTIVE" else "BLOCKED")
@@ -518,7 +548,7 @@ def test_sql_boolean_representations(value, expected):
 @pytest.mark.parametrize(
     "result,restore", [("ACTIVE", "ALLOWED"), ("BLOCKED", "BLOCKED"), ("FOUND", "UNKNOWN")]
 )
-def test_archive_status_label_maps_restore_path(result, restore):
+def test_archive_status_label_maps_restore_path(result: str, restore: str) -> None:
     # An ACTIVE (not BLOCKED) archive remains restorable; FOUND says nothing about restore.
     o = parse_json(
         {
@@ -535,18 +565,18 @@ def test_archive_status_label_maps_restore_path(result, restore):
     assert h.restore.state == restore
 
 
-def test_unavailable_download_does_not_prove_record_absent():
+def test_unavailable_download_does_not_prove_record_absent() -> None:
     h = only(analyze(readback(event="export_download_check_completed", available=False)))
     assert h.record.state == "UNKNOWN"
 
 
 @pytest.mark.parametrize("status", [403, 429, 500, 503])
-def test_failed_resource_read_is_unknown(status):
+def test_failed_resource_read_is_unknown(status: int) -> None:
     h = only(analyze(readback(rows=0, http_status=status)))
     assert h.record.state == "UNKNOWN"
 
 
-def test_same_system_resource_without_collection_shares_one_source_history():
+def test_same_system_resource_without_collection_shares_one_source_history() -> None:
     # One system's resource ID names one record; the newer read of the same surface decides.
     a, b = readback(rows=1), readback("b", LATE, rows=0)
     a = a.model_copy(
@@ -565,7 +595,7 @@ def test_same_system_resource_without_collection_shares_one_source_history():
     assert h.record.state == "ABSENT"
 
 
-def test_row_without_collection_joins_single_known_collection():
+def test_row_without_collection_joins_single_known_collection() -> None:
     a = readback(rows=1).model_copy(
         update={
             "resources": [
@@ -581,7 +611,7 @@ def test_row_without_collection_joins_single_known_collection():
     assert {h.scope.collection for h in analyze(a, b).resource_histories} == {"profiles"}
 
 
-def test_missing_chain_support_and_unknown_system_cannot_be_proven():
+def test_missing_chain_support_and_unknown_system_cannot_be_proven() -> None:
     a = record()
     b = bundle([a])
     item = b.observations[0]
@@ -594,7 +624,7 @@ def test_missing_chain_support_and_unknown_system_cannot_be_proven():
     assert only(analyze(a)).record.state == "UNKNOWN"
 
 
-def test_historical_conflict_survives_later_resolution():
+def test_historical_conflict_survives_later_resolution() -> None:
     a, b, c = record(), readback("b", rows=0), readback("c", LATE, rows=1)
     result = analyze(a, b, c)
     h = only(result)
@@ -603,7 +633,7 @@ def test_historical_conflict_survives_later_resolution():
     assert set(result.conflicting_evidence) == {ObservationLink.of(a), ObservationLink.of(b)}
 
 
-def test_unspecified_read_sources_are_not_assumed_to_be_the_same_replica():
+def test_unspecified_read_sources_are_not_assumed_to_be_the_same_replica() -> None:
     a, b = record(), readback("b", LATE, rows=0)
     b = b.model_copy(
         update={"provenance": b.provenance.model_copy(update={"origin": "other_replica"})}
@@ -613,7 +643,7 @@ def test_unspecified_read_sources_are_not_assumed_to_be_the_same_replica():
     assert result.replica_drift[0].kind == "STATE_DISAGREEMENT"
 
 
-def test_search_hits_for_another_resource_cannot_prove_target_presence():
+def test_search_hits_for_another_resource_cannot_prove_target_presence() -> None:
     observations = parse_json(
         {
             "system": "search_service",
@@ -630,7 +660,7 @@ def test_search_hits_for_another_resource_cannot_prove_target_presence():
     assert only(analyze(*observations)).record.state == "UNKNOWN"
 
 
-def test_restore_conflict_does_not_erase_archive_existence():
+def test_restore_conflict_does_not_erase_archive_existence() -> None:
     h = only(
         analyze(record(archive_path="fixture/archive", restore_allowed=True, deletion_block=True))
     )
@@ -638,7 +668,7 @@ def test_restore_conflict_does_not_erase_archive_existence():
     assert h.restore.state == "UNKNOWN" and h.restore.support == "CONFLICTED"
 
 
-def test_same_time_field_conflict_preserved_when_existence_agrees():
+def test_same_time_field_conflict_preserved_when_existence_agrees() -> None:
     result = analyze(record(email=None), record("b", email="fictional@example.test"))
     h = only(result)
     assert h.record.state == "PRESENT"
@@ -646,7 +676,7 @@ def test_same_time_field_conflict_preserved_when_existence_agrees():
     assert len(result.conflicting_evidence) == 2
 
 
-def test_unregistered_evidence_cannot_prove_state():
+def test_unregistered_evidence_cannot_prove_state() -> None:
     from ghost_audit.domain.evidence_index import EvidenceRegistry
 
     a = record()
@@ -656,7 +686,7 @@ def test_unregistered_evidence_cannot_prove_state():
     assert not result.resource_histories
 
 
-def test_input_order_is_irrelevant():
+def test_input_order_is_irrelevant() -> None:
     observations = [
         record(),
         readback("b", LATE, rows=0),
@@ -669,7 +699,7 @@ def test_input_order_is_irrelevant():
         assert analyze(*observations).model_dump_json() == expected
 
 
-def test_non_deletion_intent_does_not_reconstruct_records():
+def test_non_deletion_intent_does_not_reconstruct_records() -> None:
     assert (
         not TemporalStateEngine()
         .analyze(bundle([record()], intent="NO_DELETE_INTENT"))
@@ -678,7 +708,9 @@ def test_non_deletion_intent_does_not_reconstruct_records():
 
 
 @pytest.fixture(scope="module")
-def full_run():
+def full_run() -> tuple[
+    Dataset, EvidenceAssociationService, TemporalStateEngine, list[CaseStateBundle]
+]:
     dataset = load_dataset(DATASET_ROOT)
     analyzer = EvidenceAssociationService(dataset)
     engine = TemporalStateEngine(analyzer.index)
@@ -690,7 +722,11 @@ def full_run():
     )
 
 
-def test_full_dataset_coverage_and_evidence_contract(full_run):
+def test_full_dataset_coverage_and_evidence_contract(
+    full_run: tuple[
+        Dataset, EvidenceAssociationService, TemporalStateEngine, list[CaseStateBundle]
+    ],
+) -> None:
     dataset, analyzer, _, bundles = full_run
     assert len(bundles) == 518
     for result in bundles:
@@ -703,7 +739,8 @@ def test_full_dataset_coverage_and_evidence_contract(full_run):
                 if fact.support == "PROVEN":
                     assert fact.association == "CONFIRMED" and fact.association_links
                     entry = analyzer.index.registry.get(fact.provenance.evidence_id)
-                    assert entry.captured_at <= result.audit_at
+                    assert entry is not None
+                    assert entry.captured_at is not None and entry.captured_at <= result.audit_at
             for state in (h.record, h.flow, h.restore):
                 if state.support == "PROVEN":
                     assert state.state != "UNKNOWN" and state.supporting_evidence
@@ -718,10 +755,15 @@ def test_full_dataset_coverage_and_evidence_contract(full_run):
     assert "not measured" in report["prediction_accuracy"]
 
 
-def test_temporal_cli_full_sample_and_single_case(full_run, monkeypatch, capsys):
+def test_temporal_cli_full_sample_and_single_case(
+    full_run: tuple[
+        Dataset, EvidenceAssociationService, TemporalStateEngine, list[CaseStateBundle]
+    ],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     from dataclasses import replace
 
-    from ghost_audit.domain.models import DeletionRequest
     from ghost_audit.infrastructure.serialization.csv_records import load_models
     from ghost_audit.interfaces import cli as main
 

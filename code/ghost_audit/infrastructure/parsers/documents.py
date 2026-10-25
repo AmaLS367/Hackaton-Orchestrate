@@ -3,6 +3,7 @@
 import hashlib
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -81,7 +82,7 @@ def section_text(text: str, reference: str) -> str:
 def document_observations(
     text: str,
     context: ExtractionContext,
-    catalog: dict[str, tuple[str, str, datetime]],
+    catalog: Mapping[str, tuple[str, str, datetime | None]],
     *,
     catalogued_only: bool,
 ) -> list[Observation]:
@@ -113,12 +114,10 @@ def document_observations(
             )
     captured = context.manifest.captured_at
     for alias, (system, resource, at) in sorted(catalog.items()):
-        if (
-            alias != resource
-            and re.search(rf"(?<![\w-]){re.escape(alias)}(?![\w-])", text)
-            and abs(captured - at) <= timedelta(days=1)
-        ):
-            found.setdefault((system, resource), (alias, at))
+        if alias != resource and re.search(rf"(?<![\w-]){re.escape(alias)}(?![\w-])", text):
+            assert at is not None, "non-ID catalogue aliases require an observation time"
+            if abs(captured - at) <= timedelta(days=1):
+                found.setdefault((system, resource), (alias, at))
     observations = []
     for (system, resource), (reference, catalogued_at) in sorted(found.items()):
         scoped = (
@@ -166,7 +165,7 @@ def evidence_path(dataset: Path, relative: str) -> Path:
 def parse_document(
     dataset: Path,
     manifest: EvidenceFile,
-    catalog: dict[str, tuple[str, str, datetime]] | None = None,
+    catalog: Mapping[str, tuple[str, str, datetime | None]] | None = None,
 ) -> EvidenceDocument:
     """Decode one manifest file while preserving provenance and explicit extraction deferrals."""
     path = evidence_path(dataset, manifest.file_path)

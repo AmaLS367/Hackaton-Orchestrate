@@ -3,6 +3,7 @@
 from collections import defaultdict
 
 from ghost_audit.application.submission.evidence import SubmissionEvidence
+from ghost_audit.domain.models import Activity, DeletionRequest
 from ghost_audit.domain.submission_semantics import (
     ACCOUNT_WINDOW,
     DIRECT_REPORT_WINDOW,
@@ -21,7 +22,7 @@ class WorkflowAssignment:
         self.evidence = evidence
         self._index_workflow()
 
-    def _index_workflow(self):
+    def _index_workflow(self) -> None:
         deleting = [
             r
             for r in self.evidence.requests
@@ -35,7 +36,7 @@ class WorkflowAssignment:
         submissions = [a for a in worker if "submitted primary profile" in a.details]
         self.submitted = {a.resource_id for a in submissions}
 
-        def explicit_kinds(r):
+        def explicit_kinds(r: DeletionRequest) -> set[str]:
             return {
                 prefix(res)
                 for res, owners in self.evidence.explicit.items()
@@ -49,7 +50,12 @@ class WorkflowAssignment:
         self._match_direct_reports(deleting, worker)
         self._match_downstream(deleting, users, worker, submissions, kinds)
 
-    def _match_accounts(self, deleting, users, submissions):
+    def _match_accounts(
+        self,
+        deleting: list[DeletionRequest],
+        users: dict[str, str | None],
+        submissions: list[Activity],
+    ) -> None:
         candidates = {}
         for r in deleting:
             options = set()
@@ -63,14 +69,17 @@ class WorkflowAssignment:
                 if owners and users[r.case_id] not in owners:
                     continue  # contradicted by an explicit owner
                 options.add(a.resource_id)
-            own = {
-                o
-                for o in options
-                if any(
-                    kind != "lookup" or at >= r.requested_at
-                    for at, kind in self.evidence.explicit.get(o, {}).get(users[r.case_id], ())
+            own: set[str] = set()
+            user = users[r.case_id]
+            for option in options:
+                owners_for_resource = self.evidence.explicit.get(option)
+                links = (
+                    owners_for_resource.get(user, ())
+                    if owners_for_resource is not None and user is not None
+                    else ()
                 )
-            }
+                if any(kind != "lookup" or at >= r.requested_at for at, kind in links):
+                    own.add(option)
             candidates[r.case_id] = own if len(own) == 1 else options
         self._propagate(candidates)
         self.account_candidates = candidates
@@ -79,7 +88,9 @@ class WorkflowAssignment:
         self.batch_owner = {next(iter(v)): k for k, v in candidates.items() if len(v) == 1}
         # Hand-written workflow reports name their target at reporting time.
 
-    def _match_direct_reports(self, deleting, worker):
+    def _match_direct_reports(
+        self, deleting: list[DeletionRequest], worker: list[Activity]
+    ) -> None:
         self.direct_reports = defaultdict(set)
         for a in worker:
             if "Target resource:" not in a.details:
@@ -97,7 +108,14 @@ class WorkflowAssignment:
         # after (actions) or just before (final results) them. A request that already has
         # an explicitly owned record of the same kind is not a candidate for another one.
 
-    def _match_downstream(self, deleting, users, worker, submissions, kinds):
+    def _match_downstream(
+        self,
+        deleting: list[DeletionRequest],
+        users: dict[str, str | None],
+        worker: list[Activity],
+        submissions: list[Activity],
+        kinds: dict[str, set[str]],
+    ) -> None:
         self.downstream = defaultdict(set)
         self.downstream_ambiguous = defaultdict(set)
         for a in worker:
@@ -131,7 +149,7 @@ class WorkflowAssignment:
                     self.downstream_ambiguous[r.case_id].add(a.resource_id)
 
     @staticmethod
-    def _propagate(candidates):
+    def _propagate(candidates: dict[str, set[str]]) -> None:
         changed = True
         while changed:
             changed = False

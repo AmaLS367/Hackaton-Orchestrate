@@ -44,17 +44,8 @@ select = ["E4", "E7", "E9", "F", "I", "UP", "B", "C4", "SIM", "RUF100"]
 python_version = "3.12"
 mypy_path = "$MYPY_CONFIG_FILE_DIR/code"
 explicit_package_bases = true
-files = ["code/ghost_audit", "code/evaluation", "code/main.py", "code/package_submission.py", "code/regression.py"]
-check_untyped_defs = true
-disallow_incomplete_defs = true
-warn_unused_ignores = true
-warn_redundant_casts = true
-
-[[tool.mypy.overrides]]
-module = ["ghost_audit.domain.*"]
-disallow_untyped_defs = true
-disallow_any_generics = true
-warn_return_any = true
+files = ["code"]
+strict = true
 
 [tool.importlinter]
 root_packages = ["ghost_audit", "evaluation"]

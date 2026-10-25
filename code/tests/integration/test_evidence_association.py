@@ -1,26 +1,34 @@
 import json
 from pathlib import Path
+from typing import Never
 
 import pytest
 from ghost_audit.application.evidence_association import EvidenceAssociationService, diagnostics
 from ghost_audit.domain.association_models import CaseEvidenceBundle
-from ghost_audit.domain.models import DeletionRequest, EvidenceDocument, EvidenceFile
+from ghost_audit.domain.models import (
+    DeletionRequest,
+    EvidenceDocument,
+    EvidenceFile,
+)
 from ghost_audit.domain.observation_clocks import linkage_time
 from ghost_audit.infrastructure.ingestion.dataset_loader import load_dataset
 from ghost_audit.infrastructure.serialization.csv_records import load_models
+from pydantic import JsonValue
 
 from tests.fixtures.paths import DATASET_ROOT
 
 
 @pytest.fixture(scope="module")
-def analyzed():
+def analyzed() -> tuple[EvidenceAssociationService, list[CaseEvidenceBundle]]:
     dataset = load_dataset(DATASET_ROOT)
     analyzer = EvidenceAssociationService(dataset)
     bundles = [analyzer.analyze(r) for r in dataset.requests]
     return analyzer, bundles
 
 
-def test_full_dataset_finishes_with_state_reconstruction_contract(analyzed):
+def test_full_dataset_finishes_with_state_reconstruction_contract(
+    analyzed: tuple[EvidenceAssociationService, list[CaseEvidenceBundle]],
+) -> None:
     analyzer, bundles = analyzed
     assert len(bundles) == 518
     assert {b.case_id for b in bundles} == {r.case_id for r in analyzer.dataset.requests}
@@ -30,7 +38,10 @@ def test_full_dataset_finishes_with_state_reconstruction_contract(analyzed):
         assert all(a.event_time <= bundle.audit_at for a in bundle.aliases)
         # Ownership facts count from their own observation time; a later export of an
         # earlier snapshot can link but never be cited (Phase 3 marks it linkage-only).
-        assert all(linkage_time(o.observation) <= bundle.audit_at for o in bundle.observations)
+        assert all(
+            (at := linkage_time(o.observation)) is not None and at <= bundle.audit_at
+            for o in bundle.observations
+        )
         for item in bundle.observations:
             assert item.links
             assert all(link.supporting_observations for link in item.links)
@@ -51,7 +62,9 @@ def test_full_dataset_finishes_with_state_reconstruction_contract(analyzed):
         assert len(locators) == len(set(locators))
 
 
-def test_aggregate_is_an_association_report_without_raw_pii(analyzed):
+def test_aggregate_is_an_association_report_without_raw_pii(
+    analyzed: tuple[EvidenceAssociationService, list[CaseEvidenceBundle]],
+) -> None:
     analyzer, bundles = analyzed
     report = diagnostics(bundles)
     assert report["cases"] == 518
@@ -66,7 +79,10 @@ def test_aggregate_is_an_association_report_without_raw_pii(analyzed):
     assert "not measured" in report["prediction_accuracy"]
 
 
-def test_sample_requests_use_same_services_without_reference_lookup(analyzed, monkeypatch):
+def test_sample_requests_use_same_services_without_reference_lookup(
+    analyzed: tuple[EvidenceAssociationService, list[CaseEvidenceBundle]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     analyzer, _ = analyzed
     requests = load_models(
         DATASET_ROOT / "sample_deletion_requests.csv",
@@ -74,7 +90,7 @@ def test_sample_requests_use_same_services_without_reference_lookup(analyzed, mo
         "case_id",
     )
 
-    def forbidden(*args, **kwargs):
+    def forbidden(*args: object, **kwargs: JsonValue) -> Never:
         raise AssertionError("analysis reopened a file")
 
     monkeypatch.setattr(Path, "open", forbidden)
@@ -85,7 +101,9 @@ def test_sample_requests_use_same_services_without_reference_lookup(analyzed, mo
     assert diagnostics(bundles)["cases"] == 32
 
 
-def test_bundles_are_deterministic_serializable_and_query_unrelated(analyzed):
+def test_bundles_are_deterministic_serializable_and_query_unrelated(
+    analyzed: tuple[EvidenceAssociationService, list[CaseEvidenceBundle]],
+) -> None:
     analyzer, bundles = analyzed
     first = bundles[0]
     again = analyzer.analyze(analyzer.dataset.requests[0])
@@ -104,11 +122,13 @@ def test_bundles_are_deterministic_serializable_and_query_unrelated(analyzed):
         )
 
 
-def test_deferred_pool_is_time_filtered_unassigned_and_provenance_preserved(analyzed):
+def test_deferred_pool_is_time_filtered_unassigned_and_provenance_preserved(
+    analyzed: tuple[EvidenceAssociationService, list[CaseEvidenceBundle]],
+) -> None:
     analyzer, bundles = analyzed
     for bundle in bundles:
         for entry in bundle.deferred_evidence:
-            assert entry.captured_at <= bundle.audit_at
+            assert entry.captured_at is not None and entry.captured_at <= bundle.audit_at
             assert entry.parsing_status == "deferred"
             assert entry == analyzer.index.registry.get(entry.evidence_id)
         assert all(
@@ -118,7 +138,11 @@ def test_deferred_pool_is_time_filtered_unassigned_and_provenance_preserved(anal
         )
 
 
-def test_association_cli_aggregate_and_single_case(analyzed, monkeypatch, capsys):
+def test_association_cli_aggregate_and_single_case(
+    analyzed: tuple[EvidenceAssociationService, list[CaseEvidenceBundle]],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     from ghost_audit.interfaces import cli as main
 
     analyzer, _ = analyzed
@@ -135,16 +159,20 @@ def test_association_cli_aggregate_and_single_case(analyzed, monkeypatch, capsys
         main.main(["phase2", "--case-id", "not_a_case"])
 
 
-def test_synthetic_future_deferred_file_is_not_offered(analyzed):
+def test_synthetic_future_deferred_file_is_not_offered(
+    analyzed: tuple[EvidenceAssociationService, list[CaseEvidenceBundle]],
+) -> None:
     from dataclasses import replace
 
     analyzer, _ = analyzed
     future = EvidenceDocument(
-        manifest=EvidenceFile(
-            file_id="future_image",
-            file_path="evidence/images/future.png",
-            origin="screen",
-            captured_at="2030-01-01T00:00:00Z",
+        manifest=EvidenceFile.model_validate(
+            {
+                "file_id": "future_image",
+                "file_path": "evidence/images/future.png",
+                "origin": "screen",
+                "captured_at": "2030-01-01T00:00:00Z",
+            }
         ),
         sha256="a" * 64,
         status="deferred",

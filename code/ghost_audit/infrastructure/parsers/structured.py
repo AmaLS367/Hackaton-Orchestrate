@@ -29,7 +29,9 @@ from ghost_audit.domain.models import (
 # Read surfaces that report on another system's records under their own name.
 
 
-def timestamps(payload: dict, locator: str, recursive: bool = False) -> list[SourceTimestamp]:
+def timestamps(
+    payload: dict[str, JsonValue], locator: str, recursive: bool = False
+) -> list[SourceTimestamp]:
     """Locate source and business clocks without confusing future retention with availability."""
     result = []
     for key, value in payload.items():
@@ -39,11 +41,13 @@ def timestamps(payload: dict, locator: str, recursive: bool = False) -> list[Sou
             if field in BUSINESS_TIMES and isinstance(value, str) and len(value) == 10:
                 continue
             result.append(
-                SourceTimestamp(
-                    locator=f"{locator}.{key}",
-                    field=key,
-                    value=value,
-                    role="business" if field in BUSINESS_TIMES else "source",
+                SourceTimestamp.model_validate(
+                    {
+                        "locator": f"{locator}.{key}",
+                        "field": key,
+                        "value": value,
+                        "role": "business" if field in BUSINESS_TIMES else "source",
+                    }
                 )
             )
         if recursive and isinstance(value, dict):
@@ -66,7 +70,7 @@ class ExtractionContext:
     collection: str | None = None
     physical_table: str | None = None
 
-    def scoped(self, payload: dict, locator: str) -> "ExtractionContext":
+    def scoped(self, payload: dict[str, JsonValue], locator: str) -> "ExtractionContext":
         """Inherit document scope while retaining nested source clocks and explicit schema names."""
         decoded = payload.get("decoded_record")
         decoded = decoded if isinstance(decoded, dict) else {}
@@ -86,6 +90,8 @@ class ExtractionContext:
             ),
             inherited,
         )
+        assert system is None or isinstance(system, str), "system scope must be a name"
+        assert collection is None or isinstance(collection, str), "collection scope must be a name"
         return replace(
             self,
             times=(*self.times, *timestamps(payload, locator)),
@@ -232,7 +238,7 @@ def parse_fields(text: str) -> dict[str, str]:
     return fields
 
 
-def parse_bracket_log(body: str) -> dict | None:
+def parse_bracket_log(body: str) -> dict[str, JsonValue] | None:
     """Decode supported bracket-style log fields without deciding resource state."""
     match = re.fullmatch(
         r"\[(?P<level>[^]]+)\]\s+\[(?P<service>[^]]+)\]\s+"
@@ -248,7 +254,7 @@ def parse_bracket_log(body: str) -> dict | None:
     }
 
 
-def parse_pipe_log(body: str) -> dict | None:
+def parse_pipe_log(body: str) -> dict[str, JsonValue] | None:
     """Decode supported pipe-delimited log fields without losing the log body."""
     match = re.fullmatch(
         rf"\|\s*(?P<level>{LEVELS})\s*\|\s*(?P<service>[^|]+?)\s*\|\s*"
@@ -263,7 +269,7 @@ def parse_pipe_log(body: str) -> dict | None:
     }
 
 
-def parse_json_log(body: str) -> dict | None:
+def parse_json_log(body: str) -> dict[str, JsonValue] | None:
     """Decode a structured log body when it contains a supported object."""
     if not body.startswith("{"):
         return None
@@ -274,21 +280,21 @@ def parse_json_log(body: str) -> dict | None:
     return payload if isinstance(payload, dict) else None
 
 
-def parse_key_value_log(body: str) -> dict | None:
+def parse_key_value_log(body: str) -> dict[str, JsonValue] | None:
     """Decode supported key/value log records while preserving their fields."""
     if not re.match(r"^[A-Za-z_][\w.-]*=", body):
         return None
-    payload = parse_fields(body)
+    payload: dict[str, JsonValue] = dict(parse_fields(body))
     if not payload:
         return None
     # Cloud exports wrap the original structured message in an escaped value.
-    if isinstance(payload.get("message"), str):
-        for key, value in parse_fields(payload["message"]).items():
+    if isinstance(message := payload.get("message"), str):
+        for key, value in parse_fields(message).items():
             payload.setdefault(key, value)
     return payload
 
 
-def parse_plain_level_log(body: str) -> dict | None:
+def parse_plain_level_log(body: str) -> dict[str, JsonValue] | None:
     """Decode supported plain-level log records for downstream semantic interpretation."""
     match = re.fullmatch(rf"(?P<level>{LEVELS})(?:\s+(?P<fields>.*))?", body)
     if not match:
@@ -296,7 +302,7 @@ def parse_plain_level_log(body: str) -> dict | None:
     return {"level": match["level"], **(parse_key_value_log(match["fields"] or "") or {})}
 
 
-def parse_syslog(line: str) -> dict | None:
+def parse_syslog(line: str) -> dict[str, JsonValue] | None:
     # Both dataset timestamp-first exports and standard RFC5424 header order.
     """Decode supported syslog timestamps, service and structured fields."""
     match = re.fullmatch(
@@ -320,7 +326,7 @@ def parse_syslog(line: str) -> dict | None:
     return payload
 
 
-def parse_log(line: str) -> dict | None:
+def parse_log(line: str) -> dict[str, JsonValue] | None:
     """Try documented log representations without fabricating missing fields."""
     payload = parse_syslog(line)
     if payload is None:
@@ -357,7 +363,7 @@ def parse_text(
         if not line.strip():
             continue
         locator = f"{locator_prefix}:{number}"
-        payload: dict = {"text": line}
+        payload: dict[str, JsonValue] = {"text": line}
         line_context = context
         structured = parse_log(line)
         if structured is not None:

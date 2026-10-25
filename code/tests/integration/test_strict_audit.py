@@ -9,14 +9,13 @@ from ghost_audit.application.evidence_association import EvidenceAssociationServ
 from ghost_audit.application.strict_audit import PredictionBlocked, diagnostics, predict
 from ghost_audit.application.temporal_service import TemporalStateEngine
 from ghost_audit.domain.citation_validation import validate_output
+from ghost_audit.domain.dataset import Dataset
 from ghost_audit.domain.evidence_index import EvidenceIndex
-from ghost_audit.domain.models import (
-    EvidenceFile,
-    IdentityChange,
-)
+from ghost_audit.domain.models import DeletionRule, EvidenceFile, IdentityChange
 from ghost_audit.domain.output_contract import OPERATION_ORDER
 from ghost_audit.domain.planning import plan_case
 from ghost_audit.domain.policy import PolicyEvaluator
+from ghost_audit.domain.policy_models import PredictionRun
 from ghost_audit.infrastructure.parsers.structured import ExtractionContext, parse_json
 from ghost_audit.infrastructure.serialization.csv_output import read_output
 from ghost_audit.infrastructure.serialization.prediction_artifacts import publish
@@ -32,12 +31,14 @@ from tests.fixtures.audit_cases import (
     observation,
     operations,
 )
+from tests.fixtures.contracts import RecordFields
 
 
-def test_fully_completed_deletion(rules):
+def test_fully_completed_deletion(rules: list[DeletionRule]) -> None:
     result = decision(rules, absent())
     assert result.decision == "COMPLETE"
     assert operations(result) == ["VERIFY_RECORD_ABSENT"]
+    assert result.prediction is not None
     assert result.prediction.steps[0].evidence_id == "fixture"
 
 
@@ -52,7 +53,9 @@ def test_fully_completed_deletion(rules):
         ("MARKETING_PROFILE", "marketing_service", "contacts"),
     ],
 )
-def test_delete_categories_and_remaining_search_record(rules, category, system, collection):
+def test_delete_categories_and_remaining_search_record(
+    rules: list[DeletionRule], category: str, system: str, collection: str
+) -> None:
     result = decision(rules, observation(category=category, system=system, collection=collection))
     assert result.decision == "INCOMPLETE"
     assert operations(result) == [
@@ -62,7 +65,7 @@ def test_delete_categories_and_remaining_search_record(rules, category, system, 
     ]
 
 
-def test_shared_support_message_redacts_instead_of_deleting(rules):
+def test_shared_support_message_redacts_instead_of_deleting(rules: list[DeletionRule]) -> None:
     result = decision(
         rules,
         observation(
@@ -76,7 +79,7 @@ def test_shared_support_message_redacts_instead_of_deleting(rules):
     assert operations(result) == ["REPORT_EXPOSED_PII", "REDACT_RECORD", "VERIFY_RECORD_REDACTED"]
 
 
-def test_subject_only_attachment_and_unknown_condition(rules):
+def test_subject_only_attachment_and_unknown_condition(rules: list[DeletionRule]) -> None:
     row = observation(
         category="SUPPORT_ATTACHMENT",
         system="support_platform",
@@ -107,7 +110,9 @@ def test_subject_only_attachment_and_unknown_condition(rules):
 
 
 @pytest.mark.parametrize("category", ["ANALYTICS_PROFILE", "PRODUCT_TELEMETRY"])
-def test_attributable_analytics_and_telemetry_anonymized(rules, category):
+def test_attributable_analytics_and_telemetry_anonymized(
+    rules: list[DeletionRule], category: str
+) -> None:
     result = decision(
         rules,
         observation(
@@ -126,7 +131,7 @@ def test_attributable_analytics_and_telemetry_anonymized(rules, category):
     ]
 
 
-def test_compliant_analytics_requires_sufficient_field_coverage(rules):
+def test_compliant_analytics_requires_sufficient_field_coverage(rules: list[DeletionRule]) -> None:
     anchor = observation(
         category="ANALYTICS_PROFILE",
         system="analytics_platform",
@@ -147,6 +152,7 @@ def test_compliant_analytics_requires_sufficient_field_coverage(rules):
     result = decision(rules, anchor, clean)
     assert result.decision == "COMPLETE"
     assert operations(result) == ["VERIFY_RECORD_ANONYMIZED"]
+    assert result.prediction is not None
     assert result.prediction.steps[0].evidence_id == "clean"
     # Omitted identifier slots cannot be assumed clean.
     partial = observation(
@@ -182,7 +188,7 @@ def test_compliant_analytics_requires_sufficient_field_coverage(rules):
     assert decision(rules, anchor, bare).prediction is None
 
 
-def test_retained_security_user_reference_is_not_a_violation(rules):
+def test_retained_security_user_reference_is_not_a_violation(rules: list[DeletionRule]) -> None:
     result = decision(
         rules,
         absent(resource="baseline", file="baseline"),
@@ -197,7 +203,9 @@ def test_retained_security_user_reference_is_not_a_violation(rules):
     assert operations(result) == ["VERIFY_RECORD_ABSENT", "VERIFY_RECORD_PRESENT"]
 
 
-def test_retention_condition_uses_cutoff_and_missing_deadline_is_unknown(rules):
+def test_retention_condition_uses_cutoff_and_missing_deadline_is_unknown(
+    rules: list[DeletionRule],
+) -> None:
     for deadline in [None, "2025-01-01T00:00:00Z", CUTOFF]:
         result = decision(
             rules,
@@ -212,7 +220,9 @@ def test_retention_condition_uses_cutoff_and_missing_deadline_is_unknown(rules):
         assert not any(a.compliance == "VIOLATION" for a in result.assessments)
 
 
-def test_active_legal_hold_preserved_and_inactive_hold_not_deleted(rules):
+def test_active_legal_hold_preserved_and_inactive_hold_not_deleted(
+    rules: list[DeletionRule],
+) -> None:
     for active in (True, False):
         result = decision(
             rules,
@@ -230,7 +240,7 @@ def test_active_legal_hold_preserved_and_inactive_hold_not_deleted(rules):
             assert result.prediction is None
 
 
-def test_email_delivery_redaction(rules):
+def test_email_delivery_redaction(rules: list[DeletionRule]) -> None:
     result = decision(
         rules,
         observation(
@@ -246,7 +256,9 @@ def test_email_delivery_redaction(rules):
 @pytest.mark.parametrize(
     "email,status", [("subject@example.test", "INCOMPLETE"), (None, "COMPLETE")]
 )
-def test_account_tombstone_preserves_stable_reference(rules, email, status):
+def test_account_tombstone_preserves_stable_reference(
+    rules: list[DeletionRule], email: None | str, status: str
+) -> None:
     result = decision(
         rules,
         observation(
@@ -265,7 +277,9 @@ def test_account_tombstone_preserves_stable_reference(rules, email, status):
 
 
 @pytest.mark.parametrize("enabled,status", [(True, "INCOMPLETE"), (False, "COMPLETE")])
-def test_active_and_disabled_data_flow(rules, enabled, status):
+def test_active_and_disabled_data_flow(
+    rules: list[DeletionRule], enabled: bool, status: str
+) -> None:
     result = decision(
         rules,
         absent(resource="baseline", file="baseline"),
@@ -285,7 +299,9 @@ def test_active_and_disabled_data_flow(rules, enabled, status):
 
 
 @pytest.mark.parametrize("allowed,status", [(True, "INCOMPLETE"), (False, "COMPLETE")])
-def test_backup_retained_and_restore_blocked(rules, allowed, status):
+def test_backup_retained_and_restore_blocked(
+    rules: list[DeletionRule], allowed: bool, status: str
+) -> None:
     result = decision(
         rules,
         absent(resource="baseline", file="baseline"),
@@ -304,17 +320,21 @@ def test_backup_retained_and_restore_blocked(rules, allowed, status):
     assert ("BLOCK_RESTORE" in operations(result)) == allowed
 
 
-def test_replica_survival_proves_violation_but_findings_deduplicate(rules):
+def test_replica_survival_proves_violation_but_findings_deduplicate(
+    rules: list[DeletionRule],
+) -> None:
     primary = absent(replica_scope="primary")
     replica = observation(file="survivor", replica_scope="read_replica")
     replica2 = observation(file="survivor2", replica_scope="failover_replica")
     result = decision(rules, primary, replica, replica2)
     assert result.decision == "INCOMPLETE"
+    assert result.prediction is not None
     assert len(result.prediction.steps) == 3
+    assert result.prediction is not None
     assert result.prediction.steps[0].evidence_id == "survivor"
 
 
-def test_conflicting_same_replica_observations_abstain(rules):
+def test_conflicting_same_replica_observations_abstain(rules: list[DeletionRule]) -> None:
     result = decision(
         rules, absent(), observation(file="contradiction", result="FOUND", observed_at=EARLY)
     )
@@ -322,14 +342,18 @@ def test_conflicting_same_replica_observations_abstain(rules):
     assert not any(a.compliance == "VIOLATION" for a in result.assessments)
 
 
-def test_unknown_and_successful_delete_claim_cannot_prove_absence(rules):
+def test_unknown_and_successful_delete_claim_cannot_prove_absence(
+    rules: list[DeletionRule],
+) -> None:
     row = observation(event="delete_completed", reported_result="SUCCESS")
     result = decision(rules, row)
     assert result.prediction is None
     assert not any(a.compliance == "VIOLATION" for a in result.assessments)
 
 
-def test_potential_association_cannot_establish_compliance_or_violation(rules):
+def test_potential_association_cannot_establish_compliance_or_violation(
+    rules: list[DeletionRule],
+) -> None:
     d = dataset(rules, observation())
     analyzer = EvidenceAssociationService(d)
     b = analyzer.analyze(d.requests[0])
@@ -346,15 +370,16 @@ def test_potential_association_cannot_establish_compliance_or_violation(rules):
     assert not any(a.compliance != "UNKNOWN" for a in result.assessments)
 
 
-def test_negative_and_uncertain_intent_never_remediate(rules):
+def test_negative_and_uncertain_intent_never_remediate(rules: list[DeletionRule]) -> None:
     negative = decision(rules, observation(), text="Please export a copy of my account data.")
+    assert negative.prediction is not None
     assert negative.decision == "NOT_APPLICABLE" and negative.prediction.steps == []
     uncertain = decision(rules, observation(), text="Perhaps something about my account.")
     assert uncertain.prediction is None
     assert "unresolved_deletion_authorization" in uncertain.blockers
 
 
-def test_historical_email_and_multiple_resources(rules):
+def test_historical_email_and_multiple_resources(rules: list[DeletionRule]) -> None:
     d = dataset(
         rules,
         observation(),
@@ -368,13 +393,15 @@ def test_historical_email_and_multiple_resources(rules):
         email="old@example.test",
     )
     d.identity_changes.append(
-        IdentityChange(
-            audit_id="change_x",
-            user_id="subject_x",
-            event_time=EARLY,
-            field_name="email",
-            old_value="old@example.test",
-            new_value="subject@example.test",
+        IdentityChange.model_validate(
+            {
+                "audit_id": "change_x",
+                "user_id": "subject_x",
+                "event_time": EARLY,
+                "field_name": "email",
+                "old_value": "old@example.test",
+                "new_value": "subject@example.test",
+            }
         )
     )
     result = predict(d).cases[0]
@@ -382,7 +409,7 @@ def test_historical_email_and_multiple_resources(rules):
     assert len(operations(result, "FINDING")) == 2
 
 
-def test_known_violation_despite_unknown_state(rules):
+def test_known_violation_despite_unknown_state(rules: list[DeletionRule]) -> None:
     result = decision(
         rules,
         observation(),
@@ -392,17 +419,21 @@ def test_known_violation_despite_unknown_state(rules):
     )
     assert result.decision == "INCOMPLETE" and result.unresolved
     # The claim-only record is never reported or remediated, only checked afterwards.
+    assert result.prediction is not None
     assert all(
         s.resource_id == "arbitrary-key"
         for s in result.prediction.steps
         if s.phase != "VERIFICATION"
     )
+    assert result.prediction is not None
     assert [
         (s.operation, s.evidence_id) for s in result.prediction.steps if s.resource_id == "other"
     ] == [("VERIFY_RECORD_ABSENT", "")]
 
 
-def test_plan_disables_flow_and_restore_before_cleanup_and_keeps_retained_checks(rules):
+def test_plan_disables_flow_and_restore_before_cleanup_and_keeps_retained_checks(
+    rules: list[DeletionRule],
+) -> None:
     result = decision(
         rules,
         observation(),
@@ -442,10 +473,11 @@ def test_plan_disables_flow_and_restore_before_cleanup_and_keeps_retained_checks
         "VERIFY_DATA_FLOW_DISABLED",
         "VERIFY_RESTORE_BLOCKED",
     ]
+    assert result.prediction is not None
     assert all(s.evidence_id == "" for s in result.prediction.steps if s.phase != "FINDING")
 
 
-def test_exact_canonical_order_and_consecutive_numbers(rules):
+def test_exact_canonical_order_and_consecutive_numbers(rules: list[DeletionRule]) -> None:
     rows = [
         observation(resource="z-resource"),
         observation(resource="a-resource", file="second"),
@@ -459,6 +491,7 @@ def test_exact_canonical_order_and_consecutive_numbers(rules):
         ),
     ]
     result = decision(rules, *reversed(rows))
+    assert result.prediction is not None
     steps = result.prediction.steps
     assert [s.step_no for s in steps] == list(range(1, len(steps) + 1))
     assert [(OPERATION_ORDER[s.operation], s.system_id, s.resource_id) for s in steps] == sorted(
@@ -466,7 +499,9 @@ def test_exact_canonical_order_and_consecutive_numbers(rules):
     )
 
 
-def test_explicit_downstream_dependency_and_unrepresentable_order(rules):
+def test_explicit_downstream_dependency_and_unrepresentable_order(
+    rules: list[DeletionRule],
+) -> None:
     source = observation("z-source")
     downstream = observation(
         "a-downstream",
@@ -491,7 +526,9 @@ def test_explicit_downstream_dependency_and_unrepresentable_order(rules):
     assert any("cleanup_dependency_conflicts_with_official_order" in u for u in result.blockers)
 
 
-def test_cleanup_dependency_without_system_uses_only_unambiguous_planned_resource(rules):
+def test_cleanup_dependency_without_system_uses_only_unambiguous_planned_resource(
+    rules: list[DeletionRule],
+) -> None:
     result = decision(
         rules,
         observation("a-source"),
@@ -501,7 +538,7 @@ def test_cleanup_dependency_without_system_uses_only_unambiguous_planned_resourc
     assert any("cleanup_dependency_conflicts_with_official_order" in u for u in result.blockers)
 
 
-def test_valid_evidence_cutoff_and_no_future_state_override(rules):
+def test_valid_evidence_cutoff_and_no_future_state_override(rules: list[DeletionRule]) -> None:
     row = observation()
     future = absent(file="late", at=FUTURE)
     d = dataset(rules, row, future)
@@ -513,7 +550,9 @@ def test_valid_evidence_cutoff_and_no_future_state_override(rules):
     assert {s.evidence_id for s in run.predictions[0].steps} == {"fixture", ""}
 
 
-def test_all_518_rows_serialize_and_validate_when_grounded(rules, tmp_path):
+def test_all_518_rows_serialize_and_validate_when_grounded(
+    rules: list[DeletionRule], tmp_path: Path
+) -> None:
     d = dataset(rules, observation())
     request = d.requests[0]
     d.requests = [request.model_copy(update={"case_id": f"custom_{i:03}"}) for i in range(518)]
@@ -526,7 +565,9 @@ def test_all_518_rows_serialize_and_validate_when_grounded(rules, tmp_path):
     assert path.read_text(encoding="utf-8").count("\n") == 519
 
 
-def test_blocked_publish_preserves_existing_file_and_creates_no_placeholder(rules, tmp_path):
+def test_blocked_publish_preserves_existing_file_and_creates_no_placeholder(
+    rules: list[DeletionRule], tmp_path: Path
+) -> None:
     d = dataset(rules)
     run = predict(d)
     path = tmp_path / "output.csv"
@@ -539,7 +580,7 @@ def test_blocked_publish_preserves_existing_file_and_creates_no_placeholder(rule
     assert path.read_text(encoding="utf-8") == "previous output"
 
 
-def test_input_order_independence(rules):
+def test_input_order_independence(rules: list[DeletionRule]) -> None:
     rows = [
         observation(),
         observation(
@@ -556,7 +597,7 @@ def test_input_order_independence(rules):
         assert decision(rules, *rows) == original
 
 
-def test_schema_mapping_never_uses_resource_prefixes(rules):
+def test_schema_mapping_never_uses_resource_prefixes(rules: list[DeletionRule]) -> None:
     mapped = observation(resource="not-an-account-prefix").model_copy(
         update={"payload": {"user_id": "subject_x", "email": "subject@example.test"}}
     )
@@ -571,7 +612,7 @@ def test_schema_mapping_never_uses_resource_prefixes(rules):
     assert decision(rules, unknown).prediction is None
 
 
-def test_rules_are_data_driven_and_unknown_conditions_abstain(rules):
+def test_rules_are_data_driven_and_unknown_conditions_abstain(rules: list[DeletionRule]) -> None:
     changed = [
         r.model_copy(update={"condition": "Undocumented condition"})
         if r.data_category == "USER_PROFILE"
@@ -588,7 +629,9 @@ def test_rules_are_data_driven_and_unknown_conditions_abstain(rules):
     assert "ANONYMIZE_RECORD" in operations(decision(changed, observation()))
 
 
-def test_unassigned_deferred_pool_does_not_block_otherwise_complete_case(rules):
+def test_unassigned_deferred_pool_does_not_block_otherwise_complete_case(
+    rules: list[DeletionRule],
+) -> None:
     d = dataset(rules, absent())
     analyzer = EvidenceAssociationService(d)
     state = TemporalStateEngine(analyzer.index).analyze(analyzer.analyze(d.requests[0]))
@@ -605,8 +648,11 @@ def test_unassigned_deferred_pool_does_not_block_otherwise_complete_case(rules):
 
 
 def test_default_and_strict_cli_block_without_writing_and_preserve_inspect(
-    rules, tmp_path, monkeypatch, capsys
-):
+    rules: list[DeletionRule],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     from ghost_audit.interfaces import cli as main
 
     d = dataset(rules)
@@ -626,7 +672,12 @@ def test_default_and_strict_cli_block_without_writing_and_preserve_inspect(
     assert json.loads(capsys.readouterr().out)["requests"] == 1
 
 
-def test_complete_cli_publishes_and_validates(rules, tmp_path, monkeypatch, capsys):
+def test_complete_cli_publishes_and_validates(
+    rules: list[DeletionRule],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     from ghost_audit.interfaces import cli as main
 
     d = dataset(rules, absent())
@@ -651,7 +702,9 @@ def test_complete_cli_publishes_and_validates(rules, tmp_path, monkeypatch, caps
     assert read_output(out)[0].deletion_status == "COMPLETE"
 
 
-def test_diagnostics_are_counts_and_abstentions_not_a_fourth_submission_label(rules):
+def test_diagnostics_are_counts_and_abstentions_not_a_fourth_submission_label(
+    rules: list[DeletionRule],
+) -> None:
     report = diagnostics(predict(dataset(rules)))
     assert report["status_counts"] == {"COMPLETE": 0, "INCOMPLETE": 0, "NOT_APPLICABLE": 0}
     assert report["undecidable_count"] == 1
@@ -660,7 +713,9 @@ def test_diagnostics_are_counts_and_abstentions_not_a_fourth_submission_label(ru
     )
 
 
-def test_shared_context_obligation_survives_later_field_redaction(rules):
+def test_shared_context_obligation_survives_later_field_redaction(
+    rules: list[DeletionRule],
+) -> None:
     old = observation(
         category="SUPPORT_MESSAGE",
         system="support_platform",
@@ -682,10 +737,13 @@ def test_shared_context_obligation_survives_later_field_redaction(rules):
     assert result.decision == "COMPLETE"
     assessment = result.assessments[0]
     assert {link.evidence_id for link in assessment.condition_evidence} == {"fixture"}
+    assert result.prediction is not None
     assert result.prediction.steps[0].evidence_id == "clean"
 
 
-def test_simultaneous_identifier_disagreement_does_not_create_a_pii_finding(rules):
+def test_simultaneous_identifier_disagreement_does_not_create_a_pii_finding(
+    rules: list[DeletionRule],
+) -> None:
     a = observation(
         category="SUPPORT_MESSAGE",
         system="support_platform",
@@ -710,7 +768,9 @@ def test_simultaneous_identifier_disagreement_does_not_create_a_pii_finding(rule
     assert not any(a.compliance == "VIOLATION" for a in result.assessments)
 
 
-def test_extra_linkable_identifier_prevents_null_only_analytics_compliance(rules):
+def test_extra_linkable_identifier_prevents_null_only_analytics_compliance(
+    rules: list[DeletionRule],
+) -> None:
     row = observation(
         category="ANALYTICS_PROFILE",
         system="analytics_platform",
@@ -724,7 +784,9 @@ def test_extra_linkable_identifier_prevents_null_only_analytics_compliance(rules
     assert "ANONYMIZE_RECORD" in operations(decision(rules, row))
 
 
-def test_released_legal_hold_is_not_reactivated_by_future_deadline(rules):
+def test_released_legal_hold_is_not_reactivated_by_future_deadline(
+    rules: list[DeletionRule],
+) -> None:
     row = observation(
         category="LEGAL_HOLD_RECORD",
         system="legal_service",
@@ -735,7 +797,7 @@ def test_released_legal_hold_is_not_reactivated_by_future_deadline(rules):
     assert decision(rules, row).prediction is None
 
 
-def test_identity_service_tombstone_schema(rules):
+def test_identity_service_tombstone_schema(rules: list[DeletionRule]) -> None:
     row = observation(
         category="ACCOUNT_TOMBSTONE",
         system="identity_service",
@@ -746,7 +808,9 @@ def test_identity_service_tombstone_schema(rules):
     assert operations(decision(rules, row), "REMEDIATION") == ["REDACT_RECORD"]
 
 
-def test_profile_transition_to_explicit_tombstone_changes_treatment(rules):
+def test_profile_transition_to_explicit_tombstone_changes_treatment(
+    rules: list[DeletionRule],
+) -> None:
     profile = observation(email="subject@example.test")
     tombstone = observation(
         category="ACCOUNT_TOMBSTONE",
@@ -759,7 +823,9 @@ def test_profile_transition_to_explicit_tombstone_changes_treatment(rules):
     assert operations(result, "REMEDIATION") == ["REDACT_RECORD"]
 
 
-def test_event_contact_with_marketing_preferences_uses_delete_rule(rules):
+def test_event_contact_with_marketing_preferences_uses_delete_rule(
+    rules: list[DeletionRule],
+) -> None:
     row = observation(
         category="UNSPECIFIED",
         system="analytics_platform",
@@ -771,13 +837,17 @@ def test_event_contact_with_marketing_preferences_uses_delete_rule(rules):
     assert operations(decision(rules, row), "REMEDIATION") == ["DELETE_RECORD"]
 
 
-def test_service_export_schema_names_classify_without_inventing_collection_links(rules):
+def test_service_export_schema_names_classify_without_inventing_collection_links(
+    rules: list[DeletionRule],
+) -> None:
     ctx = ExtractionContext(
-        EvidenceFile(
-            file_id="export",
-            file_path="evidence/export.json",
-            origin="service_resource_export",
-            captured_at=EARLY,
+        EvidenceFile.model_validate(
+            {
+                "file_id": "export",
+                "file_path": "evidence/export.json",
+                "origin": "service_resource_export",
+                "captured_at": EARLY,
+            }
         ),
         "c" * 64,
     )
@@ -804,7 +874,9 @@ def test_service_export_schema_names_classify_without_inventing_collection_links
     assert result.assessments[0].scope.collection is None
 
 
-def test_retained_missing_record_blocks_instead_of_fabricating_restore_operation(rules):
+def test_retained_missing_record_blocks_instead_of_fabricating_restore_operation(
+    rules: list[DeletionRule],
+) -> None:
     row = absent(
         category="SECURITY_AUDIT_LOG",
         system="security_service",
@@ -830,8 +902,12 @@ def test_retained_missing_record_blocks_instead_of_fabricating_restore_operation
     ],
 )
 def test_only_retention_or_process_safety_cannot_prove_deleted_user(
-    rules, category, system, collection, fields
-):
+    rules: list[DeletionRule],
+    category: str,
+    system: str,
+    collection: str,
+    fields: RecordFields,
+) -> None:
     result = decision(
         rules, observation(category=category, system=system, collection=collection, **fields)
     )
@@ -839,7 +915,9 @@ def test_only_retention_or_process_safety_cannot_prove_deleted_user(
     assert "no_verified_deletion_treatment" in result.blockers
 
 
-def test_cli_rejects_artifacts_inside_dataset(rules, tmp_path, monkeypatch):
+def test_cli_rejects_artifacts_inside_dataset(
+    rules: list[DeletionRule], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from ghost_audit.interfaces import cli as main
 
     monkeypatch.setattr(main, "load_dataset", lambda *a, **k: dataset(rules, observation()))
@@ -848,25 +926,36 @@ def test_cli_rejects_artifacts_inside_dataset(rules, tmp_path, monkeypatch):
     assert not (tmp_path / "input.csv").exists()
 
 
-def test_pipeline_never_reads_sample_answers_or_existing_output(rules, tmp_path, monkeypatch):
+def test_pipeline_never_reads_sample_answers_or_existing_output(
+    rules: list[DeletionRule], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     original = Path.open
 
-    def guarded(path, *args, **kwargs):
+    def guarded(
+        path: Path,
+        mode: str = "r",
+        buffering: int = -1,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
+    ) -> object:
         assert path.name not in {"sample_output.csv", "output.csv"}
-        return original(path, *args, **kwargs)
+        return original(path, mode, buffering, encoding, errors, newline)
 
     monkeypatch.setattr(Path, "open", guarded)
     assert predict(dataset(rules, observation())).cases[0].decision == "INCOMPLETE"
 
 
 @pytest.fixture(scope="module")
-def participant_run(strict_result):
+def participant_run(
+    strict_result: tuple[Dataset, EvidenceIndex, PredictionRun],
+) -> tuple[Dataset, EvidenceIndex, PredictionRun]:
     return strict_result
 
 
 def test_real_518_case_run_validates_grounded_rows_and_exposes_abstentions(
-    participant_run, tmp_path
-):
+    participant_run: tuple[Dataset, EvidenceIndex, PredictionRun], tmp_path: Path
+) -> None:
     d, index, run = participant_run
     assert len(run.cases) == 518
     assert [c.case_id for c in run.cases] == sorted(r.case_id for r in d.requests)
@@ -878,7 +967,12 @@ def test_real_518_case_run_validates_grounded_rows_and_exposes_abstentions(
     for row in run.predictions:
         cutoff = next(r.audit_at for r in d.requests if r.case_id == row.case_id)
         assert all(
-            not s.evidence_id or index.registry.get(s.evidence_id).captured_at <= cutoff
+            not s.evidence_id
+            or (
+                (entry := index.registry.get(s.evidence_id)) is not None
+                and entry.captured_at is not None
+                and entry.captured_at <= cutoff
+            )
             for s in row.steps
         )
     if not run.publishable:

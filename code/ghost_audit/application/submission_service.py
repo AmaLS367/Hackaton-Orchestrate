@@ -1,5 +1,7 @@
 """Submission use case: best-supported official answer per participant request."""
 
+from typing import TypedDict
+
 from ghost_audit.application.submission.evidence import SubmissionEvidence
 from ghost_audit.application.submission.records import SubmissionRecords
 from ghost_audit.application.submission.workflow import WorkflowAssignment
@@ -36,7 +38,7 @@ class SubmissionPredictor:
         resources: dict[str, Resource] = {}
         notes = []
 
-        def add(resource_id, method):
+        def add(resource_id: str, method: str) -> None:
             system = self.evidence.system_of(resource_id)
             if system is None:
                 return
@@ -273,7 +275,37 @@ def predict_submission(dataset: Dataset) -> list[CasePrediction]:
     return cases
 
 
-def submission_diagnostics(cases: list[CasePrediction]) -> dict:
+class SubmissionSummary(TypedDict):
+    """Serialized diagnostic fields; reporting never changes prediction state."""
+
+    cases: int
+    status_counts: dict[str, int]
+    steps: int
+    attribution_methods: dict[str, int]
+    inference_notes: dict[str, int]
+    cases_with_low_confidence_resources: int
+    status_depends_on_ambiguous_attribution: list[str]
+
+
+class SubmissionCaseDiagnostic(TypedDict):
+    """Serialized diagnostic fields; reporting never changes prediction state."""
+
+    case_id: str
+    status: str
+    user_id: str | None
+    resources: dict[str, list[str]]
+    notes: list[str]
+    low_confidence: list[str]
+
+
+class SubmissionDiagnostics(TypedDict):
+    """Serialized diagnostic fields; reporting never changes prediction state."""
+
+    summary: SubmissionSummary
+    cases: list[SubmissionCaseDiagnostic]
+
+
+def submission_diagnostics(cases: list[CasePrediction]) -> SubmissionDiagnostics:
     """Identifier-only provenance of every prediction: attribution methods, ambiguity and
     low-confidence resources. Kept separate from the official CSV."""
     from collections import Counter

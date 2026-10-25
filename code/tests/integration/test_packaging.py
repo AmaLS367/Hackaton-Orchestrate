@@ -1,11 +1,14 @@
 import json
 import zipfile
+from pathlib import Path
 
 from package_submission import build_archive
 from package_traces import discover, sanitized_jsonl
 
 
-def test_submission_archive_is_deterministic_and_excludes_private_or_generated_files(tmp_path):
+def test_submission_archive_is_deterministic_and_excludes_private_or_generated_files(
+    tmp_path: Path,
+) -> None:
     for name in (
         "README.md",
         "pyproject.toml",
@@ -45,7 +48,7 @@ def test_submission_archive_is_deterministic_and_excludes_private_or_generated_f
         )
 
 
-def test_trace_redaction_preserves_structured_jsonl_and_safe_raw_lines(tmp_path):
+def test_trace_redaction_preserves_structured_jsonl_and_safe_raw_lines(tmp_path: Path) -> None:
     path = tmp_path / "trace.jsonl"
     safe = '{"type": "message", "text": "safe synthetic data"}\n'
     path.write_text(
@@ -69,7 +72,7 @@ def test_trace_redaction_preserves_structured_jsonl_and_safe_raw_lines(tmp_path)
     assert len([json.loads(line) for line in data.splitlines()]) == 2
 
 
-def test_trace_discovery_excludes_other_checkouts_and_active_session(tmp_path):
+def test_trace_discovery_excludes_other_checkouts_and_active_session(tmp_path: Path) -> None:
     codex = tmp_path / "codex"
     folder = codex / "sessions/2026/10/24"
     folder.mkdir(parents=True)

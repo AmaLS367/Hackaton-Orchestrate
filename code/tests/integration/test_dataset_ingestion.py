@@ -1,21 +1,26 @@
 from collections import Counter
 from pathlib import Path
+from typing import Never
 
 import pytest
 from ghost_audit.domain.citation_validation import validate_output
+from ghost_audit.domain.dataset import Dataset
 from ghost_audit.domain.evidence_index import EvidenceIndex
 from ghost_audit.domain.models import DeletionRequest
 from ghost_audit.infrastructure.ingestion.dataset_loader import load_dataset
 from ghost_audit.infrastructure.serialization.csv_output import read_output
 from ghost_audit.infrastructure.serialization.csv_records import load_models
+from pydantic import JsonValue
 
 
 @pytest.fixture(scope="module")
-def loaded_dataset(participant_dataset):
+def loaded_dataset(participant_dataset: Dataset) -> Dataset:
     return participant_dataset
 
 
-def test_all_participant_formats_ingest_and_images_are_deferred_or_catalogued_ocr(loaded_dataset):
+def test_all_participant_formats_ingest_and_images_are_deferred_or_catalogued_ocr(
+    loaded_dataset: Dataset,
+) -> None:
     dataset = loaded_dataset
     assert len(dataset.requests) == 518
     assert len(dataset.documents) == 94
@@ -45,7 +50,7 @@ def test_all_participant_formats_ingest_and_images_are_deferred_or_catalogued_oc
     assert all(doc.observations for doc in dataset.documents if doc.status == "parsed")
 
 
-def test_csv_observations_preserve_ids_and_claim_classification(loaded_dataset):
+def test_csv_observations_preserve_ids_and_claim_classification(loaded_dataset: Dataset) -> None:
     dataset = loaded_dataset
     activities = [o for o in dataset.observations if o.kind == "activity_claim"]
     assert len(activities) == len(dataset.activities)
@@ -57,10 +62,11 @@ def test_csv_observations_preserve_ids_and_claim_classification(loaded_dataset):
     assert changes[0].provenance.evidence_id == dataset.identity_changes[0].audit_id
 
 
-def test_registry_contains_every_manifest_activity_and_audit_id(loaded_dataset):
+def test_registry_contains_every_manifest_activity_and_audit_id(loaded_dataset: Dataset) -> None:
     dataset = loaded_dataset
     for document in dataset.documents:
         entry = dataset.registry.get(document.manifest.file_id)
+        assert entry is not None
         assert entry.parsing_status == document.status
         assert entry.captured_at == document.manifest.captured_at
     assert all(dataset.registry.get(row.activity_id) for row in dataset.activities)
@@ -68,10 +74,12 @@ def test_registry_contains_every_manifest_activity_and_audit_id(loaded_dataset):
     assert all(dataset.registry.get(row.user_id) is None for row in dataset.identities)
 
 
-def test_index_queries_do_not_parse_or_read_files_again(loaded_dataset, monkeypatch):
+def test_index_queries_do_not_parse_or_read_files_again(
+    loaded_dataset: Dataset, monkeypatch: pytest.MonkeyPatch
+) -> None:
     index = EvidenceIndex(loaded_dataset.observations)
 
-    def forbidden(*args, **kwargs):
+    def forbidden(*args: object, **kwargs: JsonValue) -> Never:
         raise AssertionError("index lookup attempted file I/O")
 
     monkeypatch.setattr(Path, "open", forbidden)
@@ -79,7 +87,7 @@ def test_index_queries_do_not_parse_or_read_files_again(loaded_dataset, monkeypa
         index.lookup(identifiers=[request.email], audit_at=request.audit_at, expand_traces=True)
 
 
-def test_public_sample_output_matches_strict_schema(dataset_path):
+def test_public_sample_output_matches_strict_schema(dataset_path: Path) -> None:
     references = read_output(dataset_path / "sample_output.csv")
     requests = load_models(
         dataset_path / "sample_deletion_requests.csv", DeletionRequest, "case_id"
@@ -88,12 +96,21 @@ def test_public_sample_output_matches_strict_schema(dataset_path):
     validate_output(references, requests)
 
 
-def test_production_loader_never_reads_sample_answers(dataset_path, monkeypatch):
+def test_production_loader_never_reads_sample_answers(
+    dataset_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     original = Path.open
 
-    def guarded(self, *args, **kwargs):
+    def guarded(
+        self: Path,
+        mode: str = "r",
+        buffering: int = -1,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
+    ) -> object:
         assert self.name not in {"sample_output.csv", "output.csv"}
-        return original(self, *args, **kwargs)
+        return original(self, mode, buffering, encoding, errors, newline)
 
     monkeypatch.setattr(Path, "open", guarded)
     assert len(load_dataset(dataset_path).requests) == 518

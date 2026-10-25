@@ -3,7 +3,7 @@
 from ghost_audit.application.submission.records import SubmissionRecords
 
 
-def test_stable_reference_is_permitted_for_redaction_not_anonymization():
+def test_stable_reference_is_permitted_for_redaction_not_anonymization() -> None:
     direct, stable, subject = SubmissionRecords._exposure(
         {
             "customer_reference": "user_26",

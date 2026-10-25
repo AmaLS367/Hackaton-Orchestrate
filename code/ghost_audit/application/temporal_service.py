@@ -39,7 +39,7 @@ class TemporalStateEngine:
     existing index additionally verifies citation registration and link availability.
     """
 
-    def __init__(self, index: EvidenceIndex | None = None):
+    def __init__(self, index: EvidenceIndex | None = None) -> None:
         self.index = index
         self.by_link = (
             {ObservationLink.of(o): o for o in index.observations} if index is not None else {}
@@ -81,7 +81,9 @@ class TemporalStateEngine:
         results = self._build_histories(histories, unresolved)
         return self._assemble_bundle(case_bundle, results, unresolved)
 
-    def _collect_observations(self, bundle, unresolved):
+    def _collect_observations(
+        self, bundle: CaseEvidenceBundle, unresolved: list[UnresolvedState]
+    ) -> defaultdict[tuple[str, ...], list[TemporalObservation]]:
         histories: defaultdict[tuple[str, ...], list[TemporalObservation]] = defaultdict(list)
         local = {ObservationLink.of(i.observation): i.observation for i in bundle.observations}
         if bundle.intent.decision != "DELETE_INTENT":
@@ -157,7 +159,11 @@ class TemporalStateEngine:
 
         return histories
 
-    def _build_histories(self, histories, unresolved):
+    def _build_histories(
+        self,
+        histories: dict[tuple[str, ...], list[TemporalObservation]],
+        unresolved: list[UnresolvedState],
+    ) -> list[ResourceHistory]:
         results = []
         for key in sorted(histories):
             observations = sorted(histories[key], key=observation_key)
@@ -183,7 +189,12 @@ class TemporalStateEngine:
                 )
         return results
 
-    def _assemble_bundle(self, bundle, results, unresolved):
+    def _assemble_bundle(
+        self,
+        bundle: CaseEvidenceBundle,
+        results: list[ResourceHistory],
+        unresolved: list[UnresolvedState],
+    ) -> CaseStateBundle:
         known = {(h.scope.system_id, h.scope.collection, h.scope.resource_id) for h in results}
         if bundle.intent.decision == "DELETE_INTENT":
             for resource in bundle.resources:
@@ -335,7 +346,9 @@ class TemporalStateEngine:
                 best = item
         return best
 
-    def _snapshot_gaps(self, histories, cutoff):
+    def _snapshot_gaps(
+        self, histories: defaultdict[tuple[str, ...], list[TemporalObservation]], cutoff: datetime
+    ) -> None:
         """Expose missing coverage in known sibling SQL tables, never infer absence.
 
         A schema and grounded sibling row establish the comparison surface only.
@@ -398,7 +411,9 @@ class TemporalStateEngine:
             if gap not in histories[key]:
                 histories[key].append(gap)
 
-    def _coverage_absence(self, histories, cutoff):
+    def _coverage_absence(
+        self, histories: defaultdict[tuple[str, ...], list[TemporalObservation]], cutoff: datetime
+    ) -> None:
         """A confirmed resource never read in a supported state is ABSENT when the latest
         complete listing of its system's collection, available by the cutoff, omits it.
 
@@ -433,6 +448,7 @@ class TemporalStateEngine:
             if best is None or resource in best.resource_ids:
                 continue
             at, surface = best.observed_at, best.surface
+            assert at is not None, "_latest_listing returns only timestamped listings"
             # A linkage-only row seen present at or after the listing outranks the omission.
             if any(
                 f.record_state in {"PRESENT", "REDACTED", "ANONYMIZED"} and f.observed_at >= at

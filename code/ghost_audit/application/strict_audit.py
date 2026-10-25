@@ -2,8 +2,9 @@
 
 from collections import Counter
 from time import perf_counter
+from typing import TypedDict
 
-from ghost_audit.application.abstention_diagnostics import diagnose, summarize
+from ghost_audit.application.abstention_diagnostics import AbstentionSummary, diagnose, summarize
 from ghost_audit.application.evidence_association import EvidenceAssociationService
 from ghost_audit.application.temporal_service import TemporalStateEngine
 from ghost_audit.domain.citation_validation import validate_output
@@ -65,7 +66,46 @@ def predict(dataset: Dataset, index: EvidenceIndex | None = None) -> PredictionR
     )
 
 
-def diagnostics(run: PredictionRun) -> dict:
+class ModelUsage(TypedDict):
+    """Serialized diagnostic fields; reporting never changes prediction state."""
+
+    providers: list[str]
+    models: list[str]
+    calls: int
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    average_tokens_per_request: int
+    estimated_total_cost_usd: int
+    estimated_cost_per_request_usd: int
+
+
+class StrictDiagnostics(TypedDict):
+    """Serialized diagnostic fields; reporting never changes prediction state."""
+
+    cases_processed: int
+    status_counts: dict[str, int]
+    undecidable_cases: list[str]
+    undecidable_count: int
+    cases_with_unresolved_evidence: int
+    unsupported_policy_states: int
+    missing_evidence_states: int
+    policy_violations_by_category: dict[str | None, int]
+    operation_counts: dict[str, int]
+    unresolved_causes: dict[str, int]
+    blocker_causes: dict[str, int]
+    abstention_root_causes: AbstentionSummary
+    validation_errors: list[str]
+    validated_prediction_rows: int
+    full_output_validation: str
+    publishable: bool
+    runtime_seconds: float
+    runtime_scope: str
+    runtime_model_usage: ModelUsage
+    coverage: str
+
+
+def diagnostics(run: PredictionRun) -> StrictDiagnostics:
     """Summarize strict decisions and abstention causes without claiming prediction accuracy."""
     counts: Counter[str] = Counter(case.decision for case in run.cases)
     assessments = [a for c in run.cases for a in c.assessments]

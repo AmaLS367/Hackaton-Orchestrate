@@ -58,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     else:
         run = None
-        summary = None
+        summary: object = None
         if args.run and args.engine == "submission":
             from ghost_audit.application.submission_service import (
                 predict_submission,
@@ -92,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
             predictions = read_output(args.predictions)
         metrics = evaluate(predictions, references)
         failures = failure_analysis(predictions, references, run.cases if run else ())
-        result = {"metrics": asdict(metrics), "failures": failures}
+        result: dict[str, object] = {"metrics": asdict(metrics), "failures": failures}
         if summary is not None:
             result["prediction_summary"] = summary
         if args.json:
@@ -104,8 +104,8 @@ def main(argv: list[str] | None = None) -> int:
                 f"\n- incorrect_evidence_references: {failures['incorrect_evidence_references']}"
             )
             print("Failure investigation groups (nonexclusive):")
-            for key, cases in failures["failure_groups"].items():
-                print(f"- {key}: {len(cases)} ({', '.join(cases)})")
+            for key, case_ids in failures["failure_groups"].items():
+                print(f"- {key}: {len(case_ids)} ({', '.join(case_ids)})")
     return 0
 
 

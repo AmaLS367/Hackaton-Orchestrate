@@ -107,7 +107,7 @@ def _predict(
     ):
         parser.error("prediction artifacts must be outside the read-only dataset directory")
     write_diagnostics(diagnostic_path, run)
-    summary = diagnostics(run)
+    summary: dict[str, object] = dict(diagnostics(run))
     if args.strict:
         try:
             publish(output_path, run, dataset, index)
@@ -130,7 +130,7 @@ def _publish_submission(
     dataset: Dataset,
     index: EvidenceIndex,
     paths: _ArtifactPaths,
-    summary: dict,
+    summary: dict[str, object],
 ) -> int:
     from ghost_audit.application.submission_service import (
         predict_submission,

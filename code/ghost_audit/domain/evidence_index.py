@@ -55,7 +55,7 @@ class EvidenceRegistry:
         activities: Iterable[Activity] = (),
         identity_changes: Iterable[IdentityChange] = (),
         observations: Iterable[Observation] = (),
-    ):
+    ) -> None:
         self.entries: dict[str, EvidenceEntry] = {}
         for document in documents:
             manifest = document.manifest
@@ -122,7 +122,7 @@ class EvidenceIndex:
 
     def __init__(
         self, observations: Iterable[Observation], registry: EvidenceRegistry | None = None
-    ):
+    ) -> None:
         self.observations = tuple(observations)
         self.registry = (
             registry if registry is not None else EvidenceRegistry(observations=self.observations)

@@ -8,6 +8,7 @@ leads for investigation; none is the subject's record until independently linked
 from collections import Counter
 from collections.abc import Iterable
 from datetime import datetime
+from typing import TypedDict
 
 from ghost_audit.application.observation_interpretation import interpret
 from ghost_audit.domain.association_models import (
@@ -372,7 +373,21 @@ def diagnose(
     )
 
 
-def summarize(records: list[AbstentionDiagnostic]) -> dict:
+class AbstentionSummary(TypedDict):
+    """Serialized diagnostic fields; reporting never changes prediction state."""
+
+    abstentions: int
+    earliest_failure_stage: dict[str, int]
+    root_causes: dict[str, int]
+    account_attribution: dict[str, int]
+    cases_with_unlinked_readbacks: int
+    cases_with_late_evidence: int
+    cases_with_missing_policy_conditions: int
+    listing_coverage_of_unresolved_resources: dict[str, int]
+    note: str
+
+
+def summarize(records: list[AbstentionDiagnostic]) -> AbstentionSummary:
     """Aggregate counts. Causes overlap within a case, so cause counts do not sum to cases."""
     return {
         "abstentions": len(records),

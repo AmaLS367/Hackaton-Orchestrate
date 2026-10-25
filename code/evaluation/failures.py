@@ -5,6 +5,35 @@ diagnostics, not authoritative root causes or organizer truth.
 """
 
 from collections import Counter
+from collections.abc import Sequence
+from typing import TypedDict
+
+from ghost_audit.domain.output_contract import OutputRow, OutputStep
+from ghost_audit.domain.policy_models import CaseDecision
+
+
+class FailureCase(TypedDict):
+    """Serialized diagnostic fields; reporting never changes prediction state."""
+
+    case_id: str
+    expected_status: str
+    predicted_status: str
+    missing_steps: list[list[str]]
+    extra_steps: list[list[str]]
+    incorrect_evidence_references: int
+    diagnostic_causes: list[str]
+
+
+class FailureAnalysis(TypedDict):
+    """Serialized diagnostic fields; reporting never changes prediction state."""
+
+    missing_steps: int
+    extra_steps: int
+    incorrect_evidence_references: int
+    failure_groups: dict[str, list[str]]
+    group_interpretation: str
+    cases: list[FailureCase]
+
 
 GROUPS = (
     "Intent classification",
@@ -19,9 +48,16 @@ GROUPS = (
 )
 
 
-def signature(step, *, evidence=True):
+def signature(step: OutputStep, *, evidence: bool = True) -> tuple[str, ...]:
     """Compare official semantic step fields with optional citation inclusion."""
-    data = step.model_dump()
+    data: dict[str, str] = {
+        "phase": step.phase,
+        "system_id": step.system_id,
+        "resource_id": step.resource_id,
+        "operation": step.operation,
+        "state": step.state,
+        "evidence_id": step.evidence_id,
+    }
     return tuple(
         data[k]
         for k in ("phase", "system_id", "resource_id", "operation", "state", "evidence_id")
@@ -29,12 +65,16 @@ def signature(step, *, evidence=True):
     )
 
 
-def failure_analysis(predictions, references, decisions=()):
+def failure_analysis(
+    predictions: list[OutputRow],
+    references: list[OutputRow],
+    decisions: Sequence[CaseDecision] = (),
+) -> FailureAnalysis:
     """Report missing, extra and citation-different sample steps without claiming hidden truth."""
     predicted = {p.case_id: p for p in predictions}
-    decisions = {d.case_id: d for d in decisions}
+    decisions_by_case = {d.case_id: d for d in decisions}
     groups: dict[str, list[str]] = {key: [] for key in GROUPS}
-    cases = []
+    cases: list[FailureCase] = []
     missing_total = extra_total = wrong_evidence_total = 0
     for target in sorted(references, key=lambda r: r.case_id):
         actual = predicted.get(target.case_id)
@@ -57,7 +97,7 @@ def failure_analysis(predictions, references, decisions=()):
         extra_total += sum(extra.values())
         wrong_evidence_total += wrong_evidence
         priority = set()
-        decision = decisions.get(target.case_id)
+        decision = decisions_by_case.get(target.case_id)
         reasons = decision.unresolved + decision.blockers if decision else []
         if (
             actual

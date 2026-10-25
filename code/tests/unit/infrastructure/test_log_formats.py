@@ -5,7 +5,7 @@ from dataclasses import replace
 import pytest
 from ghost_audit.domain.evidence_index import EvidenceIndex
 from ghost_audit.domain.time import parse_timestamp
-from ghost_audit.infrastructure.parsers.structured import parse_text
+from ghost_audit.infrastructure.parsers.structured import ExtractionContext, parse_text
 
 FORMATS = [
     "[INFO] [account_service] [trace-x] {event}: {fields}",
@@ -17,7 +17,9 @@ FORMATS = [
 
 
 @pytest.mark.parametrize("template", FORMATS)
-def test_log_formats_correlate_lookup_without_coercing_values(context, template):
+def test_log_formats_correlate_lookup_without_coercing_values(
+    context: ExtractionContext, template: str
+) -> None:
     lines = [
         "2026-01-02T10:00:00Z "
         + template.format(event="lookup_started", fields='email="Person@Example.Invalid"'),
@@ -43,7 +45,7 @@ def test_log_formats_correlate_lookup_without_coercing_values(context, template)
     assert found[1].provenance.timestamps[0].value == parse_timestamp("2026-01-02T10:01:00Z")
 
 
-def test_timestamp_json_preserves_native_types_and_trace(context):
+def test_timestamp_json_preserves_native_types_and_trace(context: ExtractionContext) -> None:
     text = (
         '2026-01-02T10:00:00Z {"service":"account_service","trace_id":"trace-x",'
         '"event":"lookup_started","email":"person@example.invalid"}\n'
@@ -61,7 +63,7 @@ def test_timestamp_json_preserves_native_types_and_trace(context):
     assert found[1].payload["extra"] == {"key": None}
 
 
-def test_cloud_runtime_nested_fields_and_request_trace(context):
+def test_cloud_runtime_nested_fields_and_request_trace(context: ExtractionContext) -> None:
     text = (
         r"2026-01-02T10:00:00Z requestId=trace-x level=DEBUG function=account_service "
         r'message="event=\"lookup_started\" email=\"person@example.invalid\""'
@@ -75,10 +77,12 @@ def test_cloud_runtime_nested_fields_and_request_trace(context):
     assert len(found) == 2
     assert found[1].resources[0].system_id == "account_service"
     assert found[1].payload["rows"] == "0"
-    assert found[1].payload["message"].startswith('event="lookup_completed"')
+    message = found[1].payload["message"]
+    assert isinstance(message, str)
+    assert message.startswith('event="lookup_completed"')
 
 
-def test_quoted_escaped_unknown_values_and_optional_fields(context):
+def test_quoted_escaped_unknown_values_and_optional_fields(context: ExtractionContext) -> None:
     text = (
         r"2026-01-02T10:00:00Z level=INFO service=account_service resource_id=record_x "
         r'note="say \"hello\"; path C:\\logs" label=\'two words\' empty="" code=001'
@@ -94,7 +98,7 @@ def test_quoted_escaped_unknown_values_and_optional_fields(context):
     assert item.raw_text == text
 
 
-def test_standard_syslog_and_nil_optional_headers(context):
+def test_standard_syslog_and_nil_optional_headers(context: ExtractionContext) -> None:
     text = (
         "<14>1 2026-01-02T10:00:00Z host account_service - - "
         '[meta trace_id="trace-x"] event=lookup_completed resource_id=record_x rows=0'
@@ -106,7 +110,7 @@ def test_standard_syslog_and_nil_optional_headers(context):
     assert item.provenance.timestamps[0].value == parse_timestamp("2026-01-02T10:00:00Z")
 
 
-def test_trace_scope_uses_service_not_record_system(context):
+def test_trace_scope_uses_service_not_record_system(context: ExtractionContext) -> None:
     text = (
         "2026-01-02T10:00:00Z INFO service=collector trace_id=trace-x email=person@example.invalid\n"
         "2026-01-02T10:01:00Z INFO service=collector trace_id=trace-x system=account_service resource_id=record_x\n"
@@ -125,7 +129,7 @@ def test_trace_scope_uses_service_not_record_system(context):
     assert found[1].resources[0].system_id == "account_service"
 
 
-def test_json_fields_cannot_hide_later_log_header_time(context):
+def test_json_fields_cannot_hide_later_log_header_time(context: ExtractionContext) -> None:
     text = (
         '2026-01-05T10:00:00Z {"timestamp":"2026-01-01T00:00:00Z",'
         '"recorded_at":"2026-01-01T00:00:00Z","service":"account_service",'
@@ -138,7 +142,7 @@ def test_json_fields_cannot_hide_later_log_header_time(context):
     assert not EvidenceIndex([item]).lookup(resource_id="record_x", audit_at="2026-01-03T00:00:00Z")
 
 
-def test_bracket_log_without_optional_trace_keeps_resource(context):
+def test_bracket_log_without_optional_trace_keeps_resource(context: ExtractionContext) -> None:
     item = parse_text(
         "2026-01-02T10:00:00Z [INFO] [account_service] "
         "lookup_completed: resource_id=record_x rows=0",

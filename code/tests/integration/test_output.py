@@ -1,19 +1,27 @@
 import csv
 import json
+from pathlib import Path
 
 import pytest
 from ghost_audit.domain.citation_validation import validate_output
 from ghost_audit.domain.evidence_index import EvidenceIndex
-from ghost_audit.domain.output_contract import OPERATIONS, OutputRow, OutputStep, canonical_steps
-from ghost_audit.infrastructure.parsers.structured import parse_json, parse_text
+from ghost_audit.domain.output_contract import (
+    OPERATIONS,
+    DeletionStatus,
+    OutputRow,
+    OutputStep,
+    canonical_steps,
+)
+from ghost_audit.infrastructure.parsers.structured import ExtractionContext, parse_json, parse_text
 from ghost_audit.infrastructure.serialization.csv_output import read_output, write_output
-from pydantic import ValidationError
+from pydantic import JsonValue, ValidationError
 
+from tests.fixtures.contracts import StepChanges
 from tests.fixtures.output_cases import request, step
 
 
 @pytest.mark.parametrize("operation", list(OPERATIONS))
-def test_all_allowed_operation_contracts(operation):
+def test_all_allowed_operation_contracts(operation: str) -> None:
     assert step(operation).operation == operation
 
 
@@ -32,12 +40,12 @@ def test_all_allowed_operation_contracts(operation):
         {"evidence_id": "  "},
     ],
 )
-def test_invalid_output_step_schema(changes):
+def test_invalid_output_step_schema(changes: StepChanges) -> None:
     with pytest.raises(ValidationError):
         step(**changes)
 
 
-def test_canonical_order_follows_official_operations_then_system_resource():
+def test_canonical_order_follows_official_operations_then_system_resource() -> None:
     unsorted = [
         step("VERIFY_RESTORE_BLOCKED"),
         step("DELETE_RECORD", evidence_id=""),
@@ -78,12 +86,12 @@ def test_canonical_order_follows_official_operations_then_system_resource():
         ("COMPLETE", canonical_steps([step(), step()])),
     ],
 )
-def test_invalid_row_status_and_steps(status, steps):
+def test_invalid_row_status_and_steps(status: DeletionStatus, steps: list[OutputStep]) -> None:
     with pytest.raises(ValidationError):
         OutputRow(case_id="fixture_case", deletion_status=status, steps=steps)
 
 
-def test_incomplete_citation_rules_and_valid_three_phase_row():
+def test_incomplete_citation_rules_and_valid_three_phase_row() -> None:
     steps = canonical_steps(
         [
             step("REPORT_REMAINING_RECORD"),
@@ -96,16 +104,18 @@ def test_incomplete_citation_rules_and_valid_three_phase_row():
     invalid = [s.model_dump() for s in steps]
     invalid[-1]["evidence_id"] = "fixture_file"
     with pytest.raises(ValidationError):
-        OutputRow(case_id="fixture_case", deletion_status="INCOMPLETE", steps=invalid)
+        OutputRow.model_validate(
+            {"case_id": "fixture_case", "deletion_status": "INCOMPLETE", "steps": invalid}
+        )
 
 
-def test_unsorted_steps_are_rejected_without_silent_repair():
+def test_unsorted_steps_are_rejected_without_silent_repair() -> None:
     steps = [step("VERIFY_RESTORE_BLOCKED"), step("VERIFY_RECORD_ABSENT", step_no=2)]
     with pytest.raises(ValidationError, match="canonical"):
         OutputRow(case_id="fixture_case", deletion_status="COMPLETE", steps=steps)
 
 
-def test_output_roundtrip_is_byte_deterministic_and_exact_schema(tmp_path):
+def test_output_roundtrip_is_byte_deterministic_and_exact_schema(tmp_path: Path) -> None:
     row = OutputRow(case_id="fixture_case", deletion_status="COMPLETE", steps=[step()])
     path = tmp_path / "output.csv"
     write_output(path, [row], [request()])
@@ -119,7 +129,7 @@ def test_output_roundtrip_is_byte_deterministic_and_exact_schema(tmp_path):
     assert set(serialized[0]) == set(OutputStep.model_fields)
 
 
-def test_failed_validation_does_not_replace_existing_output(tmp_path):
+def test_failed_validation_does_not_replace_existing_output(tmp_path: Path) -> None:
     path = tmp_path / "output.csv"
     path.write_text("existing", encoding="utf-8")
     with pytest.raises(ValueError):
@@ -127,14 +137,14 @@ def test_failed_validation_does_not_replace_existing_output(tmp_path):
     assert path.read_text() == "existing"
 
 
-def test_duplicate_and_missing_cases_are_rejected():
+def test_duplicate_and_missing_cases_are_rejected() -> None:
     row = OutputRow(case_id="fixture_case", deletion_status="NOT_APPLICABLE", steps=[])
     for rows in ([], [row, row]):
         with pytest.raises(ValueError):
             validate_output(rows, [request()])
 
 
-def test_unknown_and_future_citations(context):
+def test_unknown_and_future_citations(context: ExtractionContext) -> None:
     index = EvidenceIndex(
         parse_json({"resource_id": "record_x", "observed_at": "2026-01-05T00:00:00Z"}, context)
     )
@@ -146,7 +156,9 @@ def test_unknown_and_future_citations(context):
         validate_output([other], [request()], index)
 
 
-def test_future_nested_resource_cannot_use_earlier_envelope_as_citation(context):
+def test_future_nested_resource_cannot_use_earlier_envelope_as_citation(
+    context: ExtractionContext,
+) -> None:
     items = parse_json(
         {
             "captured_at": "2026-01-02T00:00:00Z",
@@ -167,14 +179,16 @@ def test_future_nested_resource_cannot_use_earlier_envelope_as_citation(context)
         {"resource_id": "record_x", "system": "other_service"},
     ],
 )
-def test_citation_exclusively_about_another_resource_is_rejected(context, payload):
+def test_citation_exclusively_about_another_resource_is_rejected(
+    context: ExtractionContext, payload: dict[str, JsonValue]
+) -> None:
     row = OutputRow(case_id="fixture_case", deletion_status="COMPLETE", steps=[step()])
     with pytest.raises(ValueError, match="unrelated"):
         validate_output([row], [request()], EvidenceIndex(parse_json(payload, context)))
 
 
 @pytest.mark.parametrize("fields", ["rows=0", "result=NOT_FOUND", "http_status=404"])
-def test_negative_lookup_needs_no_physical_record(context, fields):
+def test_negative_lookup_needs_no_physical_record(context: ExtractionContext, fields: str) -> None:
     items = parse_text(
         "2026-01-02T10:00:00Z INFO service=account_service "
         f"event=lookup_completed resource_id=record_x {fields}",
@@ -186,7 +200,7 @@ def test_negative_lookup_needs_no_physical_record(context, fields):
     assert checks[0].state_support == "unverified"
 
 
-def test_trace_citation_and_future_resource_link(context):
+def test_trace_citation_and_future_resource_link(context: ExtractionContext) -> None:
     # Separate citation IDs in the same grounded file/service trace.
     started = parse_text(
         "2026-01-02T10:00:00Z INFO service=account_service "
@@ -212,7 +226,7 @@ def test_trace_citation_and_future_resource_link(context):
     assert checks[0].resource_support == "linked"
 
 
-def test_generic_text_does_not_silently_claim_semantic_support(context):
+def test_generic_text_does_not_silently_claim_semantic_support(context: ExtractionContext) -> None:
     index = EvidenceIndex(parse_text("An uninterpreted business artifact.", context))
     row = OutputRow(case_id="fixture_case", deletion_status="COMPLETE", steps=[step()])
     checks = validate_output([row], [request()], index)
@@ -220,7 +234,7 @@ def test_generic_text_does_not_silently_claim_semantic_support(context):
     assert checks[0].state_support == "unverified"
 
 
-def test_schema_validation_cannot_be_bypassed_with_mutated_step_list():
+def test_schema_validation_cannot_be_bypassed_with_mutated_step_list() -> None:
     row = OutputRow(case_id="fixture_case", deletion_status="COMPLETE", steps=[step()])
     row.steps.append(step(step_no=3, resource_id="other"))
     with pytest.raises(ValueError):
@@ -228,7 +242,7 @@ def test_schema_validation_cannot_be_bypassed_with_mutated_step_list():
 
 
 @pytest.mark.parametrize("payload", ["{}", "null", '[{"step_no": "1"}]', "not-json"])
-def test_read_output_rejects_non_array_or_malformed_steps(tmp_path, payload):
+def test_read_output_rejects_non_array_or_malformed_steps(tmp_path: Path, payload: str) -> None:
     path = tmp_path / "output.csv"
     with path.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.writer(stream)

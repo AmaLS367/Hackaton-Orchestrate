@@ -17,13 +17,13 @@ FORBIDDEN_DOMAIN_IMPORTS = {
 }
 
 
-def dependency_graph():
+def dependency_graph() -> dict[str, set[str]]:
     sources = {
         "ghost_audit." + ".".join(path.relative_to(PACKAGE).with_suffix("").parts): path
         for path in PACKAGE.rglob("*.py")
         if path.name != "__init__.py"
     }
-    graph = {module: set() for module in sources}
+    graph: dict[str, set[str]] = {module: set() for module in sources}
     for module, path in sources.items():
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if isinstance(node, ast.ImportFrom) and node.module in sources:
@@ -33,11 +33,11 @@ def dependency_graph():
     return graph
 
 
-def test_package_imports_are_acyclic():
+def test_package_imports_are_acyclic() -> None:
     graph = dependency_graph()
     complete = set()
 
-    def visit(module, stack):
+    def visit(module: str, stack: list[str]) -> None:
         assert module not in stack, "Import cycle: " + " -> ".join([*stack, module])
         if module in complete:
             return
@@ -49,7 +49,7 @@ def test_package_imports_are_acyclic():
         visit(module, [])
 
 
-def test_domain_has_no_io_or_outer_layer_dependencies():
+def test_domain_has_no_io_or_outer_layer_dependencies() -> None:
     for path in (PACKAGE / "domain").rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         imports = []
@@ -72,7 +72,7 @@ def test_domain_has_no_io_or_outer_layer_dependencies():
         ), path
 
 
-def test_application_never_imports_file_adapters_or_cli():
+def test_application_never_imports_file_adapters_or_cli() -> None:
     graph = dependency_graph()
     for module, dependencies in graph.items():
         if module.startswith("ghost_audit.application."):

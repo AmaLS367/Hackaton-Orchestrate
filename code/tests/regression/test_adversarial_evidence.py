@@ -1,25 +1,33 @@
 """Original adversarial cases: ownership, policy, replicas, coverage, and OCR."""
 
+from collections.abc import Sequence
+from pathlib import Path
+
 import pytest
 from ghost_audit.domain.citation_validation import omitted_from_listing
 from ghost_audit.domain.evidence_index import EvidenceIndex
-from ghost_audit.domain.models import EvidenceFile
+from ghost_audit.domain.models import (
+    DeletionRule,
+    EvidenceFile,
+)
 from ghost_audit.domain.snapshot_coverage import coverage_surfaces
 from ghost_audit.infrastructure.parsers.documents import document_observations, parse_document
 from ghost_audit.infrastructure.parsers.image_ocr import image_panels, image_text, panels_from_tsv
 from ghost_audit.infrastructure.parsers.structured import parse_json
+from pydantic import JsonValue
 
 from tests.fixtures.audit_cases import EARLY, FUTURE, LATE, absent, dataset, decision, observation
 from tests.fixtures.evidence_cases import ctx, snapshot
 
 
-def test_new_primary_read_does_not_erase_older_surviving_replica(rules):
+def test_new_primary_read_does_not_erase_older_surviving_replica(rules: list[DeletionRule]) -> None:
     replica = observation(
         file="replica", replica_scope="read_replica", email="subject@example.test"
     )
     primary = absent(file="primary", at=LATE, replica_scope="primary")
     case = decision(rules, replica, primary)
     assert case.decision == "INCOMPLETE"
+    assert case.prediction is not None
     finding = case.prediction.steps[0]
     assert finding.operation == "REPORT_REMAINING_RECORD"
     assert finding.evidence_id == "replica"
@@ -27,7 +35,7 @@ def test_new_primary_read_does_not_erase_older_surviving_replica(rules):
     assert any(a.observed_state == "PRESENT" for a in case.assessments)
 
 
-def test_new_tombstone_cannot_retype_surviving_profile_replica(rules):
+def test_new_tombstone_cannot_retype_surviving_profile_replica(rules: list[DeletionRule]) -> None:
     replica = observation(
         file="replica", replica_scope="read_replica", email="subject@example.test"
     )
@@ -65,8 +73,8 @@ def test_new_tombstone_cannot_retype_surviving_profile_replica(rules):
     ],
 )
 def test_missing_rule_condition_never_means_compliance_or_destructive_permission(
-    rules, category, system, collection
-):
+    rules: list[DeletionRule], category: str, system: str, collection: str
+) -> None:
     record = observation(category=category, system=system, collection=collection)
     case = decision(rules, absent(resource="deleted", file="deleted"), record)
     assert case.prediction is None
@@ -74,7 +82,9 @@ def test_missing_rule_condition_never_means_compliance_or_destructive_permission
     assert not any(a.compliance == "VIOLATION" for a in case.assessments)
 
 
-def test_current_contradictory_condition_cannot_reuse_old_true_flag(rules):
+def test_current_contradictory_condition_cannot_reuse_old_true_flag(
+    rules: list[DeletionRule],
+) -> None:
     old = observation(
         category="SUPPORT_ATTACHMENT",
         system="support_platform",
@@ -105,7 +115,9 @@ def test_current_contradictory_condition_cannot_reuse_old_true_flag(rules):
         {"complete_listing": True, "filter": {"region": "eu"}},
     ],
 )
-def test_incomplete_or_filtered_listing_cannot_prove_absence(metadata):
+def test_incomplete_or_filtered_listing_cannot_prove_absence(
+    metadata: dict[str, JsonValue],
+) -> None:
     rows = parse_json(
         {
             "snapshots": [
@@ -122,7 +134,9 @@ def test_incomplete_or_filtered_listing_cannot_prove_absence(metadata):
     assert coverage_surfaces(rows) == {}
 
 
-def test_complete_listing_cannot_verify_wrong_or_unknown_collection(rules):
+def test_complete_listing_cannot_verify_wrong_or_unknown_collection(
+    rules: list[DeletionRule],
+) -> None:
     listing = snapshot(
         "listing", EARLY, [("account_service", "customer_profiles", EARLY, [])], complete=True
     )
@@ -137,7 +151,9 @@ def test_complete_listing_cannot_verify_wrong_or_unknown_collection(rules):
     )
 
 
-def test_tombstone_partial_identifier_projection_does_not_prove_redaction(rules):
+def test_tombstone_partial_identifier_projection_does_not_prove_redaction(
+    rules: list[DeletionRule],
+) -> None:
     row = observation(
         category="ACCOUNT_TOMBSTONE",
         collection="deleted_customer_references",
@@ -149,24 +165,28 @@ def test_tombstone_partial_identifier_projection_does_not_prove_redaction(rules)
     assert "redaction_field_coverage_insufficient" in case.unresolved
 
 
-def test_post_audit_clean_replica_does_not_change_supported_violation(rules):
+def test_post_audit_clean_replica_does_not_change_supported_violation(
+    rules: list[DeletionRule],
+) -> None:
     case = decision(
         rules,
         observation(replica_scope="replica"),
         absent(file="future", at=FUTURE, replica_scope="replica"),
     )
     assert case.decision == "INCOMPLETE"
+    assert case.prediction is not None
     assert all(s.evidence_id != "future" for s in case.prediction.steps)
 
 
-def test_potential_resource_never_becomes_a_future_verification(rules):
+def test_potential_resource_never_becomes_a_future_verification(rules: list[DeletionRule]) -> None:
     foreign = observation("foreign", file="foreign", user_id="unresolved_other_subject")
     case = decision(rules, observation(), foreign)
     assert case.decision == "INCOMPLETE"
+    assert case.prediction is not None
     assert all(s.resource_id != "foreign" for s in case.prediction.steps)
 
 
-def tsv(words):
+def tsv(words: Sequence[tuple[int, int, str]]) -> str:
     header = "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
     page = "1\t1\t0\t0\t0\t0\t0\t0\t1800\t1100\t-1\t\n"
     return (
@@ -179,7 +199,7 @@ def tsv(words):
     )
 
 
-def test_spatial_ocr_keeps_panel_fields_and_excludes_neighbour_table():
+def test_spatial_ocr_keeps_panel_fields_and_excludes_neighbour_table() -> None:
     text = tsv(
         [
             (1442, 334, "export_700"),
@@ -198,7 +218,9 @@ def test_spatial_ocr_keeps_panel_fields_and_excludes_neighbour_table():
     assert "other@example.test" not in panel and "export_701" not in panel
 
 
-def test_ocr_exact_identity_still_needs_independent_resource_link(rules):
+def test_ocr_exact_identity_still_needs_independent_resource_link(
+    rules: list[DeletionRule],
+) -> None:
     image = ctx("image", EARLY)
     o = document_observations(
         "export_700 subject@example.test",
@@ -218,8 +240,8 @@ def test_ocr_exact_identity_still_needs_independent_resource_link(rules):
 
 
 def test_alternate_ocr_recovers_observed_text_without_repairing_identifier(
-    rules, tmp_path, monkeypatch
-):
+    rules: list[DeletionRule], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     (tmp_path / "evidence").mkdir()
     (tmp_path / "evidence/image.png").write_bytes(b"fixture image bytes")
     monkeypatch.setattr(
@@ -230,8 +252,13 @@ def test_alternate_ocr_recovers_observed_text_without_repairing_identifier(
         "ghost_audit.infrastructure.parsers.documents.image_panels",
         lambda *a: [("export_700", "export_700\nOwner subject@example.test\nSize 18 MB")],
     )
-    manifest = EvidenceFile(
-        file_id="image", file_path="evidence/image.png", origin="export_service", captured_at=EARLY
+    manifest = EvidenceFile.model_validate(
+        {
+            "file_id": "image",
+            "file_path": "evidence/image.png",
+            "origin": "export_service",
+            "captured_at": EARLY,
+        }
     )
     doc = parse_document(tmp_path, manifest, {"export_700": ("export_service", "export_700", None)})
     assert any("exarnple" in o.raw_text for o in doc.observations)
@@ -246,10 +273,11 @@ def test_alternate_ocr_recovers_observed_text_without_repairing_identifier(
     )
     case = decision(rules, *doc.observations, anchor)
     assert case.decision == "INCOMPLETE"
+    assert case.prediction is not None
     assert case.prediction.steps[0].evidence_id == "image"
 
 
-def test_catalog_does_not_override_foreign_subject_shown_in_ocr(rules):
+def test_catalog_does_not_override_foreign_subject_shown_in_ocr(rules: list[DeletionRule]) -> None:
     image = document_observations(
         "export_700 other@example.test",
         ctx("image", EARLY),
@@ -274,8 +302,8 @@ def test_catalog_does_not_override_foreign_subject_shown_in_ocr(rules):
     ],
 )
 def test_missing_safety_field_cannot_be_inferred_from_record_existence(
-    rules, category, system, collection
-):
+    rules: list[DeletionRule], category: str, system: str, collection: str
+) -> None:
     case = decision(
         rules,
         absent(resource="deleted", file="deleted"),
@@ -286,7 +314,9 @@ def test_missing_safety_field_cannot_be_inferred_from_record_existence(
 
 
 @pytest.mark.parametrize("disabled", [True, False])
-def test_ocr_disabled_or_missing_binary_is_portable(tmp_path, monkeypatch, disabled):
+def test_ocr_disabled_or_missing_binary_is_portable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, disabled: bool
+) -> None:
     if disabled:
         monkeypatch.setenv("GHOST_AUDIT_OCR", "0")
     else:

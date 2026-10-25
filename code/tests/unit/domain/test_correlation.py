@@ -1,19 +1,35 @@
+from collections.abc import Sequence
 from dataclasses import replace
 from itertools import permutations
 
 import pytest
+from ghost_audit.domain.association_models import AssociatedObservation, AssociatedResource
 from ghost_audit.domain.correlation import EvidenceCorrelator
 from ghost_audit.domain.evidence_index import EvidenceIndex, EvidenceRegistry
 from ghost_audit.domain.identity import IdentityResolver
-from ghost_audit.domain.models import EvidenceDocument, EvidenceFile, ResourceRef
+from ghost_audit.domain.models import (
+    EvidenceDocument,
+    EvidenceFile,
+    Identity,
+    IdentityChange,
+    Observation,
+    ResourceRef,
+)
 from ghost_audit.domain.time import parse_timestamp
 from ghost_audit.infrastructure.parsers.sql_snapshot import parse_sql
-from ghost_audit.infrastructure.parsers.structured import parse_json, parse_text
+from ghost_audit.infrastructure.parsers.structured import ExtractionContext, parse_json, parse_text
+from pydantic import JsonValue
 
 from tests.fixtures.identity_cases import T1, T2, T3, T4, change, snapshot
 
 
-def correlate(items, *, identities=None, changes=(), cutoff=T4):
+def correlate(
+    items: Sequence[Observation],
+    *,
+    identities: list[Identity] | None = None,
+    changes: Sequence[IdentityChange] = (),
+    cutoff: str = T4,
+) -> tuple[list[AssociatedObservation], list[AssociatedResource], list[str]]:
     resolver = IdentityResolver(
         identities if identities is not None else [snapshot(at=T1)], changes
     )
@@ -24,11 +40,11 @@ def correlate(items, *, identities=None, changes=(), cutoff=T4):
     return result
 
 
-def confirmed(items):
+def confirmed(items: list[AssociatedObservation]) -> list[AssociatedObservation]:
     return [x for x in items if x.association == "CONFIRMED"]
 
 
-def test_direct_id_and_historical_email_and_phone_hash(context):
+def test_direct_id_and_historical_email_and_phone_hash(context: ExtractionContext) -> None:
     items = parse_json(
         [
             {"resource_id": "record_a", "user_id": "user_one"},
@@ -53,7 +69,7 @@ def test_direct_id_and_historical_email_and_phone_hash(context):
     assert link.supporting_observations[0].locator == "$[1]"
 
 
-def test_trace_start_and_result_keep_both_locators(context):
+def test_trace_start_and_result_keep_both_locators(context: ExtractionContext) -> None:
     items = parse_text(
         "2026-01-02T10:00:00Z service=store trace_id=abc event=start email=new@example.invalid\n"
         "2026-01-02T10:01:00Z service=store trace_id=abc event=result resource_id=record_a rows=0",
@@ -68,7 +84,7 @@ def test_trace_start_and_result_keep_both_locators(context):
     assert result[1].observation.payload["rows"] == "0"
 
 
-def test_trace_is_scoped_to_file_and_service(context):
+def test_trace_is_scoped_to_file_and_service(context: ExtractionContext) -> None:
     first = parse_text(
         "2026-01-02T10:00:00Z service=store trace_id=same email=new@example.invalid", context
     )
@@ -89,7 +105,7 @@ def test_trace_is_scoped_to_file_and_service(context):
     assert resources == []
 
 
-def test_trace_reuse_across_users_is_potential(context):
+def test_trace_reuse_across_users_is_potential(context: ExtractionContext) -> None:
     items = parse_text(
         "2026-01-02T10:00:00Z service=store trace_id=same email=new@example.invalid\n"
         "2026-01-02T10:00:00Z service=store trace_id=same email=other@example.invalid\n"
@@ -109,7 +125,7 @@ def test_trace_reuse_across_users_is_potential(context):
     assert not resources
 
 
-def test_json_rows_are_separate_no_file_wide_matching(context):
+def test_json_rows_are_separate_no_file_wide_matching(context: ExtractionContext) -> None:
     items = parse_json(
         {
             "system": "store",
@@ -127,14 +143,16 @@ def test_json_rows_are_separate_no_file_wide_matching(context):
     assert len(result) == 1
 
 
-def test_email_substring_is_not_a_match(context):
+def test_email_substring_is_not_a_match(context: ExtractionContext) -> None:
     items = parse_text(
         "Contact anew@example.invalid or new@example.invalid.other for help.", context
     )
     assert correlate(items)[0] == []
 
 
-def test_mixed_subject_record_is_potential_and_never_seeds_resources(context):
+def test_mixed_subject_record_is_potential_and_never_seeds_resources(
+    context: ExtractionContext,
+) -> None:
     items = parse_json(
         [
             {
@@ -152,7 +170,9 @@ def test_mixed_subject_record_is_potential_and_never_seeds_resources(context):
     assert issues == ["unsupported_subject_reference"]
 
 
-def test_unknown_second_email_prevents_document_cooccurrence_proof(context):
+def test_unknown_second_email_prevents_document_cooccurrence_proof(
+    context: ExtractionContext,
+) -> None:
     items = parse_json(
         {
             "resource_id": "mixed",
@@ -166,7 +186,7 @@ def test_unknown_second_email_prevents_document_cooccurrence_proof(context):
     assert not resources
 
 
-def test_shared_phone_cannot_merge_users(context):
+def test_shared_phone_cannot_merge_users(context: ExtractionContext) -> None:
     items = parse_json({"resource_id": "ambiguous", "phone": "+12025550100"}, context)
     result, resources, _ = correlate(
         items, identities=[snapshot(at=T1), snapshot("user_two", "other@example.invalid", T1)]
@@ -175,7 +195,7 @@ def test_shared_phone_cannot_merge_users(context):
     assert not resources
 
 
-def test_name_only_and_system_only_are_unrelated(context):
+def test_name_only_and_system_only_are_unrelated(context: ExtractionContext) -> None:
     items = parse_json(
         {
             "system": "store",
@@ -189,7 +209,9 @@ def test_name_only_and_system_only_are_unrelated(context):
     assert correlate(items)[0] == []
 
 
-def test_future_manifest_and_nested_record_and_unknown_time_excluded(context):
+def test_future_manifest_and_nested_record_and_unknown_time_excluded(
+    context: ExtractionContext,
+) -> None:
     future = replace(
         context, manifest=context.manifest.model_copy(update={"captured_at": parse_timestamp(T4)})
     )
@@ -204,7 +226,7 @@ def test_future_manifest_and_nested_record_and_unknown_time_excluded(context):
     assert correlate(items, cutoff=T3)[0] == []
 
 
-def test_future_trace_anchor_cannot_link_earlier_result(context):
+def test_future_trace_anchor_cannot_link_earlier_result(context: ExtractionContext) -> None:
     items = parse_text(
         "2026-01-04T00:00:00Z service=store trace_id=same email=new@example.invalid\n"
         "2026-01-02T00:00:00Z service=store trace_id=same resource_id=record_a",
@@ -213,7 +235,7 @@ def test_future_trace_anchor_cannot_link_earlier_result(context):
     assert correlate(items, cutoff=T3)[0] == []
 
 
-def test_resource_versions_replicas_and_metadata_preserved(context):
+def test_resource_versions_replicas_and_metadata_preserved(context: ExtractionContext) -> None:
     scoped = replace(
         context, system="store", collection="profiles", physical_table="primary_replica"
     )
@@ -243,7 +265,7 @@ def test_resource_versions_replicas_and_metadata_preserved(context):
     assert any(link.method == "RESOURCE" for link in result[1].links)
 
 
-def test_resource_id_collision_across_systems_is_excluded(context):
+def test_resource_id_collision_across_systems_is_excluded(context: ExtractionContext) -> None:
     first = parse_json(
         {"resource_id": "same", "user_id": "user_one"}, replace(context, system="store")
     )
@@ -253,7 +275,7 @@ def test_resource_id_collision_across_systems_is_excluded(context):
     assert len(correlate([*first, *other])[0]) == 1
 
 
-def test_unknown_resource_system_is_only_potential(context):
+def test_unknown_resource_system_is_only_potential(context: ExtractionContext) -> None:
     first = parse_json(
         {"resource_id": "same", "user_id": "user_one"}, replace(context, system="store")
     )
@@ -262,7 +284,7 @@ def test_unknown_resource_system_is_only_potential(context):
     assert result[-1].association == "POTENTIAL"
 
 
-def test_resource_with_foreign_subject_does_not_merge(context):
+def test_resource_with_foreign_subject_does_not_merge(context: ExtractionContext) -> None:
     items = parse_json(
         [
             {"resource_id": "same", "email": "new@example.invalid"},
@@ -275,7 +297,9 @@ def test_resource_with_foreign_subject_does_not_merge(context):
     assert result[-1].association == "POTENTIAL"
 
 
-def test_explicit_references_are_one_hop_and_resource_expansion_is_terminal(context):
+def test_explicit_references_are_one_hop_and_resource_expansion_is_terminal(
+    context: ExtractionContext,
+) -> None:
     items = parse_json(
         [
             {"resource_id": "a", "user_id": "user_one", "target_resource_id": "b"},
@@ -291,7 +315,7 @@ def test_explicit_references_are_one_hop_and_resource_expansion_is_terminal(cont
     assert len(result) == 2
 
 
-def test_sql_decoded_records_and_replica_provenance(context):
+def test_sql_decoded_records_and_replica_provenance(context: ExtractionContext) -> None:
     sql = """CREATE TABLE replica(resource_id TEXT, origin_system TEXT, collection_name TEXT, record_json TEXT);
     INSERT INTO replica VALUES ('record_a','store','profiles','{"email":"new@example.invalid"}');"""
     result, resources, _ = correlate(parse_sql(sql, context))
@@ -299,21 +323,29 @@ def test_sql_decoded_records_and_replica_provenance(context):
     assert resources[0].reference == ResourceRef(
         resource_id="record_a", system_id="store", collection="profiles", physical_table="replica"
     )
-    assert result[0].observation.payload["decoded_record"]["email"] == "new@example.invalid"
+    decoded = result[0].observation.payload["decoded_record"]
+    assert isinstance(decoded, dict)
+    assert decoded["email"] == "new@example.invalid"
 
 
-def test_ambiguous_identity_has_no_confirmed_links(context):
+def test_ambiguous_identity_has_no_confirmed_links(context: ExtractionContext) -> None:
     items = parse_json({"resource_id": "record_a", "email": "new@example.invalid"}, context)
     result, resources, issues = correlate(
         items, identities=[snapshot(at=T1), snapshot("user_two", at=T1)]
     )
-    assert result == resources == []
+    assert result == []
+    assert resources == []
     assert issues == ["identity_not_uniquely_resolved"]
 
 
-def test_registry_keeps_deferred_images_without_interpreted_facts():
-    manifest = EvidenceFile(
-        file_id="image", file_path="evidence/images/image.png", origin="screen", captured_at=T1
+def test_registry_keeps_deferred_images_without_interpreted_facts() -> None:
+    manifest = EvidenceFile.model_validate(
+        {
+            "file_id": "image",
+            "file_path": "evidence/images/image.png",
+            "origin": "screen",
+            "captured_at": T1,
+        }
     )
     registry = EvidenceRegistry(
         documents=[
@@ -328,14 +360,15 @@ def test_registry_keeps_deferred_images_without_interpreted_facts():
         )[0]
         == []
     )
-    assert registry.get("image").parsing_status == "deferred"
+    entry = registry.get("image")
+    assert entry is not None and entry.parsing_status == "deferred"
 
 
 @pytest.mark.parametrize("field", ["lookup_key", "match_key", "subject_key"])
 @pytest.mark.parametrize("foreign", ["unknown@example.invalid", "user_unknown"])
 def test_unknown_subject_contaminates_trace_without_erasing_direct_evidence(
-    context, field, foreign
-):
+    context: ExtractionContext, field: str, foreign: str
+) -> None:
     scoped = replace(context, system="store", collection="profiles")
     items = parse_json(
         [
@@ -360,7 +393,9 @@ def test_unknown_subject_contaminates_trace_without_erasing_direct_evidence(
 
 
 @pytest.mark.parametrize("known_foreign", [False, True])
-def test_mixed_free_text_subjects_do_not_seed_confirmed_links(context, known_foreign):
+def test_mixed_free_text_subjects_do_not_seed_confirmed_links(
+    context: ExtractionContext, known_foreign: bool
+) -> None:
     identities = [snapshot(at=T1)]
     if known_foreign:
         identities.append(
@@ -380,7 +415,7 @@ def test_mixed_free_text_subjects_do_not_seed_confirmed_links(context, known_for
     assert not resources
 
 
-def test_owned_aliases_in_lookup_fields_keep_trace_safe(context):
+def test_owned_aliases_in_lookup_fields_keep_trace_safe(context: ExtractionContext) -> None:
     items = parse_json(
         [
             {"trace_id": "t1", "lookup_key": "old@example.invalid"},
@@ -397,7 +432,9 @@ def test_owned_aliases_in_lookup_fields_keep_trace_safe(context):
     assert not issues
 
 
-def test_future_trace_conflict_does_not_contaminate_visible_trace(context):
+def test_future_trace_conflict_does_not_contaminate_visible_trace(
+    context: ExtractionContext,
+) -> None:
     items = parse_json(
         [
             {"trace_id": "t1", "lookup_key": "new@example.invalid", "updated_at": T1},
@@ -411,7 +448,9 @@ def test_future_trace_conflict_does_not_contaminate_visible_trace(context):
     assert not issues
 
 
-def test_resource_join_rejects_explicitly_different_logical_collection(context):
+def test_resource_join_rejects_explicitly_different_logical_collection(
+    context: ExtractionContext,
+) -> None:
     first = parse_json(
         {"resource_id": "123", "user_id": "user_one"},
         replace(context, system="store", collection="profiles"),
@@ -429,8 +468,8 @@ def test_resource_join_rejects_explicitly_different_logical_collection(context):
     [("profiles", None), (None, None), (None, "profiles"), ("profiles", "profiles_replica")],
 )
 def test_one_system_resource_id_joins_when_no_collection_contradicts(
-    context, anchor_collection, collection
-):
+    context: ExtractionContext, anchor_collection: None | str, collection: None | str
+) -> None:
     # Phase 5: an export row without a collection (or a replica table of the same family)
     # names the same record of the same system; only a different collection blocks it.
     first = parse_json(
@@ -444,7 +483,7 @@ def test_one_system_resource_id_joins_when_no_collection_contradicts(
     assert len(confirmed(result)) == 2
 
 
-def test_independent_cross_collection_evidence_is_preserved(context):
+def test_independent_cross_collection_evidence_is_preserved(context: ExtractionContext) -> None:
     items = parse_json(
         [
             {"resource_id": "123", "collection": "profiles", "user_id": "user_one"},
@@ -459,7 +498,9 @@ def test_independent_cross_collection_evidence_is_preserved(context):
     "cutoff, expected",
     [(T2, {"$.mine", "$.before"}), (T3, {"$.mine", "$.before"}), (T4, {"$.mine", "$.before"})],
 )
-def test_resource_reassignment_stops_ownership_propagation(context, cutoff, expected):
+def test_resource_reassignment_stops_ownership_propagation(
+    context: ExtractionContext, cutoff: str, expected: set[str]
+) -> None:
     scoped = replace(
         context,
         system="store",
@@ -497,7 +538,9 @@ def test_resource_reassignment_stops_ownership_propagation(context, cutoff, expe
         ({"relationship_direction": "unknown"}, None),
     ],
 )
-def test_related_resource_system_requires_explicit_direction(context, fields, expected_system):
+def test_related_resource_system_requires_explicit_direction(
+    context: ExtractionContext, fields: dict[str, JsonValue], expected_system: None | str
+) -> None:
     anchor = parse_json(
         {
             "resource_id": "anchor",
@@ -526,7 +569,7 @@ def test_related_resource_system_requires_explicit_direction(context, fields, ex
             assert item.links[0].supporting_observations[0].locator == "$"
 
 
-def test_explicit_reference_needs_collection_when_id_collides(context):
+def test_explicit_reference_needs_collection_when_id_collides(context: ExtractionContext) -> None:
     items = parse_json(
         {
             "resource_id": "anchor",
@@ -553,7 +596,9 @@ def test_explicit_reference_needs_collection_when_id_collides(context):
     }
 
 
-def test_repeating_anchor_resource_id_is_not_an_explicit_cross_collection_link(context):
+def test_repeating_anchor_resource_id_is_not_an_explicit_cross_collection_link(
+    context: ExtractionContext,
+) -> None:
     items = parse_json(
         {
             "resource_id": "123",
@@ -571,7 +616,9 @@ def test_repeating_anchor_resource_id_is_not_an_explicit_cross_collection_link(c
     assert {r.reference.collection for r in resources} == {"profiles"}
 
 
-def test_observation_permutations_preserve_associations_and_provenance(context):
+def test_observation_permutations_preserve_associations_and_provenance(
+    context: ExtractionContext,
+) -> None:
     items = parse_json(
         [
             {"trace_id": "t1", "lookup_key": "new@example.invalid", "resource_id": "a"},
@@ -586,7 +633,9 @@ def test_observation_permutations_preserve_associations_and_provenance(context):
         assert correlate(permuted) == expected
 
 
-def test_structural_json_keys_and_integrity_seals_are_not_subjects(context):
+def test_structural_json_keys_and_integrity_seals_are_not_subjects(
+    context: ExtractionContext,
+) -> None:
     items = parse_json(
         {
             "resource_id": "mine",
@@ -601,7 +650,9 @@ def test_structural_json_keys_and_integrity_seals_are_not_subjects(context):
     assert {r.reference.resource_id for r in resources} == {"mine"}
 
 
-def test_serialized_subject_field_names_are_not_subject_identifiers(context):
+def test_serialized_subject_field_names_are_not_subject_identifiers(
+    context: ExtractionContext,
+) -> None:
     items = parse_json(
         {
             "resource_id": "mine",
@@ -613,7 +664,9 @@ def test_serialized_subject_field_names_are_not_subject_identifiers(context):
     assert len(confirmed(correlate(items)[0])) == 1
 
 
-def test_structured_record_type_and_resource_names_are_not_extra_subjects(context):
+def test_structured_record_type_and_resource_names_are_not_extra_subjects(
+    context: ExtractionContext,
+) -> None:
     items = parse_json(
         {
             "resource_id": "user_record",
@@ -627,7 +680,7 @@ def test_structured_record_type_and_resource_names_are_not_extra_subjects(contex
     assert len(confirmed(correlate(items)[0])) == 1
 
 
-def test_mixed_subjects_inside_one_lookup_field_are_ambiguous(context):
+def test_mixed_subjects_inside_one_lookup_field_are_ambiguous(context: ExtractionContext) -> None:
     items = parse_json(
         {"resource_id": "mixed", "lookup_key": "new@example.invalid unknown@example.invalid"},
         context,
@@ -637,7 +690,7 @@ def test_mixed_subjects_inside_one_lookup_field_are_ambiguous(context):
     assert not resources
 
 
-def test_future_resource_cannot_explain_unknown_trace_selector(context):
+def test_future_resource_cannot_explain_unknown_trace_selector(context: ExtractionContext) -> None:
     items = parse_json(
         [
             {"trace_id": "t1", "lookup_key": "new@example.invalid"},
@@ -652,7 +705,9 @@ def test_future_resource_cannot_explain_unknown_trace_selector(context):
     assert not resources
 
 
-def test_resource_can_return_to_original_owner_without_crossing_foreign_interval(context):
+def test_resource_can_return_to_original_owner_without_crossing_foreign_interval(
+    context: ExtractionContext,
+) -> None:
     scoped = replace(
         context,
         system="store",

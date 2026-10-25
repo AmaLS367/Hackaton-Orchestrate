@@ -3,7 +3,7 @@
 from collections import Counter
 from dataclasses import asdict, dataclass
 
-from ghost_audit.domain.output_contract import OutputRow
+from ghost_audit.domain.output_contract import OutputRow, OutputStep
 
 
 @dataclass(frozen=True)
@@ -23,9 +23,10 @@ class EvaluationMetrics:
         return "\n".join(f"- {key}: {value}" for key, value in asdict(self).items())
 
 
-def _step_signature(step):
+def _step_signature(step: OutputStep) -> tuple[tuple[str, str | int], ...]:
     # Step accuracy ignores position; sequence accuracy below includes it.
-    return tuple((key, value) for key, value in step.model_dump().items() if key != "step_no")
+    fields: dict[str, str | int] = step.model_dump()
+    return tuple((key, value) for key, value in fields.items() if key != "step_no")
 
 
 def evaluate(predictions: list[OutputRow], references: list[OutputRow]) -> EvaluationMetrics:
@@ -64,7 +65,7 @@ def evaluate(predictions: list[OutputRow], references: list[OutputRow]) -> Evalu
             exact_hits += actual == target
     count = len(expected)
 
-    def ratio(hits, total):
+    def ratio(hits: int, total: int) -> float:
         # No steps is perfect only when every reference case was supplied.
         return (
             hits / total

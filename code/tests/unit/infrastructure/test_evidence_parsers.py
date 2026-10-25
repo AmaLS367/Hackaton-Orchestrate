@@ -2,21 +2,30 @@ import hashlib
 import json
 import sqlite3
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from ghost_audit.domain.evidence_index import EvidenceIndex
-from ghost_audit.domain.models import IdentityChange
+from ghost_audit.domain.models import (
+    IdentityChange,
+)
 from ghost_audit.domain.time import parse_timestamp
 from ghost_audit.infrastructure.parsers.documents import evidence_path, parse_document
 from ghost_audit.infrastructure.parsers.sql_snapshot import parse_sql
-from ghost_audit.infrastructure.parsers.structured import parse_csv, parse_json, parse_text
+from ghost_audit.infrastructure.parsers.structured import (
+    ExtractionContext,
+    parse_csv,
+    parse_json,
+    parse_text,
+)
 from ghost_audit.infrastructure.serialization.csv_records import load_models
+from pydantic import JsonValue
 from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 
-def test_nested_json_scopes_and_identifiers(context):
-    payload = {
+def test_nested_json_scopes_and_identifiers(context: ExtractionContext) -> None:
+    payload: JsonValue = {
         "exported_at": "2026-01-02T10:00:00Z",
         "snapshots": [
             {
@@ -57,13 +66,15 @@ def test_nested_json_scopes_and_identifiers(context):
 
 
 @pytest.mark.parametrize("field", ["expires_at", "retention_until", "retained_until"])
-def test_business_deadline_does_not_hide_available_evidence(context, field):
+def test_business_deadline_does_not_hide_available_evidence(
+    context: ExtractionContext, field: str
+) -> None:
     items = parse_json({"resource_id": "export_x", field: "2027-01-01T00:00:00Z"}, context)
     assert items[0].available_at == context.manifest.captured_at
     assert items[0].provenance.timestamps[0].role == "business"
 
 
-def test_service_export_system_is_grounded_in_enclosing_key(context):
+def test_service_export_system_is_grounded_in_enclosing_key(context: ExtractionContext) -> None:
     observations = parse_json(
         {
             "service_exports": {
@@ -80,16 +91,18 @@ def test_service_export_system_is_grounded_in_enclosing_key(context):
         context,
     )
     assert observations[0].resources[0].system_id == "account_service"
-    assert observations[0].payload["profile"]["email"] == "fixture@example.invalid"
+    profile = observations[0].payload["profile"]
+    assert isinstance(profile, dict)
+    assert profile["email"] == "fixture@example.invalid"
 
 
-def test_no_system_inferred_from_resource_prefix_or_origin(context):
+def test_no_system_inferred_from_resource_prefix_or_origin(context: ExtractionContext) -> None:
     item = parse_json({"resource_id": "account_x"}, context)[0]
     assert item.resources[0].system_id is None
     assert item.system_ids == []
 
 
-def test_log_trace_links_keep_file_and_time_boundaries(context):
+def test_log_trace_links_keep_file_and_time_boundaries(context: ExtractionContext) -> None:
     lines = "\n".join(
         [
             '2026-01-02T10:00:00Z [INFO] [account_service] [trace-x] lookup_started: lookup_key="Person@Example.Invalid"',
@@ -113,13 +126,13 @@ def test_log_trace_links_keep_file_and_time_boundaries(context):
     assert not index.lookup(identifiers=["person@example.invalid"], audit_at="2026-01-01T00:00:00Z")
 
 
-def test_phone_normalization_preserves_original_payload(context):
+def test_phone_normalization_preserves_original_payload(context: ExtractionContext) -> None:
     original = "+1 (202) 555-0142"
     index = EvidenceIndex(parse_json({"resource_id": "record_x", "phone": original}, context))
     assert index.lookup(identifiers=["+12025550142"])[0].payload["phone"] == original
 
 
-def test_text_handover_preserves_header_time_and_line_location(context):
+def test_text_handover_preserves_header_time_and_line_location(context: ExtractionContext) -> None:
     text = (
         "Snapshot: 2026-01-05T00:00:00Z\n\n"
         "- 2026-01-02T10:00:00Z | account_service | account_x | USER_PROFILE | NOT_FOUND | user_fixture"
@@ -130,7 +143,7 @@ def test_text_handover_preserves_header_time_and_line_location(context):
     assert items[-1].available_at == parse_timestamp("2026-01-05T00:00:00Z")
 
 
-def test_sql_replicas_empty_tables_and_embedded_json(context):
+def test_sql_replicas_empty_tables_and_embedded_json(context: ExtractionContext) -> None:
     sql = """-- Captured at: 2026-01-02T09:00:00Z
 CREATE TABLE customer_data_primary (resource_id TEXT PRIMARY KEY, origin_system TEXT, record_json TEXT CHECK(json_valid(record_json)), updated_at TEXT);
 CREATE TABLE customer_data_replica (resource_id TEXT PRIMARY KEY, origin_system TEXT, record_json TEXT, updated_at TEXT);
@@ -143,12 +156,14 @@ INSERT INTO customer_data_replica VALUES ('record_x', 'account_service', '{"emai
     record = next(item for item in items if item.resources)
     assert record.resources[0].collection == "customer_data_replica"
     assert record.resources[0].system_id == "account_service"
-    assert record.payload["decoded_record"]["email"] == "fixture@example.invalid"
+    decoded = record.payload["decoded_record"]
+    assert isinstance(decoded, dict)
+    assert decoded["email"] == "fixture@example.invalid"
     assert record.available_at == parse_timestamp("2026-01-04T00:00:00Z")
     assert record in EvidenceIndex(items).lookup(identifiers=["fixture@example.invalid"])
 
 
-def test_sql_snapshot_scope_does_not_mix_other_systems(context):
+def test_sql_snapshot_scope_does_not_mix_other_systems(context: ExtractionContext) -> None:
     sql = """CREATE TABLE snapshot_scope (origin_system TEXT, captured_at TEXT);
 INSERT INTO snapshot_scope VALUES ('account_service','2026-01-02T08:00:00Z');
 INSERT INTO snapshot_scope VALUES ('search_service','2026-02-01T08:00:00Z');
@@ -159,7 +174,9 @@ INSERT INTO customer_profiles VALUES ('account_x','fixture@example.invalid');"""
 
 
 @pytest.mark.parametrize("logical_location", ["column", "decoded"])
-def test_sql_preserves_logical_collection_and_physical_replica(context, logical_location):
+def test_sql_preserves_logical_collection_and_physical_replica(
+    context: ExtractionContext, logical_location: str
+) -> None:
     collection_column = ", collection_name TEXT" if logical_location == "column" else ""
     collection_value = ", 'customer_profiles'" if logical_location == "column" else ""
     decoded = {
@@ -186,7 +203,7 @@ INSERT INTO customer_data_replica VALUES
     }
 
 
-def test_sql_decoded_resource_keeps_origin_snapshot_scope(context):
+def test_sql_decoded_resource_keeps_origin_snapshot_scope(context: ExtractionContext) -> None:
     sql = """CREATE TABLE snapshot_scope (origin_system TEXT, captured_at TEXT);
 INSERT INTO snapshot_scope VALUES ('account_service','2026-01-05T00:00:00Z');
 CREATE TABLE generic_replica (record_json TEXT);
@@ -208,12 +225,12 @@ INSERT INTO generic_replica VALUES
         "CREATE VIRTUAL TABLE external USING fts5(content);",
     ],
 )
-def test_sql_rejects_unsafe_commands(statement, context):
+def test_sql_rejects_unsafe_commands(statement: str, context: ExtractionContext) -> None:
     with pytest.raises(sqlite3.Error):
         parse_sql(statement, context)
 
 
-def test_csv_utf8_quoted_fields_and_provenance_fields(tmp_path):
+def test_csv_utf8_quoted_fields_and_provenance_fields(tmp_path: Path) -> None:
     path = tmp_path / "changes.csv"
     path.write_text(
         "audit_id,user_id,event_time,field_name,old_value,new_value\n"
@@ -225,7 +242,7 @@ def test_csv_utf8_quoted_fields_and_provenance_fields(tmp_path):
     assert rows[0].new_value == "Fictional, 新"
 
 
-def test_csv_evidence_preserves_timestamps_and_resource_scope(context):
+def test_csv_evidence_preserves_timestamps_and_resource_scope(context: ExtractionContext) -> None:
     text = (
         "resource_id,system,observed_at,email\n"
         "record_x,account_service,2026-01-02T10:00:00+02:00,fixture@example.invalid\n"
@@ -237,7 +254,9 @@ def test_csv_evidence_preserves_timestamps_and_resource_scope(context):
 
 
 @pytest.mark.parametrize("text", ["", "id,id\nx,y\n", "a,b\nx\n"])
-def test_csv_evidence_rejects_invalid_headers_and_rows(context, text):
+def test_csv_evidence_rejects_invalid_headers_and_rows(
+    context: ExtractionContext, text: str
+) -> None:
     with pytest.raises(ValueError):
         parse_csv(text, context)
 
@@ -250,14 +269,14 @@ def test_csv_evidence_rejects_invalid_headers_and_rows(context, text):
         "audit_id,user_id,event_time,field_name,old_value,new_value\naudit_x,user_x,bad,email,x,y,extra\n",
     ],
 )
-def test_csv_rejects_wrong_schema_or_width(tmp_path, content):
+def test_csv_rejects_wrong_schema_or_width(tmp_path: Path, content: str) -> None:
     path = tmp_path / "invalid.csv"
     path.write_text(content, encoding="utf-8")
     with pytest.raises(ValueError):
         load_models(path, IdentityChange, "audit_id")
 
 
-def test_csv_rejects_duplicate_ids(tmp_path):
+def test_csv_rejects_duplicate_ids(tmp_path: Path) -> None:
     path = tmp_path / "duplicates.csv"
     row = "audit_x,user_x,2026-01-01T00:00:00Z,email,x,y\n"
     path.write_text(
@@ -270,12 +289,14 @@ def test_csv_rejects_duplicate_ids(tmp_path):
 @pytest.mark.parametrize(
     "relative", ["../private.json", "evidence/../../private.json", "user_identities.csv"]
 )
-def test_manifest_path_cannot_escape_evidence(tmp_path, relative):
+def test_manifest_path_cannot_escape_evidence(tmp_path: Path, relative: str) -> None:
     with pytest.raises(ValueError):
         evidence_path(tmp_path, relative)
 
 
-def test_document_digest_and_json_source_location(tmp_path, context):
+def test_document_digest_and_json_source_location(
+    tmp_path: Path, context: ExtractionContext
+) -> None:
     path = tmp_path / context.manifest.file_path
     path.parent.mkdir(parents=True)
     content = b'{"resource_id":"fixture_x","email":"fixture@example.invalid"}'
@@ -286,7 +307,7 @@ def test_document_digest_and_json_source_location(tmp_path, context):
     assert document.observations[0].provenance.locator == "$"
 
 
-def test_images_are_explicitly_deferred(tmp_path, context):
+def test_images_are_explicitly_deferred(tmp_path: Path, context: ExtractionContext) -> None:
     manifest = context.manifest.model_copy(update={"file_path": "evidence/images/fixture.png"})
     path = tmp_path / manifest.file_path
     path.parent.mkdir(parents=True)
@@ -297,7 +318,9 @@ def test_images_are_explicitly_deferred(tmp_path, context):
     assert document.notes
 
 
-def test_pdf_text_extraction_and_page_provenance(tmp_path, context):
+def test_pdf_text_extraction_and_page_provenance(
+    tmp_path: Path, context: ExtractionContext
+) -> None:
     manifest = context.manifest.model_copy(update={"file_path": "evidence/documents/fixture.pdf"})
     path = tmp_path / manifest.file_path
     path.parent.mkdir(parents=True)
@@ -323,7 +346,7 @@ def test_pdf_text_extraction_and_page_provenance(tmp_path, context):
     assert EvidenceIndex(document.observations).lookup(identifiers=["email@example.invalid"])
 
 
-def test_scanned_pdf_is_deferred(tmp_path, context):
+def test_scanned_pdf_is_deferred(tmp_path: Path, context: ExtractionContext) -> None:
     manifest = context.manifest.model_copy(update={"file_path": "evidence/documents/empty.pdf"})
     path = tmp_path / manifest.file_path
     path.parent.mkdir(parents=True)

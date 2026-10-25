@@ -5,7 +5,7 @@ from ghost_audit.domain.time import parse_timestamp
 from tests.fixtures.identity_cases import T1, T2, T3, T4, change, snapshot
 
 
-def test_current_email_casefold_and_unknown():
+def test_current_email_casefold_and_unknown() -> None:
     resolver = IdentityResolver([snapshot()], [])
     assert resolver.resolve(" NEW@EXAMPLE.INVALID ", T4).user_id == "user_one"
     unknown = resolver.resolve("nobody@example.invalid", T4)
@@ -14,7 +14,7 @@ def test_current_email_casefold_and_unknown():
     assert not unknown.candidates
 
 
-def test_multiple_email_changes_keep_origins_and_chronology():
+def test_multiple_email_changes_keep_origins_and_chronology() -> None:
     changes = [
         change("audit_b", "middle@example.invalid", "new@example.invalid", at=T2),
         change("audit_a", "old@example.invalid", "middle@example.invalid", at=T1),
@@ -42,7 +42,7 @@ def test_multiple_email_changes_keep_origins_and_chronology():
     assert all(a.active_at_cutoff for a in emails if a.normalized_value == "new@example.invalid")
 
 
-def test_historical_phone_and_hash_are_exact_and_not_derived():
+def test_historical_phone_and_hash_are_exact_and_not_derived() -> None:
     resolver = IdentityResolver(
         [snapshot()],
         [
@@ -64,7 +64,7 @@ def test_historical_phone_and_hash_are_exact_and_not_derived():
     }
 
 
-def test_future_snapshot_and_changes_never_establish_earlier_aliases():
+def test_future_snapshot_and_changes_never_establish_earlier_aliases() -> None:
     resolver = IdentityResolver(
         [snapshot(at=T4)],
         [
@@ -85,14 +85,14 @@ def test_future_snapshot_and_changes_never_establish_earlier_aliases():
     } == {"middle@example.invalid"}
 
 
-def test_future_old_value_is_not_backdated():
+def test_future_old_value_is_not_backdated() -> None:
     resolver = IdentityResolver(
         [snapshot(at=T4)], [change("future", "old@example.invalid", "new@example.invalid", at=T3)]
     )
     assert resolver.resolve("old@example.invalid", T2).status == "UNRESOLVED"
 
 
-def test_colliding_email_returns_all_candidates_without_merging():
+def test_colliding_email_returns_all_candidates_without_merging() -> None:
     resolver = IdentityResolver([snapshot(), snapshot("user_two", "NEW@example.invalid")], [])
     result = resolver.resolve("new@example.invalid", T4)
     assert result.status == "AMBIGUOUS"
@@ -101,7 +101,7 @@ def test_colliding_email_returns_all_candidates_without_merging():
     assert result.aliases == []
 
 
-def test_shared_phone_warns_but_unique_email_still_resolves():
+def test_shared_phone_warns_but_unique_email_still_resolves() -> None:
     resolver = IdentityResolver([snapshot(), snapshot("user_two", "other@example.invalid")], [])
     result = resolver.resolve("new@example.invalid", T4)
     assert result.status == "RESOLVED"
@@ -109,13 +109,13 @@ def test_shared_phone_warns_but_unique_email_still_resolves():
     assert "shared_alias:email_hash" in result.ambiguities
 
 
-def test_names_are_not_authoritative():
+def test_names_are_not_authoritative() -> None:
     resolver = IdentityResolver([snapshot()], [])
     assert resolver.owners("Fictional Person", T4) == set()
     assert resolver.resolve("Fictional Person", T4).status == "UNRESOLVED"
 
 
-def test_equal_timestamp_conflict_and_discontinuous_history():
+def test_equal_timestamp_conflict_and_discontinuous_history() -> None:
     resolver = IdentityResolver(
         [],
         [
@@ -130,6 +130,6 @@ def test_equal_timestamp_conflict_and_discontinuous_history():
     assert all(a.active_at_cutoff is None for a in result.aliases if a.field_name == "email")
 
 
-def test_email_string_requires_cutoff():
+def test_email_string_requires_cutoff() -> None:
     with pytest.raises(ValueError, match="audit_at"):
         IdentityResolver([snapshot()], []).resolve("new@example.invalid")

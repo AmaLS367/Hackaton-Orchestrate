@@ -13,7 +13,9 @@ from ghost_audit.infrastructure.parsers.structured import ExtractionContext, tim
 # Schema adapters map named tables, never resource-ID prefixes or case families.
 
 
-def _authorize(action, arg1, arg2, database, trigger):
+def _authorize(
+    action: int, arg1: str | None, arg2: str | None, database: str | None, trigger: str | None
+) -> int:
     allowed = {
         sqlite3.SQLITE_CREATE_TABLE,
         sqlite3.SQLITE_CREATE_INDEX,
@@ -49,7 +51,7 @@ def parse_sql(text: str, context: ExtractionContext) -> list[Observation]:
         connection.set_authorizer(_authorize)
         budget = 0
 
-        def progress():
+        def progress() -> int:
             nonlocal budget
             budget += 1
             return int(budget > 10_000)  # At most ten million virtual-machine instructions.

@@ -1,5 +1,6 @@
 import pytest
 from ghost_audit.domain.intent import IntentClassifier
+from ghost_audit.domain.models import DeletionRequest
 
 
 @pytest.mark.parametrize(
@@ -27,7 +28,7 @@ from ghost_audit.domain.intent import IntentClassifier
         "이 이메일 주소에 연결된 계정의 영구 삭제를 요청합니다.",
     ],
 )
-def test_authorized_deletion(text):
+def test_authorized_deletion(text: str) -> None:
     result = IntentClassifier().classify(text)
     assert result.decision == "DELETE_INTENT"
     assert result.confidence == "HIGH"
@@ -70,7 +71,7 @@ def test_authorized_deletion(text):
         "This is an information request, not a request to erase it.",
     ],
 )
-def test_no_deletion(text):
+def test_no_deletion(text: str) -> None:
     assert IntentClassifier().classify(text).decision == "NO_DELETE_INTENT"
 
 
@@ -91,24 +92,25 @@ def test_no_deletion(text):
         "Delete the old attachment.",
     ],
 )
-def test_uncertain_is_preserved(text):
+def test_uncertain_is_preserved(text: str) -> None:
     result = IntentClassifier().classify(text)
     assert result.decision == "UNCERTAIN"
     assert result.fallback_recommended
     assert result.confidence == "LOW"
 
 
-def test_reported_status_does_not_authorize_deletion():
-    from ghost_audit.domain.models import DeletionRequest
+def test_reported_status_does_not_authorize_deletion() -> None:
 
-    request = DeletionRequest(
-        case_id="x",
-        email="p@example.invalid",
-        requested_at="2026-01-01T00:00:00Z",
-        reported_at="2026-01-02T00:00:00Z",
-        audit_at="2026-01-03T00:00:00Z",
-        reported_status="COMPLETE",
-        request_text="Export my data please.",
+    request = DeletionRequest.model_validate(
+        {
+            "case_id": "x",
+            "email": "p@example.invalid",
+            "requested_at": "2026-01-01T00:00:00Z",
+            "reported_at": "2026-01-02T00:00:00Z",
+            "audit_at": "2026-01-03T00:00:00Z",
+            "reported_status": "COMPLETE",
+            "request_text": "Export my data please.",
+        }
     )
     assert IntentClassifier().classify(request).decision == "NO_DELETE_INTENT"
 
@@ -133,7 +135,7 @@ def test_reported_status_does_not_authorize_deletion():
         ("I did not ask for marketing emails. Please delete my account.", "DELETE_INTENT"),
     ],
 )
-def test_negation_and_future_authorization(text, expected):
+def test_negation_and_future_authorization(text: str, expected: str) -> None:
     assert IntentClassifier().classify(text).decision == expected
 
 
@@ -154,7 +156,7 @@ def test_negation_and_future_authorization(text, expected):
         "My personal data has already been erased.",
     ],
 )
-def test_historical_deletion_verification(history, residual):
+def test_historical_deletion_verification(history: str, residual: str) -> None:
     assert (
         IntentClassifier().classify(f"{history} Please check for {residual}.").decision
         == "DELETE_INTENT"
@@ -173,7 +175,7 @@ def test_historical_deletion_verification(history, residual):
         "My account was deleted last month. Do not check for leftover backups.",
     ],
 )
-def test_generic_or_unauthorized_history_does_not_authorize_audit(text):
+def test_generic_or_unauthorized_history_does_not_authorize_audit(text: str) -> None:
     assert IntentClassifier().classify(text).decision != "DELETE_INTENT"
 
 
@@ -192,5 +194,7 @@ def test_generic_or_unauthorized_history_does_not_authorize_audit(text):
         ),
     ],
 )
-def test_personal_residual_audit_is_distinct_from_policy_verification(text, expected):
+def test_personal_residual_audit_is_distinct_from_policy_verification(
+    text: str, expected: str
+) -> None:
     assert IntentClassifier().classify(text).decision == expected

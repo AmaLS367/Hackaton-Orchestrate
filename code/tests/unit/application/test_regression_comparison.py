@@ -5,10 +5,10 @@ import json
 from pathlib import Path
 
 import pytest
-from regression import capture, compare, stable
+from regression import Snapshot, capture, compare, stable
 
 
-def snapshot():
+def snapshot() -> Snapshot:
     return {
         "output_sha256": "synthetic-hash",
         "counts": {"COMPLETE": 1},
@@ -50,7 +50,7 @@ def snapshot():
     }
 
 
-def stored_comparison(tmp_path, before, after):
+def stored_comparison(tmp_path: Path, before: Snapshot, after: Snapshot) -> list[dict[str, object]]:
     for name, value in (("before", before), ("after", after)):
         directory = tmp_path / name
         directory.mkdir()
@@ -58,14 +58,16 @@ def stored_comparison(tmp_path, before, after):
     return compare(tmp_path / "before", tmp_path / "after")
 
 
-def test_identical_snapshots_have_no_differences(tmp_path):
+def test_identical_snapshots_have_no_differences(tmp_path: Path) -> None:
     assert stored_comparison(tmp_path, snapshot(), snapshot()) == []
 
 
 @pytest.mark.parametrize(
     "field", ["step_no", "phase", "system_id", "resource_id", "operation", "state", "evidence_id"]
 )
-def test_each_official_step_field_is_compared_even_with_unchanged_hash(tmp_path, field):
+def test_each_official_step_field_is_compared_even_with_unchanged_hash(
+    tmp_path: Path, field: str
+) -> None:
     before = snapshot()
     after = copy.deepcopy(before)
     after["cases"][0]["steps_json"][0][field] = "changed"
@@ -74,7 +76,7 @@ def test_each_official_step_field_is_compared_even_with_unchanged_hash(tmp_path,
     assert changes[0]["before"] != changes[0]["after"]
 
 
-def test_step_order_is_part_of_the_contract(tmp_path):
+def test_step_order_is_part_of_the_contract(tmp_path: Path) -> None:
     before = snapshot()
     after = copy.deepcopy(before)
     after["cases"][0]["steps_json"].reverse()
@@ -84,7 +86,9 @@ def test_step_order_is_part_of_the_contract(tmp_path):
 @pytest.mark.parametrize(
     "change", ["status", "strict", "abstention", "confidence", "sample", "input", "missing_case"]
 )
-def test_decision_confidence_input_and_metric_drift_are_reported(tmp_path, change):
+def test_decision_confidence_input_and_metric_drift_are_reported(
+    tmp_path: Path, change: str
+) -> None:
     before = snapshot()
     after = copy.deepcopy(before)
     if change == "status":
@@ -96,7 +100,9 @@ def test_decision_confidence_input_and_metric_drift_are_reported(tmp_path, chang
     elif change == "confidence":
         after["submission"]["cases"][0]["low_confidence"] = ["first"]
     elif change == "sample":
-        after["commands"]["sample_evaluation"]["stdout"]["accuracy"] = 0.5
+        stdout = after["commands"]["sample_evaluation"]["stdout"]
+        assert isinstance(stdout, dict)
+        stdout["accuracy"] = 0.5
     elif change == "input":
         after["dataset_sha256"]["synthetic.csv"] = "different"
     else:
@@ -104,7 +110,7 @@ def test_decision_confidence_input_and_metric_drift_are_reported(tmp_path, chang
     assert stored_comparison(tmp_path, before, after)
 
 
-def test_only_elapsed_times_and_artifact_paths_are_normalized(tmp_path):
+def test_only_elapsed_times_and_artifact_paths_are_normalized(tmp_path: Path) -> None:
     payload = {
         "runtime_seconds": 1,
         "case": {"elapsed_seconds": 2, "audit_at": "fixed-cutoff"},
@@ -117,7 +123,7 @@ def test_only_elapsed_times_and_artifact_paths_are_normalized(tmp_path):
     }
 
 
-def test_completed_capture_cannot_be_overwritten(tmp_path):
+def test_completed_capture_cannot_be_overwritten(tmp_path: Path) -> None:
     (tmp_path / "snapshot.json").write_text("protected", encoding="utf-8")
     with pytest.raises(ValueError, match="refusing to overwrite"):
         capture(tmp_path)

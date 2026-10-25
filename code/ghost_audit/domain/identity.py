@@ -29,7 +29,7 @@ FIELDS: tuple[Literal["email", "phone", "email_hash", "name"], ...] = (
 class IdentityResolver:
     """Resolve exact identity facts only when available by the requested cutoff."""
 
-    def __init__(self, identities: Iterable[Identity], changes: Iterable[IdentityChange]):
+    def __init__(self, identities: Iterable[Identity], changes: Iterable[IdentityChange]) -> None:
         self.snapshots = {row.user_id: row for row in identities}
         self.changes: defaultdict[str, list[IdentityChange]] = defaultdict(list)
         # Ownership facts carry the time they became available, including old_value.

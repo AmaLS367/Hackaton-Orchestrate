@@ -6,6 +6,8 @@ through the real modules; the last builds participant-style files end to end.
 
 import json
 import shutil
+from collections.abc import Sequence
+from pathlib import Path
 
 import pytest
 from ghost_audit.application.evidence_association import EvidenceAssociationService
@@ -22,10 +24,18 @@ from ghost_audit.domain.association_models import (
 )
 from ghost_audit.domain.dataset import Dataset
 from ghost_audit.domain.evidence_index import EvidenceIndex
-from ghost_audit.domain.models import Activity, EvidenceFile, Identity, IdentityChange
+from ghost_audit.domain.models import (
+    Activity,
+    DeletionRule,
+    EvidenceFile,
+    Identity,
+    IdentityChange,
+    Observation,
+)
 from ghost_audit.domain.observation_clocks import known_at, time_profile
 from ghost_audit.domain.policy import PolicyEvaluator
 from ghost_audit.domain.snapshot_coverage import coverage_surfaces
+from ghost_audit.domain.temporal_models import CaseStateBundle, TemporalObservation
 from ghost_audit.domain.time import parse_timestamp
 from ghost_audit.infrastructure.ingestion.dataset_loader import load_dataset
 from ghost_audit.infrastructure.parsers.documents import catalog_references, document_observations
@@ -34,6 +44,7 @@ from ghost_audit.infrastructure.parsers.structured import ExtractionContext, par
 from ghost_audit.infrastructure.serialization.prediction_artifacts import (
     write_abstention_diagnostics,
 )
+from pydantic import JsonValue
 
 from tests.fixtures.evidence_cases import (
     AFTER,
@@ -52,7 +63,9 @@ from tests.fixtures.evidence_cases import (
 from tests.fixtures.paths import DATASET_ROOT
 
 
-def search_row(file, at, email, rid="search_1", observed=None):
+def search_row(
+    file: str, at: str, email: str, rid: str = "search_1", observed: str | None = None
+) -> list[Observation]:
     return snapshot(
         file,
         at,
@@ -67,14 +80,16 @@ def search_row(file, at, email, rid="search_1", observed=None):
     )
 
 
-def associations(bundle):
+def associations(bundle: CaseEvidenceBundle) -> dict[tuple[str, str], str]:
     return {
         (o.observation.provenance.evidence_id, o.observation.provenance.locator): o.association
         for o in bundle.observations
     }
 
 
-def with_identities(data, identities, changes):
+def with_identities(
+    data: Dataset, identities: list[Identity], changes: list[IdentityChange]
+) -> Dataset:
     return Dataset(
         data.requests,
         identities,
@@ -87,7 +102,7 @@ def with_identities(data, identities, changes):
     )
 
 
-def confirmed(o):
+def confirmed(o: Observation) -> AssociatedObservation:
     return AssociatedObservation(
         observation=o,
         association="CONFIRMED",
@@ -100,42 +115,48 @@ def confirmed(o):
     )
 
 
-def fact(o):
+def fact(o: Observation) -> TemporalObservation:
     return interpret(confirmed(o), o.resources[0])
 
 
-def state_bundle(observations, cutoff=CUTOFF):
+def state_bundle(observations: list[Observation], cutoff: str = CUTOFF) -> CaseStateBundle:
     """Temporal reconstruction over synthetic CONFIRMED links for user_a."""
-    evidence = CaseEvidenceBundle(
-        case_id="synthetic",
-        audit_at=cutoff,
-        intent=IntentResult(
-            decision="DELETE_INTENT",
-            reason_id="fixture",
-            confidence="HIGH",
-            fallback_recommended=False,
-        ),
-        identity=ResolvedIdentity(status="RESOLVED", user_id="user_a"),
-        user_id="user_a",
-        aliases=[],
-        observations=[confirmed(o) for o in observations if o.resources],
-        resources=[],
-        supporting_evidence_ids=[],
-        deferred_evidence=[],
-        ambiguities=[],
-        limitations=[],
-        unrelated_observation_count=0,
+    evidence = CaseEvidenceBundle.model_validate(
+        {
+            "case_id": "synthetic",
+            "audit_at": cutoff,
+            "intent": IntentResult.model_validate(
+                {
+                    "decision": "DELETE_INTENT",
+                    "reason_id": "fixture",
+                    "confidence": "HIGH",
+                    "fallback_recommended": False,
+                }
+            ),
+            "identity": ResolvedIdentity(status="RESOLVED", user_id="user_a"),
+            "user_id": "user_a",
+            "aliases": [],
+            "observations": [confirmed(o) for o in observations if o.resources],
+            "resources": [],
+            "supporting_evidence_ids": [],
+            "deferred_evidence": [],
+            "ambiguities": [],
+            "limitations": [],
+            "unrelated_observation_count": 0,
+        }
     )
     return TemporalStateEngine(EvidenceIndex(observations)).analyze(evidence)
 
 
-def trace(file, lines, captured=LISTING):
+def trace(file: str, lines: Sequence[str], captured: str = LISTING) -> list[Observation]:
     context = ExtractionContext(
-        EvidenceFile(
-            file_id=file,
-            file_path=f"evidence/logs/{file}.log",
-            origin="service_readback_logs",
-            captured_at=captured,
+        EvidenceFile.model_validate(
+            {
+                "file_id": file,
+                "file_path": f"evidence/logs/{file}.log",
+                "origin": "service_readback_logs",
+                "captured_at": captured,
+            }
         ),
         "b" * 64,
     )
@@ -143,26 +164,30 @@ def trace(file, lines, captured=LISTING):
 
 
 # 1. A catalogue link made after the audit cannot reveal an earlier document's resource.
-def test_late_catalog_link_does_not_reveal_earlier_document_reference():
+def test_late_catalog_link_does_not_reveal_earlier_document_reference() -> None:
     linked_at = "2026-03-10T20:00:00Z"
     acts = [
-        Activity(
-            activity_id="cat_1",
-            event_time=linked_at,
-            event_type="LINK_RESOURCE_IDENTITY",
-            source_system="data_catalog",
-            target_system="export_service",
-            resource_id="export_1",
-            reported_result="SUCCESS",
-            details="Data catalog linked export_1 (NST-1) to a@example.test.",
+        Activity.model_validate(
+            {
+                "activity_id": "cat_1",
+                "event_time": linked_at,
+                "event_type": "LINK_RESOURCE_IDENTITY",
+                "source_system": "data_catalog",
+                "target_system": "export_service",
+                "resource_id": "export_1",
+                "reported_result": "SUCCESS",
+                "details": "Data catalog linked export_1 (NST-1) to a@example.test.",
+            }
         )
     ]
     document = ExtractionContext(
-        EvidenceFile(
-            file_id="pdf",
-            file_path="evidence/documents/s.pdf",
-            origin="history",
-            captured_at="2026-03-10T06:00:00Z",
+        EvidenceFile.model_validate(
+            {
+                "file_id": "pdf",
+                "file_path": "evidence/documents/s.pdf",
+                "origin": "history",
+                "captured_at": "2026-03-10T06:00:00Z",
+            }
         ),
         "f" * 64,
     )
@@ -170,6 +195,8 @@ def test_late_catalog_link_does_not_reveal_earlier_document_reference():
         "Statement NST-1\na@example.test", document, catalog_references(acts), catalogued_only=False
     )
     profile = time_profile(o)
+    assert profile["captured_at"] is not None and profile["known_at"] is not None
+    assert profile["observed_at"] is not None
     assert (
         profile["captured_at"]
         < parse_timestamp(CUTOFF)
@@ -182,53 +209,65 @@ def test_late_catalog_link_does_not_reveal_earlier_document_reference():
 
 
 # 2. A late document with an earlier source clock is later evidence.
-def test_late_document_with_earlier_source_time_establishes_no_ownership(rules):
+def test_late_document_with_earlier_source_time_establishes_no_ownership(
+    rules: list[DeletionRule],
+) -> None:
     a = request("case_a", "a@example.test")
     late = search_row("late", AFTER, "a@example.test", observed=LISTING)
     o = next(o for o in late if o.resources)
     profile = time_profile(o)
+    assert profile["captured_at"] is not None and profile["known_at"] is not None
+    assert profile["observed_at"] is not None
     assert profile["observed_at"] < a.audit_at < profile["known_at"] == known_at(o)
     bundle = EvidenceAssociationService(build(rules, [a], late)).analyze(a)
     assert bundle.observations == [] and bundle.resources == []
 
 
 # 3. An email reassigned to another user confirms neither past nor present owner.
-def test_reassigned_historical_email_confirms_neither_user(rules):
+def test_reassigned_historical_email_confirms_neither_user(rules: list[DeletionRule]) -> None:
     a = request("case_a", "a2@example.test")
     people = [
-        Identity(
-            user_id="user_a",
-            name="A",
-            email="a2@example.test",
-            phone="+10000001",
-            email_hash="ha",
-            updated_at="2025-07-01T00:00:00Z",
+        Identity.model_validate(
+            {
+                "user_id": "user_a",
+                "name": "A",
+                "email": "a2@example.test",
+                "phone": "+10000001",
+                "email_hash": "ha",
+                "updated_at": "2025-07-01T00:00:00Z",
+            }
         ),
-        Identity(
-            user_id="user_b",
-            name="B",
-            email="shared@example.test",
-            phone="+10000002",
-            email_hash="hb",
-            updated_at="2025-10-01T00:00:00Z",
+        Identity.model_validate(
+            {
+                "user_id": "user_b",
+                "name": "B",
+                "email": "shared@example.test",
+                "phone": "+10000002",
+                "email_hash": "hb",
+                "updated_at": "2025-10-01T00:00:00Z",
+            }
         ),
     ]
     changes = [
-        IdentityChange(
-            audit_id="audit_1",
-            user_id="user_a",
-            event_time="2025-06-01T00:00:00Z",
-            field_name="email",
-            old_value="shared@example.test",
-            new_value="a2@example.test",
+        IdentityChange.model_validate(
+            {
+                "audit_id": "audit_1",
+                "user_id": "user_a",
+                "event_time": "2025-06-01T00:00:00Z",
+                "field_name": "email",
+                "old_value": "shared@example.test",
+                "new_value": "a2@example.test",
+            }
         ),
-        IdentityChange(
-            audit_id="audit_2",
-            user_id="user_b",
-            event_time="2025-09-01T00:00:00Z",
-            field_name="email",
-            old_value="b@example.test",
-            new_value="shared@example.test",
+        IdentityChange.model_validate(
+            {
+                "audit_id": "audit_2",
+                "user_id": "user_b",
+                "event_time": "2025-09-01T00:00:00Z",
+                "field_name": "email",
+                "old_value": "b@example.test",
+                "new_value": "shared@example.test",
+            }
         ),
     ]
     data = with_identities(
@@ -240,16 +279,18 @@ def test_reassigned_historical_email_confirms_neither_user(rules):
 
 
 # 4. A legitimate former alias still links, with the audit entry that proves it.
-def test_legitimate_historical_alias_links_with_its_audit_origin(rules):
+def test_legitimate_historical_alias_links_with_its_audit_origin(rules: list[DeletionRule]) -> None:
     a = request("case_a", "a@example.test")
     changes = [
-        IdentityChange(
-            audit_id="audit_9",
-            user_id="user_a",
-            event_time="2025-06-01T00:00:00Z",
-            field_name="email",
-            old_value="old@example.test",
-            new_value="a@example.test",
+        IdentityChange.model_validate(
+            {
+                "audit_id": "audit_9",
+                "user_id": "user_a",
+                "event_time": "2025-06-01T00:00:00Z",
+                "field_name": "email",
+                "old_value": "old@example.test",
+                "new_value": "a@example.test",
+            }
         )
     ]
     data = with_identities(
@@ -263,7 +304,7 @@ def test_legitimate_historical_alias_links_with_its_audit_origin(rules):
 
 
 # 5. Interleaved batches of two requests reported together attribute nothing.
-def test_multi_user_workflow_batch_attributes_no_resource(rules):
+def test_multi_user_workflow_batch_attributes_no_resource(rules: list[DeletionRule]) -> None:
     a, b = request("case_a", "a@example.test"), request("case_b", "b@example.test")
     acts = [
         worker("p1", "2026-03-02T11:00:00Z", "account_1"),
@@ -291,7 +332,9 @@ def test_multi_user_workflow_batch_attributes_no_resource(rules):
 
 
 # 6. A record owned by someone else earlier is not the subject's history.
-def test_resource_ownership_change_keeps_foreign_period_unconfirmed(rules):
+def test_resource_ownership_change_keeps_foreign_period_unconfirmed(
+    rules: list[DeletionRule],
+) -> None:
     a = request("case_a", "a@example.test")
     earlier = search_row("s1", "2026-03-03T10:00:00Z", "b@example.test")
     later = search_row("s2", LISTING, "a@example.test")
@@ -301,13 +344,15 @@ def test_resource_ownership_change_keeps_foreign_period_unconfirmed(rules):
 
 
 # 7. Mixed-subject documents keep identifiers with their own section and row.
-def test_mixed_subject_document_scopes_identifiers_to_resource_section():
+def test_mixed_subject_document_scopes_identifiers_to_resource_section() -> None:
     pdf = ExtractionContext(
-        EvidenceFile(
-            file_id="pdf",
-            file_path="evidence/documents/t.pdf",
-            origin="support_platform",
-            captured_at=LISTING,
+        EvidenceFile.model_validate(
+            {
+                "file_id": "pdf",
+                "file_path": "evidence/documents/t.pdf",
+                "origin": "support_platform",
+                "captured_at": LISTING,
+            }
         ),
         "f" * 64,
     )
@@ -320,6 +365,7 @@ def test_mixed_subject_document_scopes_identifiers_to_resource_section():
         "Ticket support_001\np@example.test\fTicket form\nContinued - attachment properties\nx.pdf"
     )
     [o] = document_observations(continued, pdf, {}, catalogued_only=False)
+    assert isinstance(o.payload["document_text"], str)
     assert (
         "attachment properties" in o.payload["document_text"]
         and o.payload["email"] == "p@example.test"
@@ -337,7 +383,7 @@ def test_mixed_subject_document_scopes_identifiers_to_resource_section():
 
 
 # 8. One resource ID in two collections of a system is two records.
-def test_cross_collection_resource_id_collision_is_not_joined(rules):
+def test_cross_collection_resource_id_collision_is_not_joined(rules: list[DeletionRule]) -> None:
     a = request("case_a", "a@example.test")
     owned = snapshot(
         "own",
@@ -383,7 +429,9 @@ TRACES = [
 
 
 # 9. A trace that also names an unknown subject cannot assign its results.
-def test_scoped_trace_with_foreign_unknown_subject_stays_potential(rules):
+def test_scoped_trace_with_foreign_unknown_subject_stays_potential(
+    rules: list[DeletionRule],
+) -> None:
     a = request("case_a", "a@example.test")
     bundle = EvidenceAssociationService(build(rules, [a], trace("rb", TRACES))).analyze(a)
     status = {
@@ -395,7 +443,7 @@ def test_scoped_trace_with_foreign_unknown_subject_stays_potential(rules):
 
 
 # 10. A clean direct anchor survives an unrelated ambiguous trace in the same file.
-def test_confirmed_direct_anchor_survives_unrelated_ambiguity(rules):
+def test_confirmed_direct_anchor_survives_unrelated_ambiguity(rules: list[DeletionRule]) -> None:
     a = request("case_a", "a@example.test")
     bundle = EvidenceAssociationService(build(rules, [a], trace("rb", TRACES))).analyze(a)
     status = {
@@ -407,7 +455,7 @@ def test_confirmed_direct_anchor_survives_unrelated_ambiguity(rules):
     assert [r.reference.resource_id for r in bundle.resources] == ["account_2"]
 
 
-def readback(fields, *, resource=True):
+def readback(fields: JsonValue, *, resource: bool = True) -> Observation:
     target = "resource_id=account_1 " if resource else ""
     return trace(
         "read",
@@ -419,23 +467,23 @@ def readback(fields, *, resource=True):
 
 
 # 11. An exact-resource 404 proves absence of that record.
-def test_exact_resource_readback_404_proves_absence():
+def test_exact_resource_readback_404_proves_absence() -> None:
     f = fact(readback("rows=0 http_status=404"))
     assert (f.record_state, f.support) == ("ABSENT", "PROVEN")
 
 
 # 12. An empty answer to a subject query or filtered read proves nothing exact.
 @pytest.mark.parametrize("fields", ["rows=0 query_scope=SUBJECT", "rows=0 filter=region:eu"])
-def test_generic_empty_read_without_exact_target_stays_unknown(fields):
+def test_generic_empty_read_without_exact_target_stays_unknown(fields: str) -> None:
     f = fact(readback(fields))
     assert f.record_state == "UNKNOWN" and f.reason == "negative_read_lacks_exact_resource_scope"
 
 
-def test_empty_read_naming_no_resource_has_no_state_scope():
+def test_empty_read_naming_no_resource_has_no_state_scope() -> None:
     assert readback("rows=0 http_status=404", resource=False).resources == []
 
 
-def envelope(file, **extra):
+def envelope(file: str, **extra: JsonValue) -> list[Observation]:
     return parse_json(
         {
             "exported_at": LISTING,
@@ -454,7 +502,7 @@ def envelope(file, **extra):
 
 
 # 13. An explicit unfiltered complete listing is a coverage surface.
-def test_explicit_complete_collection_listing_is_coverage():
+def test_explicit_complete_collection_listing_is_coverage() -> None:
     [item] = coverage_surfaces(envelope("full", complete_listing=True))[
         ("account_service", "customer_profiles")
     ]
@@ -474,7 +522,9 @@ def test_explicit_complete_collection_listing_is_coverage():
         ({"filter": "region=eu"}, "filter_scope"),
     ],
 )
-def test_paginated_or_filtered_listing_is_not_coverage(extra, field):
+def test_paginated_or_filtered_listing_is_not_coverage(
+    extra: dict[str, JsonValue], field: str
+) -> None:
     observations = envelope("page", complete_listing=True, **extra)
     assert coverage_surfaces(observations) == {}
     [item] = coverage_surfaces(observations, include_incomplete=True)[
@@ -496,13 +546,15 @@ CREATE TABLE customer_profiles_failover_replica (resource_id TEXT PRIMARY KEY, u
 {{rows}}"""
 
 
-def sql(rows, file="db", captured=LISTING):
+def sql(rows: str, file: str = "db", captured: str = LISTING) -> list[Observation]:
     context = ExtractionContext(
-        EvidenceFile(
-            file_id=file,
-            file_path=f"evidence/databases/{file}.sql",
-            origin="customer_data_capture",
-            captured_at=captured,
+        EvidenceFile.model_validate(
+            {
+                "file_id": file,
+                "file_path": f"evidence/databases/{file}.sql",
+                "origin": "customer_data_capture",
+                "captured_at": captured,
+            }
         ),
         "d" * 64,
     )
@@ -510,7 +562,7 @@ def sql(rows, file="db", captured=LISTING):
 
 
 # 15. A replica table missing a row is a coverage gap in the known logical collection.
-def test_sql_replica_coverage_gap_is_not_absence():
+def test_sql_replica_coverage_gap_is_not_absence() -> None:
     observations = sql(
         "INSERT INTO customer_profiles_primary VALUES "
         "('account_1','user_a','a@example.test','2026-03-05T09:00:00Z');"
@@ -525,7 +577,9 @@ def test_sql_replica_coverage_gap_is_not_absence():
 
 
 # 16. A newer primary absence never erases a surviving replica copy.
-def test_newer_primary_absence_does_not_override_surviving_replica(rules):
+def test_newer_primary_absence_does_not_override_surviving_replica(
+    rules: list[DeletionRule],
+) -> None:
     a = request("case_a", "a@example.test")
     replica = sql(
         "INSERT INTO customer_profiles_failover_replica VALUES "
@@ -539,7 +593,7 @@ def test_newer_primary_absence_does_not_override_surviving_replica(rules):
     assert by_scope["failover_replica"] == "VIOLATION" and "COMPLIANT" in by_scope.values()
 
 
-def export(system, container, record):
+def export(system: str, container: str, record: dict[str, JsonValue]) -> list[Observation]:
     return parse_json(
         {
             "exported_at": LISTING,
@@ -550,7 +604,7 @@ def export(system, container, record):
 
 
 # 17. Every attribution slot observed empty is valid anonymization evidence.
-def test_valid_anonymization_evidence_is_compliant(rules):
+def test_valid_anonymization_evidence_is_compliant(rules: list[DeletionRule]) -> None:
     observations = export(
         "analytics_platform",
         "profiles",
@@ -572,7 +626,7 @@ def test_valid_anonymization_evidence_is_compliant(rules):
 
 
 # 18. A single nulled email is partial redaction, not proof of redaction.
-def test_partial_redaction_evidence_remains_unknown(rules):
+def test_partial_redaction_evidence_remains_unknown(rules: list[DeletionRule]) -> None:
     observations = export(
         "support_platform",
         "tickets",
@@ -589,7 +643,7 @@ def test_partial_redaction_evidence_remains_unknown(rules):
 
 
 # 19. A readback after the audit never changes the state at the audit.
-def test_future_readback_is_excluded():
+def test_future_readback_is_excluded() -> None:
     present = search_row("earlier", LISTING, "a@example.test")
     future = trace(
         "future",
@@ -612,7 +666,9 @@ def test_future_readback_is_excluded():
 
 
 # 20. Abstentions carry deterministic, identifier-only root causes.
-def test_abstention_diagnostic_attributes_root_cause_deterministically(rules, tmp_path):
+def test_abstention_diagnostic_attributes_root_cause_deterministically(
+    rules: list[DeletionRule], tmp_path: Path
+) -> None:
     a = request("case_a", "a@example.test")
     acts = [worker("act_1", "2026-03-02T11:00:00Z", "account_1")]
     obs = [
@@ -635,7 +691,7 @@ def test_abstention_diagnostic_attributes_root_cause_deterministically(rules, tm
 
 
 # Integration: participant-style files -> ingestion -> correlation -> state -> policy -> plan.
-def write_csv(path, header, rows):
+def write_csv(path: Path, header: str, rows: Sequence[str]) -> None:
     path.write_text("\n".join([header, *rows]) + "\n", encoding="utf-8")
 
 
@@ -647,7 +703,9 @@ def write_csv(path, header, rows):
         ("2026-03-13T12:00:00Z", "INCOMPLETE"),
     ],
 )
-def test_participant_style_ingestion_through_planning(tmp_path, audit, expected):
+def test_participant_style_ingestion_through_planning(
+    tmp_path: Path, audit: str, expected: str
+) -> None:
     (tmp_path / "evidence/logs").mkdir(parents=True)
     (tmp_path / "evidence/records").mkdir(parents=True)
     shutil.copy(DATASET_ROOT / "deletion_rules.csv", tmp_path / "deletion_rules.csv")
@@ -720,6 +778,7 @@ def test_participant_style_ingestion_through_planning(tmp_path, audit, expected)
     run = predict(load_dataset(tmp_path))
     [case] = run.cases
     assert case.decision == expected
+    assert case.prediction is not None
     found = [
         (s.phase, s.operation, s.system_id, s.resource_id, s.evidence_id)
         for s in case.prediction.steps

@@ -1,11 +1,37 @@
 """Aggregate discovery diagnostics: counts, never identifiers or prediction accuracy."""
 
 from collections import Counter
+from typing import TypedDict
 
 from ghost_audit.domain.temporal_models import CaseStateBundle
 
 
-def diagnostics(bundles: list[CaseStateBundle]) -> dict:
+class TemporalDiagnostics(TypedDict):
+    """Serialized diagnostic fields; reporting never changes prediction state."""
+
+    cases: int
+    authorized_cases: int
+    cases_with_established_resource_states: int
+    resource_scopes: int
+    resources_with_established_states: int
+    resources_with_unknown_states: int
+    resource_states: dict[str, int]
+    record_state_support: dict[str, int]
+    observation_support: dict[str, int]
+    conflicting_observations: int
+    replica_comparisons_with_drift_or_gaps: int
+    replica_drift_types: dict[str, int]
+    active_data_flows: int
+    inactive_data_flows: int
+    restore_risks: int
+    blocked_restores: int
+    cases_with_incomplete_evidence: int
+    incomplete_evidence_cases: list[str]
+    coverage: str
+    prediction_accuracy: str
+
+
+def diagnostics(bundles: list[CaseStateBundle]) -> TemporalDiagnostics:
     """Summarize temporal scope and conflict coverage without claiming prediction accuracy."""
     histories = [h for b in bundles for h in b.resource_histories]
     records: Counter[str] = Counter(h.record.state for h in histories)
