@@ -150,13 +150,18 @@ use their checkout defaults). Arguments after the image name replace that comman
 every CLI option, for example:
 
 ```text
-docker run --rm -v "$PWD/dataset:/data:ro" ghost-audit inspect --dataset /data
-docker run --rm -v "$PWD/dataset:/data:ro" -v /tmp/ghost-audit-out:/output:ro ghost-audit \
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/dataset:/data:ro" \
+  ghost-audit inspect --dataset /data
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/dataset:/data:ro" \
+  -v /tmp/ghost-audit-out:/output:ro ghost-audit \
   validate-output --dataset /data --predictions /output/output.csv
 ```
 
-On Linux pass `--user "$(id -u):$(id -g)"` so the output directory is writable, and create
-it first. **Tesseract is required to reproduce the accepted output.** With
+On Linux run every command with `--user "$(id -u):$(id -g)"` and create the output
+directory first: the image's default user cannot write to a directory you own, and the
+atomic CSV writer creates `output.csv` readable by its owner only, so later commands
+such as `validate-output` must run as the same user. Docker Desktop on Windows and macOS
+needs neither. **Tesseract is required to reproduce the accepted output.** With
 `GHOST_AUDIT_OCR=0` seven cases have no provable resource state, publication is blocked
 and the container exits 2 without writing a CSV. The image installs Debian
 bookworm's Tesseract 5.3.0 (the reference run used Windows Tesseract 5.3.1); a container run
