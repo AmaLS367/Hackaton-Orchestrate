@@ -30,7 +30,37 @@ An unexpected difference produces `diff.json` and exit 1. Do not update the prot
 baseline to hide differences. Investigate them and restore structural equivalence, or
 isolate an evidence-backed correction with its own tests and commit.
 
-## Measured reference
+## Release lineage
+
+Every row was reproduced by running that commit's `code/main.py` on the participant dataset
+with Tesseract OCR. Only the prediction-changing commits are listed; the commits between
+and after them restructure code, metadata, packaging and Docker support without changing
+`output.csv`.
+
+| Stage | Commit | COMPLETE / INCOMPLETE / NOT_APPLICABLE | Steps | `output.csv` SHA-256 |
+| --- | --- | ---: | ---: | --- |
+| Original submission baseline | `4476d26` | 152 / 356 / 10 | 3,071 | `2dfda949b915f713b7a261692be8bdd1b7cfcb3bbe3b5b2387d2b055f34d4227` |
+| First temporal correctness fix | `2d85859` | 154 / 354 / 10 | 3,067 | `eada7a560b75e6acca66706444b19c6ee5b7b4d0cd5f3cb50cc13bdfaef43ea6` |
+| Policy cutoff fix | `59ba4a1` | 154 / 354 / 10 | 3,067 | `807803941b11aa438f36365a98c77fcb9de447887fd830aba10ce9a2166343a5` |
+| Support-category fallback | `bf707f8` | 154 / 354 / 10 | 3,067 | `1bc68692b30cfc7d23efb502c8ad6ba03bfecf75452415d11eae0d4639c3666c` |
+| **Current accepted release** | `bf707f8` and later | **154 / 354 / 10** | **3,067** | `1bc68692b30cfc7d23efb502c8ad6ba03bfecf75452415d11eae0d4639c3666c` |
+
+- Temporal fix (`2d85859`): latest temporal state per physical scope; exactly two rows change,
+  case_86 and case_390, both INCOMPLETE → COMPLETE (152 → 154 COMPLETE, 356 → 354 INCOMPLETE,
+  3,071 → 3,067 steps).
+- Policy cutoff fix (`59ba4a1`): 9 case rows change, no status change; see
+  `code/evaluation/policy_cutoff_differential.md`.
+- Support-category fallback (`bf707f8`): 15 case rows change, no status change; see
+  `code/evaluation/support_inference_differential.md`.
+- Public-sample metrics are identical at all four stages: status 32/32, exact/sequence 21/32,
+  precision 100%, recall 93.782%, field accuracy 87.935%, 12 missing and 0 extra steps.
+- The strict engine is unchanged in the current release: 364 grounded predictions (22 / 332 / 10),
+  154 abstentions, and the strict publication command exits 2.
+
+## Measured reference (original submission baseline `4476d26`)
+
+These figures are historical. They describe the baseline captured before the correctness
+fixes above and do **not** describe the current release.
 
 - Original tests: **499 collected, 499 passed**.
 - Full submission: **518 cases**, **152 COMPLETE**, **356 INCOMPLETE**,

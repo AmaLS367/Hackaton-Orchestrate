@@ -1,6 +1,28 @@
 # Evaluation report
 
-## Submission round — 2026-10-25
+## Current accepted release
+
+Full participant dataset (518 requests), submission predictor at commit `bf707f8` and every
+later commit: **154 COMPLETE / 354 INCOMPLETE / 10 NOT_APPLICABLE, 3,067 steps**, root
+`output.csv` SHA-256 `1bc68692b30cfc7d23efb502c8ad6ba03bfecf75452415d11eae0d4639c3666c`.
+Public-sample metrics are identical to the tables below (status 32/32, exact/sequence 21/32,
+step precision 100%, recall 93.782%, 12 missing and 0 extra steps). The strict engine is
+unchanged: 364 grounded predictions, 154 abstentions, publication exits 2.
+
+| Release stage | Commit | COMPLETE / INCOMPLETE / NOT_APPLICABLE | Steps |
+| --- | --- | ---: | ---: |
+| Original submission baseline | `4476d26` | 152 / 356 / 10 | 3,071 |
+| First temporal correctness fix | `2d85859` | 154 / 354 / 10 | 3,067 |
+| Policy cutoff fix | `59ba4a1` | 154 / 354 / 10 | 3,067 |
+| Support-category fallback | `bf707f8` | 154 / 354 / 10 | 3,067 |
+| **Current accepted release** | `bf707f8` and later | **154 / 354 / 10** | **3,067** |
+
+Full hashes and per-stage changes are in `docs/baseline.md`; case-level differentials are in
+`policy_cutoff_differential.md` and `support_inference_differential.md`. The dated rounds
+below keep the figures measured at the time. Full-dataset counts of 152 / 356 and 3,071 steps
+in them belong to the original submission baseline `4476d26`, not to the current release.
+
+## Submission round — 2026-10-25 (original submission baseline)
 
 **Submission-ready.** A separate submission predictor produces a validated 518-row root
 `output.csv`; the strict audit engine is unchanged and kept as `--strict` plus diagnostics.
@@ -21,7 +43,7 @@ Base commit `122b834`; tests 491 → **499 passing** (8 added in `code/tests/e2e
 | Missing / extra steps | 75 / 0 | **12 / 0** |
 | Incorrect evidence references | 0 | 0 |
 
-| Full dataset (518 requests) | Strict engine | Submission predictor |
+| Full dataset (518 requests), baseline `4476d26` | Strict engine | Submission predictor |
 | --- | ---: | ---: |
 | Predictions | 364 | **518** |
 | COMPLETE / INCOMPLETE / NOT_APPLICABLE | 22 / 332 / 10 | 152 / 356 / 10 |
@@ -466,10 +488,11 @@ architecture, source mapping and archive verification. No correctness correction
 changed prediction is hidden in the refactor.
 
 
-## Final code quality verification
+## Final code quality verification (original submission baseline)
 
 The final dependency/typing/documentation pass preserves all sample metrics, 518 official
-rows, 3,071 ordered steps and the protected output SHA-256. The complete 99-file Python
+rows, 3,071 ordered steps and the protected output SHA-256 of the original baseline `4476d26`
+(superseded by the current accepted release above). The complete 99-file Python
 tree, including tests and packaging utilities, passes mypy strict mode; all 527 tests
 pass. See `docs/quality-pass.md` in the repository/archive for the exact configuration,
 direct dependency installation, full coverage inventory and verification results. Existing submission

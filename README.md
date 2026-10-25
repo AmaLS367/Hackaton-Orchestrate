@@ -47,7 +47,10 @@ uv run python code/main.py phase3 --case-id CASE_ID
 ```
 
 The default **submission predictor** writes the complete root `output.csv`: 518 rows,
-152 COMPLETE, 356 INCOMPLETE, 10 NOT_APPLICABLE and 3,071 steps on the supplied dataset.
+154 COMPLETE, 354 INCOMPLETE, 10 NOT_APPLICABLE and 3,067 steps on the supplied dataset
+(SHA-256 `1bc68692b30cfc7d23efb502c8ad6ba03bfecf75452415d11eae0d4639c3666c`). The earlier
+152 / 356 / 3,071 counts belong to the original submission baseline; see the release
+lineage in [baseline](docs/baseline.md).
 It chooses the best-supported official answer and records heuristic assumptions and
 low-confidence resources separately. `phase2` and `phase3` are historical CLI names
 for evidence association and temporal reconstruction; internal modules use those

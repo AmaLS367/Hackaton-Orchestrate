@@ -102,6 +102,10 @@ only comments, documentation strings and formatting changed in that stage.
 - Full post-typing and final protected comparisons: **0 behavioral differences** across CSV,
   ordered steps, strict decisions/abstentions, confidence, public metrics and CLI results.
 
+The figures below were measured at the original submission baseline (`4476d26` output);
+later correctness fixes changed them, so see the release lineage in `docs/baseline.md`
+for the current release (154 / 354 / 10, 3,067 steps).
+
 Both prediction runs retained 518 rows: **152 COMPLETE, 356 INCOMPLETE,
 10 NOT_APPLICABLE**, and **3,071 ordered steps**. Original and final SHA-256:
 

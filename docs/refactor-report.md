@@ -3,6 +3,10 @@
 This records the earlier refactor. For current installation use README.md: the final
 dependency pass removed the requirements file and installs directly from pyproject.toml.
 
+The 152 / 356 / 10 counts, 3,071 steps and `2dfda949…` hash below describe the original
+submission baseline. Later correctness fixes changed the accepted release; see the release
+lineage in `baseline.md`.
+
 Reference: `4476d2605a45186e27eba709262db7869a1c7e76` on `master`.
 All implementation commits are local; no push or submission was performed.
 
