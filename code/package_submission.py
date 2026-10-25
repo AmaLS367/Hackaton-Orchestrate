@@ -2,17 +2,42 @@
 
 import argparse
 import hashlib
+import tomllib
 import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-ROOT_FILES = ("README.md", "pyproject.toml", "uv.lock", ".python-version")
+ROOT_FILES = (
+    "README.md",
+    "LICENSE",
+    "CONTRIBUTING.md",
+    "CODE_OF_CONDUCT.md",
+    ".editorconfig",
+    "pyproject.toml",
+    "uv.lock",
+    ".python-version",
+)
 REPORTS = ("evaluation_report.md", "usage_report.md")
+
+
+def metadata_files(pyproject: bytes) -> set[str]:
+    """Name the local files that build metadata requires for installation."""
+    project = tomllib.loads(pyproject.decode())["project"]
+    readme, license_ = project.get("readme"), project.get("license")
+    names = {readme} if isinstance(readme, str) else set()
+    if isinstance(readme, dict) and "file" in readme:
+        names.add(readme["file"])
+    if isinstance(license_, dict) and "file" in license_:
+        names.add(license_["file"])
+    return names
 
 
 def contents(root: Path) -> dict[str, bytes]:
     """Collect allowed source, documentation and fixture files without participant data."""
     files = {name: (root / name).read_bytes() for name in ROOT_FILES}
+    missing = metadata_files(files["pyproject.toml"]) - files.keys()
+    if missing:
+        raise ValueError(f"pyproject.toml references files absent from the archive: {missing}")
     for directory in (root / "code", root / "docs"):
         for path in sorted(directory.rglob("*")):
             relative = path.relative_to(root)
