@@ -6,7 +6,12 @@ from random import Random
 
 import pytest
 from ghost_audit.application.evidence_association import EvidenceAssociationService
-from ghost_audit.application.strict_audit import PredictionBlocked, diagnostics, predict
+from ghost_audit.application.strict_audit import (
+    PredictionBlocked,
+    diagnostics,
+    predict,
+    publishable_rows,
+)
 from ghost_audit.application.temporal_service import TemporalStateEngine
 from ghost_audit.domain.citation_validation import validate_output
 from ghost_audit.domain.dataset import Dataset
@@ -17,8 +22,7 @@ from ghost_audit.domain.planning import plan_case
 from ghost_audit.domain.policy import PolicyEvaluator
 from ghost_audit.domain.policy_models import PredictionRun
 from ghost_audit.infrastructure.parsers.structured import ExtractionContext, parse_json
-from ghost_audit.infrastructure.serialization.csv_output import read_output
-from ghost_audit.infrastructure.serialization.prediction_artifacts import publish
+from ghost_audit.infrastructure.serialization.csv_output import read_output, write_output
 
 from tests.fixtures.audit_cases import (
     CUTOFF,
@@ -558,7 +562,9 @@ def test_all_518_rows_serialize_and_validate_when_grounded(
     d.requests = [request.model_copy(update={"case_id": f"custom_{i:03}"}) for i in range(518)]
     run = predict(d)
     path = tmp_path / "output.csv"
-    publish(path, run, d, EvidenceIndex(d.observations, registry=d.registry))
+    write_output(
+        path, publishable_rows(run), d.requests, EvidenceIndex(d.observations, registry=d.registry)
+    )
     rows = read_output(path)
     assert len(rows) == 518
     validate_output(rows, d.requests, EvidenceIndex(d.observations, registry=d.registry))
@@ -572,11 +578,21 @@ def test_blocked_publish_preserves_existing_file_and_creates_no_placeholder(
     run = predict(d)
     path = tmp_path / "output.csv"
     with pytest.raises(PredictionBlocked):
-        publish(path, run, d, EvidenceIndex(d.observations, registry=d.registry))
+        write_output(
+            path,
+            publishable_rows(run),
+            d.requests,
+            EvidenceIndex(d.observations, registry=d.registry),
+        )
     assert not path.exists()
     path.write_text("previous output", encoding="utf-8")
     with pytest.raises(PredictionBlocked):
-        publish(path, run, d, EvidenceIndex(d.observations, registry=d.registry))
+        write_output(
+            path,
+            publishable_rows(run),
+            d.requests,
+            EvidenceIndex(d.observations, registry=d.registry),
+        )
     assert path.read_text(encoding="utf-8") == "previous output"
 
 
@@ -977,5 +993,5 @@ def test_real_518_case_run_validates_grounded_rows_and_exposes_abstentions(
         )
     if not run.publishable:
         with pytest.raises(PredictionBlocked):
-            publish(tmp_path / "output.csv", run, d, index)
+            write_output(tmp_path / "output.csv", publishable_rows(run), d.requests, index)
         assert not (tmp_path / "output.csv").exists()

@@ -61,3 +61,10 @@ name = "Production never imports sample evaluation"
 type = "forbidden"
 source_modules = ["ghost_audit"]
 forbidden_modules = ["evaluation"]
+
+# Adapters serialize prepared data; only the interfaces layer composes use cases with them.
+[[tool.importlinter.contracts]]
+name = "Infrastructure never imports application"
+type = "forbidden"
+source_modules = ["ghost_audit.infrastructure"]
+forbidden_modules = ["ghost_audit.application"]

@@ -1,28 +1,27 @@
-"""Write strict diagnostics and publish only a fully supported run."""
+"""Write prepared strict diagnostics; publication policy stays in the application layer."""
 
 import json
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from ghost_audit.application.abstention_diagnostics import summarize
-from ghost_audit.application.strict_audit import PredictionBlocked, diagnostics
-from ghost_audit.domain.dataset import Dataset
-from ghost_audit.domain.evidence_index import EvidenceIndex
+from ghost_audit.domain.diagnostic_models import AbstentionDiagnostic
 from ghost_audit.domain.policy_models import PredictionRun
-from ghost_audit.infrastructure.serialization.csv_output import write_output
 
 
-def write_diagnostics(path: Path, run: PredictionRun) -> None:
+def write_diagnostics(path: Path, summary: Mapping[str, object], run: PredictionRun) -> None:
     """Explicit diagnostic artifact, including partial predictions; never a submission CSV."""
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "summary": diagnostics(run),
+        "summary": summary,
         "cases": [case.model_dump(mode="json") for case in run.cases],
         "abstentions": [record.model_dump(mode="json") for record in run.abstentions],
     }
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def write_abstention_diagnostics(path: Path, run: PredictionRun) -> None:
+def write_abstention_diagnostics(
+    path: Path, summary: Mapping[str, object], records: Sequence[AbstentionDiagnostic]
+) -> None:
     """Identifier-only case diagnostics and root-cause totals, safe to keep with the code."""
     path.parent.mkdir(parents=True, exist_ok=True)
     # One compact case per line keeps the file small and reviewable as a diff.
@@ -33,20 +32,10 @@ def write_abstention_diagnostics(path: Path, run: PredictionRun) -> None:
             sort_keys=True,
             separators=(",", ":"),
         )
-        for record in run.abstentions
+        for record in records
     ]
-    summary = json.dumps(summarize(run.abstentions), ensure_ascii=False, sort_keys=True, indent=1)
+    text = json.dumps(summary, ensure_ascii=False, sort_keys=True, indent=1)
     path.write_text(
-        '{"summary": ' + summary + ',\n"cases": [\n' + ",\n".join(cases) + "\n]}\n",
+        '{"summary": ' + text + ',\n"cases": [\n' + ",\n".join(cases) + "\n]}\n",
         encoding="utf-8",
     )
-
-
-def publish(path: Path, run: PredictionRun, dataset: Dataset, index: EvidenceIndex) -> None:
-    """Preserve the destination when a strict run has abstentions or validation errors."""
-    if not run.publishable:
-        raise PredictionBlocked(
-            f"{len(run.cases) - len(run.predictions)} cases have no grounded prediction; "
-            "output was not written or replaced. See diagnostics for blockers."
-        )
-    write_output(path, run.predictions, dataset.requests, index)

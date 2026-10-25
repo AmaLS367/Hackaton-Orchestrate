@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
+from ghost_audit.application.abstention_diagnostics import summarize
 from ghost_audit.application.evidence_association import EvidenceAssociationService
 from ghost_audit.application.observation_interpretation import interpret
 from ghost_audit.application.strict_audit import predict
@@ -685,7 +686,7 @@ def test_abstention_diagnostic_attributes_root_cause_deterministically(
     assert "account_service:account_1" not in record.confirmed_resources
     paths = [tmp_path / f"run{i}.json" for i in range(2)]
     for path, run in zip(paths, runs, strict=False):
-        write_abstention_diagnostics(path, run)
+        write_abstention_diagnostics(path, summarize(run.abstentions), run.abstentions)
     assert paths[0].read_bytes() == paths[1].read_bytes()
     assert "@" not in paths[0].read_text(encoding="utf-8")
 

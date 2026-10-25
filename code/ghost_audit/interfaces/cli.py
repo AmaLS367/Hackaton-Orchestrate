@@ -78,9 +78,15 @@ def _predict(
     dataset: Dataset,
     index: EvidenceIndex,
 ) -> int:
-    from ghost_audit.application.strict_audit import PredictionBlocked, diagnostics, predict
+    from ghost_audit.application.abstention_diagnostics import summarize
+    from ghost_audit.application.strict_audit import (
+        PredictionBlocked,
+        diagnostics,
+        predict,
+        publishable_rows,
+    )
+    from ghost_audit.infrastructure.serialization.csv_output import write_output
     from ghost_audit.infrastructure.serialization.prediction_artifacts import (
-        publish,
         write_abstention_diagnostics,
         write_diagnostics,
     )
@@ -89,16 +95,10 @@ def _predict(
     diagnostic_path = args.diagnostics or ROOT / "code/evaluation" / (
         "sample_prediction_diagnostics.json" if args.samples else "full_prediction_diagnostics.json"
     )
-    # Identifier-only root causes of every abstention, written beside the diagnostics.
-    write_abstention_diagnostics(
-        diagnostic_path.with_name(
-            ("sample_" if args.samples else "") + "abstention_diagnostics.json"
-        ),
-        run,
-    )
     output_path = args.predictions or ROOT / (
         "sample_predictions.csv" if args.samples else "output.csv"
     )
+    # Reject invalid destinations before any artifact is written or replaced.
     if diagnostic_path.resolve() == output_path.resolve():
         parser.error("diagnostics and predictions must use different paths")
     if any(
@@ -106,15 +106,25 @@ def _predict(
         for path in (diagnostic_path, output_path)
     ):
         parser.error("prediction artifacts must be outside the read-only dataset directory")
-    write_diagnostics(diagnostic_path, run)
-    summary: dict[str, object] = dict(diagnostics(run))
+    # Identifier-only root causes of every abstention, written beside the diagnostics.
+    write_abstention_diagnostics(
+        diagnostic_path.with_name(
+            ("sample_" if args.samples else "") + "abstention_diagnostics.json"
+        ),
+        summarize(run.abstentions),
+        run.abstentions,
+    )
+    strict_summary = diagnostics(run)
+    write_diagnostics(diagnostic_path, strict_summary, run)
+    summary: dict[str, object] = dict(strict_summary)
     if args.strict:
         try:
-            publish(output_path, run, dataset, index)
+            rows = publishable_rows(run)
         except PredictionBlocked as exc:
             summary.update(output_written=False, error=str(exc))
             print(json.dumps(summary, indent=2))
             return 2
+        write_output(output_path, rows, dataset.requests, index)
         summary.update(output_written=True, output_path=str(output_path))
         print(json.dumps(summary, indent=2))
         return 0

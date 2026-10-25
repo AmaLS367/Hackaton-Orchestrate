@@ -83,9 +83,10 @@ def main(argv: list[str] | None = None) -> int:
 
             run = predict(load_dataset(args.dataset, samples=True))
             predictions = run.predictions
-            summary = diagnostics(run)
+            strict_summary = diagnostics(run)
+            summary = strict_summary
             if args.diagnostics:
-                write_diagnostics(args.diagnostics, run)
+                write_diagnostics(args.diagnostics, strict_summary, run)
         else:
             if args.predictions.resolve() == (args.dataset / "sample_output.csv").resolve():
                 parser.error("sample_output.csv is a reference, not an independent prediction file")

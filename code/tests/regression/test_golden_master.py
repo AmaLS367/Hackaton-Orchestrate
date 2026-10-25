@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 from evaluation.scoring import evaluate
-from ghost_audit.application.strict_audit import predict
+from ghost_audit.application.strict_audit import diagnostics, predict
 from ghost_audit.application.submission_service import predict_submission, submission_diagnostics
 from ghost_audit.domain.dataset import Dataset
 from ghost_audit.domain.evidence_index import EvidenceIndex
@@ -90,7 +90,7 @@ def test_strict_decisions_steps_and_every_abstention_remain_identical(
 ) -> None:
     _, _, run = strict_result
     path = tmp_path / "strict.json"
-    write_diagnostics(path, run)
+    write_diagnostics(path, diagnostics(run), run)
     payload = stable(json.loads(path.read_text(encoding="utf-8")), PROJECT_ROOT, tmp_path)
     assert canonical_hash(payload) == contract["strict_sha256"], (
         "Run code/regression.py for a per-case diff"

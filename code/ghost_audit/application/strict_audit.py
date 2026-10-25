@@ -10,6 +10,7 @@ from ghost_audit.application.temporal_service import TemporalStateEngine
 from ghost_audit.domain.citation_validation import validate_output
 from ghost_audit.domain.dataset import Dataset
 from ghost_audit.domain.evidence_index import EvidenceIndex
+from ghost_audit.domain.output_contract import OutputRow
 from ghost_audit.domain.planning import plan_case
 from ghost_audit.domain.policy import PolicyEvaluator
 from ghost_audit.domain.policy_models import PredictionRun
@@ -19,6 +20,16 @@ class PredictionBlocked(ValueError):
     """Strict publication cannot represent every request with grounded evidence."""
 
     pass
+
+
+def publishable_rows(run: PredictionRun) -> list[OutputRow]:
+    """Grounded rows of a fully supported run; abstentions or validation errors block it."""
+    if not run.publishable:
+        raise PredictionBlocked(
+            f"{len(run.cases) - len(run.predictions)} cases have no grounded prediction; "
+            "output was not written or replaced. See diagnostics for blockers."
+        )
+    return run.predictions
 
 
 def predict(dataset: Dataset, index: EvidenceIndex | None = None) -> PredictionRun:
