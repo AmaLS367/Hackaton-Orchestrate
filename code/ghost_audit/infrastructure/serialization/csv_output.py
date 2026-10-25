@@ -44,6 +44,7 @@ def write_output(
     requests: list[DeletionRequest],
     evidence: EvidenceIndex | None = None,
 ) -> None:
+    """Validate the complete result before atomically replacing the destination CSV."""
     ordered = sorted(rows, key=lambda row: row.case_id)
     validate_output(ordered, requests, evidence)
     # Validate everything before replacing any existing output.

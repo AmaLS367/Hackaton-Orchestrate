@@ -16,6 +16,8 @@ from ghost_audit.domain.models import (
 
 @dataclass
 class Dataset:
+    """In-memory participant inputs and their citation registry; no file access occurs here."""
+
     requests: list[DeletionRequest]
     identities: list[Identity]
     identity_changes: list[IdentityChange]

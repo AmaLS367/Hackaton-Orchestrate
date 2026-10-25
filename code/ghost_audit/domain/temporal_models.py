@@ -70,6 +70,7 @@ class TemporalObservation(StrictModel):
 
     @property
     def link(self) -> ObservationLink:
+        """Reference the original observation without losing its locator."""
         p = self.provenance
         return ObservationLink(evidence_id=p.evidence_id, file_path=p.file_path, locator=p.locator)
 
@@ -97,6 +98,7 @@ class StateSelection(StrictModel):
 
     @model_validator(mode="after")
     def consistent_dimension(self) -> Self:
+        """Reject dimension-incompatible states and unsupported claims of proof."""
         allowed = {
             "record": {"PRESENT", "ABSENT", "REDACTED", "ANONYMIZED", "UNKNOWN"},
             "flow": {"ACTIVE", "INACTIVE", "UNKNOWN"},

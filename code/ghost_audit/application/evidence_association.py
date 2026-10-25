@@ -44,6 +44,7 @@ class EvidenceAssociationService:
         return max(earlier, default=None)
 
     def analyze(self, request: DeletionRequest) -> CaseEvidenceBundle:
+        """Build one cutoff-bounded evidence bundle before any state or policy decision."""
         identity = self.resolver.resolve(request)
         observations, resources, ambiguities = self.correlator.correlate(
             identity,
@@ -117,6 +118,8 @@ class EvidenceAssociationService:
 
 
 def diagnostics(bundles: list[CaseEvidenceBundle]) -> dict:
+    """Summarize intent, identity and association coverage without claiming prediction accuracy."""
+
     def confirmed(b):
         return any(o.association == "CONFIRMED" for o in b.observations)
 

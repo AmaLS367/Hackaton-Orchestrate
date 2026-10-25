@@ -11,6 +11,7 @@ REPORTS = ("evaluation_report.md", "usage_report.md")
 
 
 def contents(root: Path) -> dict[str, bytes]:
+    """Collect allowed source, documentation and fixture files without participant data."""
     files = {name: (root / name).read_bytes() for name in ROOT_FILES}
     for directory in (root / "code", root / "docs"):
         for path in sorted(directory.rglob("*")):
@@ -33,6 +34,7 @@ def contents(root: Path) -> dict[str, bytes]:
 
 
 def build_archive(root: Path, destination: Path) -> str:
+    """Write sorted fixed-timestamp entries and verify their CRCs and source bytes."""
     root, destination = root.resolve(), destination.resolve()
     if destination.is_relative_to(root / "dataset"):
         raise ValueError("archive must remain outside the read-only dataset")
@@ -55,6 +57,7 @@ def build_archive(root: Path, destination: Path) -> str:
 
 
 def main():
+    """Run this terminal command and preserve its documented exit behavior."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--destination", type=Path, default=ROOT / "code.zip")
     args = parser.parse_args()

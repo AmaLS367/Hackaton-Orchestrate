@@ -51,6 +51,7 @@ LATE_STATUS = {
 def within(
     windows: tuple[tuple[timedelta, timedelta], ...], reported_at: datetime, at: datetime
 ) -> bool:
+    """Test the existing retrieval windows without treating timing as ownership evidence."""
     return any(reported_at + low <= at <= reported_at + high for low, high in windows)
 
 
@@ -157,6 +158,7 @@ class WorkflowAttribution:
         return [] if any(i in unique for i in options) else sorted(options)
 
     def resolve(self, request: DeletionRequest) -> tuple[list[int], set[int]]:
+        """Assign only uniquely constrained events visible at this request's cutoff."""
         if request.case_id not in self.users:
             return [], set()
         cutoff = request.audit_at

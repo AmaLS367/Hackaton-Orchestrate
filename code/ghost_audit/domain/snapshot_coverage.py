@@ -48,6 +48,7 @@ class Listing:
 
     @property
     def complete(self) -> bool:
+        """Require completeness proof and reject filtered or truncated inventories."""
         return self.proof is not None and self.filter_scope is None and not self.truncated
 
 
@@ -68,6 +69,7 @@ def listing(
     ids: Iterable[str],
     table: str | None = None,
 ) -> Listing:
+    """Preserve listing contents and explicit limits instead of inferring completeness."""
     p = surface.payload
     filters = [k for k in FILTERS if p.get(k)]
     return Listing(

@@ -66,6 +66,7 @@ def predict(dataset: Dataset, index: EvidenceIndex | None = None) -> PredictionR
 
 
 def diagnostics(run: PredictionRun) -> dict:
+    """Summarize strict decisions and abstention causes without claiming prediction accuracy."""
     counts: Counter[str] = Counter(case.decision for case in run.cases)
     assessments = [a for c in run.cases for a in c.assessments]
     return {

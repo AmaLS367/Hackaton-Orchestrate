@@ -56,6 +56,7 @@ class ObservationLink(StrictModel):
 
     @classmethod
     def of(cls, observation: Observation) -> "ObservationLink":
+        """Reference an observation by its original participant citation and locator."""
         p = observation.provenance
         return cls(evidence_id=p.evidence_id, file_path=p.file_path, locator=p.locator)
 
@@ -109,6 +110,7 @@ class CaseEvidenceBundle(StrictModel):
 
     @property
     def observation_timestamps(self) -> list[datetime]:
+        """List known availability clocks without inferring continuous resource state."""
         return sorted(
             {
                 item.observation.available_at

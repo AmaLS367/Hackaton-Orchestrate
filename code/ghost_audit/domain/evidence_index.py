@@ -106,6 +106,7 @@ class EvidenceRegistry:
         self.entries[entry.evidence_id] = entry
 
     def get(self, evidence_id: str) -> EvidenceEntry | None:
+        """Return citation metadata, including deferred files, or None when unregistered."""
         return self.entries.get(evidence_id)
 
 
@@ -115,6 +116,7 @@ class EvidenceIndex:
     @staticmethod
     def trace_key(item: Observation) -> tuple[str, object, str | None]:
         # A collector can report several target systems within one service trace.
+        """Scope trace reuse by source file and reporting service to prevent cross-user joins."""
         service = item.payload.get("service") or tuple(item.system_ids)
         return item.provenance.file_path, service, item.trace_id
 

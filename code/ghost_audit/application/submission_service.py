@@ -31,6 +31,7 @@ class SubmissionPredictor:
     def resources_for(
         self, request: DeletionRequest, user: str
     ) -> tuple[dict[str, Resource], list[str]]:
+        """Collect supported ownership and unique batch assignments, recording ambiguous leads."""
         audit_at = request.audit_at
         resources: dict[str, Resource] = {}
         notes = []
@@ -88,6 +89,7 @@ class SubmissionPredictor:
         return resources, notes
 
     def predict_case(self, request: DeletionRequest) -> CasePrediction:
+        """Build one official result while preserving attribution and confidence diagnostics."""
         intent = self.evidence.classifier.classify(request)
         if intent.decision == "NO_DELETE_INTENT":
             return CasePrediction(
@@ -233,6 +235,7 @@ class SubmissionPredictor:
 
     @staticmethod
     def unique(steps: list[OutputStep]) -> list[OutputStep]:
+        """Keep the first supporting step for each operation/system/resource identity."""
         seen: dict[tuple[str, str, str], OutputStep] = {}
         for s in steps:
             seen.setdefault((s.operation, s.system_id, s.resource_id), s)

@@ -383,6 +383,7 @@ class PolicyEvaluator:
         history: ResourceHistory,
         bundle: CaseStateBundle,
     ) -> tuple[bool | None, list[ObservationLink]]:
+        """Use supported condition history only when current facts do not contradict it."""
         kind = CONDITIONS.get(rule.condition)
         current = self.condition(kind, selected, history, bundle)
         if current is not None:
@@ -411,6 +412,7 @@ class PolicyEvaluator:
         return None, []
 
     def evaluate(self, bundle: CaseStateBundle) -> list[PolicyAssessment]:
+        """Evaluate confirmed resources per physical scope; another replica cannot supply treatment."""
         results = []
         groups = defaultdict(list)
         for h in bundle.resource_histories:
@@ -507,6 +509,7 @@ class PolicyEvaluator:
         observations: list[TemporalObservation],
         bundle: CaseStateBundle,
     ) -> list[PolicyAssessment]:
+        """Select one applicable rule or preserve unknown/precautionary obligations."""
         if category == "DATA_FLOW":
             return [self.process(h, "flow", category)]
         if category == "BACKUP_ARCHIVE":
@@ -573,6 +576,7 @@ class PolicyEvaluator:
     def process(
         h: ResourceHistory, dimension: Literal["flow", "restore"], category: str
     ) -> PolicyAssessment:
+        """Assess connector or restore safety independently of record existence."""
         selection = getattr(h, dimension)
         flow = dimension == "flow"
         required, bad = ("INACTIVE", "ACTIVE") if flow else ("BLOCKED", "ALLOWED")
@@ -604,6 +608,7 @@ class PolicyEvaluator:
         rule: DeletionRule,
         bundle: CaseStateBundle,
     ) -> tuple[Literal["COMPLIANT", "VIOLATION", "UNKNOWN"], list[str]]:
+        """Require policy-specific field coverage and retain missing-preserved-record uncertainty."""
         state, action = h.record.state, rule.required_action
         fields = [f for o in observations for f in o.fields]
         if action == "DELETE":

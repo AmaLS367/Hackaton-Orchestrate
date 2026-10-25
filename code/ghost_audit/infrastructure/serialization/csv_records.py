@@ -10,6 +10,7 @@ T = TypeVar("T", bound=StrictModel)
 
 
 def read_csv(path: Path, columns: list[str]) -> list[dict[str, str]]:
+    """Reject wrong headers and row widths while preserving UTF-8 quoted values."""
     with path.open(encoding="utf-8-sig", newline="") as stream:
         reader = csv.DictReader(stream)
         if reader.fieldnames != columns:
@@ -23,6 +24,7 @@ def read_csv(path: Path, columns: list[str]) -> list[dict[str, str]]:
 
 
 def load_models[T: StrictModel](path: Path, model: type[T], unique_key: str) -> list[T]:
+    """Validate CSV records against a typed schema and reject duplicate identifiers."""
     result = []
     seen = set()
     for number, row in enumerate(read_csv(path, list(model.model_fields)), 2):

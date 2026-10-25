@@ -62,12 +62,14 @@ class SubmissionEvidence:
                 self.user_values[next(iter(users))].add(name)
 
     def users_in(self, value: object) -> set[str]:
+        """Find exact known identity atoms in extracted scalar or nested values."""
         found = set()
         for token in identifier_values(value):
             found |= self.owners_by_value.get(token, set())
         return found
 
     def user_for(self, request: DeletionRequest) -> tuple[str | None, str | None]:
+        """Resolve the request subject and disclose the submission cutoff fallback."""
         identity = self.resolver.resolve(request)
         if identity.status == "RESOLVED":
             return identity.user_id, None
@@ -139,6 +141,7 @@ class SubmissionEvidence:
     def owners(
         self, resource_id: str, cutoff: datetime | None = None, strong: bool = False
     ) -> set[str]:
+        """Filter observed resource owners by cutoff and optional non-lookup strength."""
         return {
             user
             for user, links in self.explicit.get(resource_id, {}).items()
@@ -149,6 +152,7 @@ class SubmissionEvidence:
         }
 
     def system_of(self, resource_id: str) -> str | None:
+        """Select the supported resource system with deterministic tie-breaking."""
         systems: defaultdict[str, int] = defaultdict(int)
         for i in self.by_resource.get(resource_id, ()):
             for r in self.observations[i].resources:

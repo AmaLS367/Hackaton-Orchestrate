@@ -41,6 +41,7 @@ def write_abstention_diagnostics(path: Path, run: PredictionRun) -> None:
 
 
 def publish(path, run, dataset, index):
+    """Preserve the destination when a strict run has abstentions or validation errors."""
     if not run.publishable:
         raise PredictionBlocked(
             f"{len(run.cases) - len(run.predictions)} cases have no grounded prediction; "

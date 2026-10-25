@@ -52,10 +52,12 @@ class PredictionRun(StrictModel):
 
     @property
     def predictions(self) -> list[OutputRow]:
+        """Expose grounded rows only, without translating abstentions into official statuses."""
         return [case.prediction for case in self.cases if case.prediction is not None]
 
     @property
     def publishable(self) -> bool:
+        """Require a nonempty complete request set with no missing rows or validation errors."""
         return (
             bool(self.cases)
             and all(case.prediction is not None for case in self.cases)

@@ -67,6 +67,7 @@ class OutputStep(StrictModel):
 
     @model_validator(mode="after")
     def operation_contract(self) -> Self:
+        """Reject invalid phase/operation/state pairs and whitespace-only citations."""
         if OPERATIONS.get(self.operation) != (self.phase, self.state):
             raise ValueError("invalid phase/operation/state combination")
         if self.evidence_id and not self.evidence_id.strip():
@@ -75,6 +76,7 @@ class OutputStep(StrictModel):
 
 
 def step_key(step: OutputStep) -> tuple[int, str, str, str]:
+    """Order official operations, scoped resources and citations deterministically."""
     return OPERATION_ORDER[step.operation], step.system_id, step.resource_id, step.evidence_id
 
 
@@ -95,6 +97,7 @@ class OutputRow(StrictModel):
 
     @model_validator(mode="after")
     def row_contract(self) -> Self:
+        """Reject invalid coverage semantics, step order, numbering or citation ownership."""
         if self.deletion_status == "NOT_APPLICABLE":
             if self.steps:
                 raise ValueError("NOT_APPLICABLE requires []")

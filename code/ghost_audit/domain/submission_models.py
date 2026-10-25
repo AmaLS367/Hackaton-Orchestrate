@@ -25,6 +25,8 @@ class Fact:
 
 @dataclass
 class Listing:
+    """One submission snapshot inventory and its physical/capture scope."""
+
     evidence_id: str
     at: datetime | None
     captured_at: datetime | None

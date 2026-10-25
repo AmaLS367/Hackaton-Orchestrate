@@ -9,6 +9,7 @@ from ghost_audit.domain.models import DeletionRequest
 
 
 def fold(text: str) -> str:
+    """Normalize accents and case for intent wording while retaining script distinctions."""
     text = text.casefold().replace("’", "'").replace("-", " ")
     return unicodedata.normalize(
         "NFC",
@@ -105,6 +106,7 @@ class IntentClassifier:
     """Classify multilingual deletion authorization with explicit uncertainty."""
 
     def classify(self, request: DeletionRequest | str) -> IntentResult:
+        """Recognize authorization, non-deletion requests or unresolved intent explicitly."""
         text = fold(request.request_text if isinstance(request, DeletionRequest) else request)
         # Conditional/hypothetical and quoted instructions are not authorization.
         if re.search(

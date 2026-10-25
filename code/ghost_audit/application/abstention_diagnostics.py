@@ -54,6 +54,7 @@ FIELD_COVERAGE = {
 
 
 def label(ref: ResourceRef | ResourceScope) -> str:
+    """Render a system/resource label without copying personal identity fields."""
     return f"{ref.system_id or '?'}:{ref.resource_id}"
 
 
@@ -150,6 +151,7 @@ def late_evidence(
 
 
 def assessment_causes(assessment: PolicyAssessment, histories: list[ResourceHistory]) -> list[str]:
+    """Map unresolved assessment reasons to actionable diagnostic cause identifiers."""
     reasons = set(assessment.reasons)
     causes = set()
     if "policy_condition_unestablished_or_ambiguous" in reasons:

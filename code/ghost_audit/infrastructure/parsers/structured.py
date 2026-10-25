@@ -30,6 +30,7 @@ from ghost_audit.domain.models import (
 
 
 def timestamps(payload: dict, locator: str, recursive: bool = False) -> list[SourceTimestamp]:
+    """Locate source and business clocks without confusing future retention with availability."""
     result = []
     for key, value in payload.items():
         field = key.lower().replace(" ", "_")
@@ -56,6 +57,8 @@ def timestamps(payload: dict, locator: str, recursive: bool = False) -> list[Sou
 
 @dataclass(frozen=True)
 class ExtractionContext:
+    """Immutable parse scope carrying manifest identity, digest and inherited clocks."""
+
     manifest: EvidenceFile
     sha256: str
     times: tuple[SourceTimestamp, ...] = ()
@@ -64,6 +67,7 @@ class ExtractionContext:
     physical_table: str | None = None
 
     def scoped(self, payload: dict, locator: str) -> "ExtractionContext":
+        """Inherit document scope while retaining nested source clocks and explicit schema names."""
         decoded = payload.get("decoded_record")
         decoded = decoded if isinstance(decoded, dict) else {}
         system = next(
@@ -97,6 +101,7 @@ class ExtractionContext:
         trace_id: str | None = None,
         recursive_times: bool = False,
     ) -> Observation:
+        """Convert raw values into a provenance-bearing observation at its exact source location."""
         scope = self.scoped(payload, locator)
         times = list(scope.times)
         if recursive_times:
@@ -228,6 +233,7 @@ def parse_fields(text: str) -> dict[str, str]:
 
 
 def parse_bracket_log(body: str) -> dict | None:
+    """Decode supported bracket-style log fields without deciding resource state."""
     match = re.fullmatch(
         r"\[(?P<level>[^]]+)\]\s+\[(?P<service>[^]]+)\]\s+"
         r"(?:\[(?P<trace_id>[^]]+)\]\s+)?(?P<event>[^:]+):\s*(?P<fields>.*)",
@@ -243,6 +249,7 @@ def parse_bracket_log(body: str) -> dict | None:
 
 
 def parse_pipe_log(body: str) -> dict | None:
+    """Decode supported pipe-delimited log fields without losing the log body."""
     match = re.fullmatch(
         rf"\|\s*(?P<level>{LEVELS})\s*\|\s*(?P<service>[^|]+?)\s*\|\s*"
         r"(?P<trace_id>[^|]+?)\s*\|\s*(?P<event>[^|]+?)\s*\|\s*(?P<fields>.*)",
@@ -257,6 +264,7 @@ def parse_pipe_log(body: str) -> dict | None:
 
 
 def parse_json_log(body: str) -> dict | None:
+    """Decode a structured log body when it contains a supported object."""
     if not body.startswith("{"):
         return None
     try:
@@ -267,6 +275,7 @@ def parse_json_log(body: str) -> dict | None:
 
 
 def parse_key_value_log(body: str) -> dict | None:
+    """Decode supported key/value log records while preserving their fields."""
     if not re.match(r"^[A-Za-z_][\w.-]*=", body):
         return None
     payload = parse_fields(body)
@@ -280,6 +289,7 @@ def parse_key_value_log(body: str) -> dict | None:
 
 
 def parse_plain_level_log(body: str) -> dict | None:
+    """Decode supported plain-level log records for downstream semantic interpretation."""
     match = re.fullmatch(rf"(?P<level>{LEVELS})(?:\s+(?P<fields>.*))?", body)
     if not match:
         return None
@@ -288,6 +298,7 @@ def parse_plain_level_log(body: str) -> dict | None:
 
 def parse_syslog(line: str) -> dict | None:
     # Both dataset timestamp-first exports and standard RFC5424 header order.
+    """Decode supported syslog timestamps, service and structured fields."""
     match = re.fullmatch(
         rf"(?:(?P<outer>{ISO_TOKEN})\s+)?<(?P<priority>\d+)>(?P<version>\d+)\s+"
         rf"(?:(?P<inner>{ISO_TOKEN})\s+)?(?P<host>\S+)\s+(?P<service>\S+)\s+"
@@ -310,6 +321,7 @@ def parse_syslog(line: str) -> dict | None:
 
 
 def parse_log(line: str) -> dict | None:
+    """Try documented log representations without fabricating missing fields."""
     payload = parse_syslog(line)
     if payload is None:
         match = re.fullmatch(rf"(?P<timestamp>{ISO_TOKEN})\s+(?P<body>.*)", line)

@@ -4,7 +4,7 @@
 
 **Submission-ready.** A separate submission predictor produces a validated 518-row root
 `output.csv`; the strict audit engine is unchanged and kept as `--strict` plus diagnostics.
-Base commit `122b834`; tests 491 → **499 passing** (8 added in `code/tests/test_submission.py`).
+Base commit `122b834`; tests 491 → **499 passing** (8 added in `code/tests/e2e/test_submission.py`).
 
 ### Metrics
 
@@ -92,7 +92,7 @@ and contains every strict step (zero strict-only steps). Two full runs are byte-
 
 ### Additional evaluation cases (created by the team)
 
-`code/tests/test_submission.py` adds regression cases built for this pathway: an old
+`code/tests/e2e/test_submission.py` adds regression cases built for this pathway: an old
 lookup by the subject's key touching another request's account must not override the
 request's own batch submission; batch candidates with no distinguishing evidence are never
 attributed; a replica copy in the case's own file outranks a later unrelated inventory; a
@@ -454,3 +454,13 @@ It exits 2 and creates no CSV, matching the source checkout. ZIP member bytes, r
 report paths, and CRCs are checked; repeated builds produce identical archive bytes.
 The separate eight-file trace archive passes JSONL/CRC and credential-pattern checks,
 but still requires the documented post-session refresh and manual privacy inspection.
+
+
+## Structural refactor verification
+
+The production-grade refactor preserves the final submission and all prior measured
+metrics. All 499 original behavioral scenarios remain, with 527 total tests. Exact CSV,
+strict decisions, abstentions, confidence and public metrics match the protected
+`4476d26` baseline. See the repository-root file `docs/refactor-report.md` for gates,
+architecture, source mapping and archive verification. No correctness correction or
+changed prediction is hidden in the refactor.

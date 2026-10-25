@@ -125,6 +125,7 @@ class Observation(StrictModel):
 
     @property
     def available_at(self) -> datetime | None:
+        """Gate source facts by their latest source or manifest capture clock."""
         times = [t.value for t in self.provenance.timestamps if t.role == "source"]
         if self.provenance.captured_at is not None:
             times.append(self.provenance.captured_at)

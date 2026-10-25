@@ -32,10 +32,12 @@ def stable(value: object, workspace: Path, destination: Path) -> object:
 
 
 def digest(path: Path) -> str:
+    """Hash artifact bytes without interpreting their contents."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def output_cases(path: Path) -> list[dict]:
+    """Decode ordered step arrays for exact per-case regression comparisons."""
     with path.open(encoding="utf-8", newline="") as stream:
         return [
             {**row, "steps_json": json.loads(row["steps_json"])} for row in csv.DictReader(stream)
@@ -255,6 +257,7 @@ def compare(baseline: Path, current: Path) -> list[dict]:
 
 
 def main() -> int:
+    """Run this terminal command and preserve its documented exit behavior."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("destination", type=Path)
     parser.add_argument("--baseline", type=Path)

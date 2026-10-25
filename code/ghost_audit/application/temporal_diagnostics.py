@@ -6,6 +6,7 @@ from ghost_audit.domain.temporal_models import CaseStateBundle
 
 
 def diagnostics(bundles: list[CaseStateBundle]) -> dict:
+    """Summarize temporal scope and conflict coverage without claiming prediction accuracy."""
     histories = [h for b in bundles for h in b.resource_histories]
     records: Counter[str] = Counter(h.record.state for h in histories)
     support: Counter[str] = Counter(h.record.support for h in histories)

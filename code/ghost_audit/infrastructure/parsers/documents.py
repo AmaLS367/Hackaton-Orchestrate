@@ -155,6 +155,7 @@ def document_observations(
 
 
 def evidence_path(dataset: Path, relative: str) -> Path:
+    """Reject manifest paths escaping the participant evidence directory."""
     candidate = Path(relative)
     path = (dataset / candidate).resolve()
     if candidate.is_absolute() or not path.is_relative_to(dataset.resolve() / "evidence"):
@@ -167,6 +168,7 @@ def parse_document(
     manifest: EvidenceFile,
     catalog: dict[str, tuple[str, str, datetime]] | None = None,
 ) -> EvidenceDocument:
+    """Decode one manifest file while preserving provenance and explicit extraction deferrals."""
     path = evidence_path(dataset, manifest.file_path)
     content = path.read_bytes()
     digest = hashlib.sha256(content).hexdigest()

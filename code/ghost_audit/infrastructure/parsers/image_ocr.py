@@ -17,6 +17,7 @@ _WINDOWS_DEFAULT = Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe")
 
 
 def tesseract_binary() -> str | None:
+    """Locate an enabled local OCR executable without introducing a service dependency."""
     if os.environ.get("GHOST_AUDIT_OCR", "1") == "0":
         return None
     configured = os.environ.get("GHOST_AUDIT_TESSERACT")

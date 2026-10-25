@@ -39,6 +39,7 @@ def _quote(identifier: str) -> str:
 
 
 def parse_sql(text: str, context: ExtractionContext) -> list[Observation]:
+    """Read supplied snapshots in a restricted in-memory SQLite connection."""
     observations = []
     # A header capture is independent of row updated_at and manifest capture time.
     header = re.search(rf"-- Captured at:\s*({ISO_TOKEN})", text)

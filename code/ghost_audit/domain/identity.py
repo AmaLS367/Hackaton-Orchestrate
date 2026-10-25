@@ -54,6 +54,7 @@ class IdentityResolver:
             self.by_email[key].append((user, at))
 
     def owners(self, value: str, audit_at: str | datetime) -> set[str]:
+        """Return exact owners whose identifier statement was available by the cutoff."""
         cutoff = parse_timestamp(audit_at)
         return {
             user
@@ -64,6 +65,7 @@ class IdentityResolver:
     def resolve(
         self, request: DeletionRequest | str, audit_at: str | datetime | None = None
     ) -> ResolvedIdentity:
+        """Resolve a request email uniquely or retain ambiguity and historical aliases."""
         if isinstance(request, DeletionRequest):
             email = request.email
             cutoff = parse_timestamp(audit_at) if audit_at is not None else request.audit_at
@@ -100,6 +102,7 @@ class IdentityResolver:
     def aliases_for(
         self, user: str, audit_at: str | datetime
     ) -> tuple[list[IdentityAlias], set[str]]:
+        """Reconstruct alias statements and bounded intervals without using future transitions."""
         cutoff = parse_timestamp(audit_at)
         snapshot = self.snapshots.get(user)
         visible_snapshot = snapshot if snapshot and snapshot.updated_at <= cutoff else None

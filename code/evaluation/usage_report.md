@@ -41,3 +41,14 @@ Development-assistant token counts and billing were not collected as a reliable 
 they are **not claimed to be zero** and are excluded from the solution-runtime totals.
 The active development trace still needs to be flushed and added after quitting Codex.
 No credentials or sensitive configuration values belong in the submission artifacts.
+
+
+## Refactor validation run
+
+The final full-dataset default command again processed all 518 requests and produced
+byte-identical output (SHA-256
+`2dfda949b915f713b7a261692be8bdd1b7cfcb3bbe3b5b2387d2b055f34d4227`).
+Both pathways still use 0 providers, 0 models, 0 calls, 0 input/output/total tokens,
+0 average tokens per request, and USD 0 total/per-request model cost. Refactor work
+used Codex Desktop / gpt-6.1-sol, verified from session metadata; assistant token and
+billing totals are not available and are not represented as zero.

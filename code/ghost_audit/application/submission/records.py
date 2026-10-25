@@ -185,6 +185,7 @@ class SubmissionRecords:
         return direct, stable, subject
 
     def category(self, resource_id: str, signals: RecordSignals) -> str:
+        """Infer the supplied record category from named types, schemas and supported signals."""
         kind = prefix(resource_id)
         # A source that names the record's data category is authoritative.
         named = sorted(t for t in signals["types"] if t in self.required and t != "BACKUP_ARCHIVE")
@@ -239,6 +240,7 @@ class SubmissionRecords:
         return "UNKNOWN"
 
     def listing_facts(self, resource_id: str, system_id: str) -> list[Fact]:
+        """Preserve submission inventory-omission facts and their original clocks."""
         facts = []
         for item in self.listings.get((system_id, prefix(resource_id)), ()):
             absent = resource_id not in item.ids

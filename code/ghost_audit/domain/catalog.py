@@ -56,6 +56,7 @@ REPLICA_TABLE = re.compile(
 
 
 def collection_system(collection: str | None) -> str | None:
+    """Resolve established collection schemas, preserving unknown system ownership."""
     if not collection:
         return None
     return COLLECTION_SYSTEMS.get(collection) or COLLECTION_SYSTEMS.get(

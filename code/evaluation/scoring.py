@@ -29,6 +29,7 @@ def _step_signature(step):
 
 
 def evaluate(predictions: list[OutputRow], references: list[OutputRow]) -> EvaluationMetrics:
+    """Score independent predictions against all public references, including missing cases."""
     predicted = {row.case_id: row for row in predictions}
     expected = {row.case_id: row for row in references}
     if len(predicted) != len(predictions) or len(expected) != len(references):

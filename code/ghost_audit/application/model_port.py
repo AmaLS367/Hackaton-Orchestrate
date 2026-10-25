@@ -6,6 +6,8 @@ from typing import Protocol
 
 @dataclass(frozen=True)
 class LLMResponse:
+    """An optional provider reply and its recorded token accounting."""
+
     text: str
     provider: str
     model: str
@@ -19,4 +21,6 @@ class LLMAdapter(Protocol):
     The deterministic engine must never depend on an adapter being configured.
     """
 
-    def complete(self, *, system_prompt: str, user_prompt: str) -> LLMResponse: ...
+    def complete(self, *, system_prompt: str, user_prompt: str) -> LLMResponse:
+        """Optional provider boundary; neither offline prediction use case calls it."""
+        ...

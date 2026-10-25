@@ -20,6 +20,7 @@ GROUPS = (
 
 
 def signature(step, *, evidence=True):
+    """Compare official semantic step fields with optional citation inclusion."""
     data = step.model_dump()
     return tuple(
         data[k]
@@ -29,6 +30,7 @@ def signature(step, *, evidence=True):
 
 
 def failure_analysis(predictions, references, decisions=()):
+    """Report missing, extra and citation-different sample steps without claiming hidden truth."""
     predicted = {p.case_id: p for p in predictions}
     decisions = {d.case_id: d for d in decisions}
     groups: dict[str, list[str]] = {key: [] for key in GROUPS}

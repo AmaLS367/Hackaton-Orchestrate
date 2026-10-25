@@ -22,6 +22,7 @@ from ghost_audit.domain.temporal_models import (
 
 
 def scope_key(scope: ResourceScope) -> tuple[str, ...]:
+    """Keep logical resource identity and physical read surface in the history key."""
     return (scope.system_id or "", scope.collection or "", scope.resource_id, scope.replica_scope)
 
 
