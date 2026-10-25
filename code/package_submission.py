@@ -1,12 +1,24 @@
-"""Build and verify a deterministic source-only code.zip; never packages dataset or traces."""
+"""Build and verify a deterministic source-only code.zip; never packages dataset or traces.
+
+Archive bytes depend only on file content, not on the host: entries are sorted, carry fixed
+timestamps, permissions and creator system, and known UTF-8 text is stored with LF endings
+so Windows (core.autocrlf) and Linux checkouts of the same commit give identical archives.
+"""
 
 import argparse
 import hashlib
 import tomllib
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
+# Only these known UTF-8 text assets are line-ending normalized. Every other type keeps its
+# exact bytes: binaries by definition, and CSV, logs or SQL snapshots because their CRLF
+# rows or embedded CR bytes can be data rather than checkout noise (none is packaged today).
+TEXT_SUFFIXES = frozenset({".py", ".md", ".json", ".toml", ".lock"})
+TEXT_NAMES = frozenset(
+    {"LICENSE", "Dockerfile", ".dockerignore", ".editorconfig", ".python-version"}
+)
 ROOT_FILES = (
     "README.md",
     "LICENSE",
@@ -34,9 +46,26 @@ def metadata_files(pyproject: bytes) -> set[str]:
     return names
 
 
+def normalize_text(name: str, data: bytes) -> bytes:
+    """Return known UTF-8 text with CRLF replaced by LF; any other file is returned unchanged.
+
+    The replacement is byte-level, which is safe for UTF-8 because CR and LF never occur
+    inside a multi-byte sequence. A BOM, lone CR and all other characters are preserved.
+    Text that is not valid UTF-8 is rejected rather than silently rewritten.
+    """
+    path = PurePosixPath(name)
+    if path.suffix not in TEXT_SUFFIXES and path.name not in TEXT_NAMES:
+        return data
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"{name} is not valid UTF-8 text; refusing to rewrite it") from exc
+    return data.replace(b"\r\n", b"\n")
+
+
 def contents(root: Path) -> dict[str, bytes]:
     """Collect allowed source, documentation and fixture files without participant data."""
-    files = {name: (root / name).read_bytes() for name in ROOT_FILES}
+    files = {name: normalize_text(name, (root / name).read_bytes()) for name in ROOT_FILES}
     missing = metadata_files(files["pyproject.toml"]) - files.keys()
     if missing:
         raise ValueError(f"pyproject.toml references files absent from the archive: {missing}")
@@ -49,10 +78,14 @@ def contents(root: Path) -> dict[str, bytes]:
                 continue
             fixture = relative.is_relative_to("code/tests/fixtures") and path.suffix == ".json"
             if path.suffix in {".py", ".md"} or fixture:
-                files[relative.as_posix()] = path.read_bytes()
+                name = relative.as_posix()
+                files[name] = normalize_text(name, path.read_bytes())
     # The challenge requires these archive-root paths; source locations stay intact.
     for name in REPORTS:
-        files["evaluation/" + name] = (root / "code/evaluation" / name).read_bytes()
+        archive_name = "evaluation/" + name
+        files[archive_name] = normalize_text(
+            archive_name, (root / "code/evaluation" / name).read_bytes()
+        )
     return files
 
 
@@ -68,6 +101,7 @@ def build_archive(root: Path, destination: Path) -> str:
         for name, data in sorted(files.items()):
             info = zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
+            info.create_system = 3  # ZipInfo would otherwise record the building host's OS
             info.external_attr = 0o100644 << 16
             archive.writestr(info, data)
     with zipfile.ZipFile(destination) as archive:

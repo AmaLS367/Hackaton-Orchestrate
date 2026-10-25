@@ -105,6 +105,16 @@ The packager uses an explicit source/document/fixture allowlist, fixed timestamp
 sorted entries and CRC/byte validation. Required reports are also copied to archive-root
 `evaluation/`. Outputs, datasets, JSON diagnostics, caches and agent traces are separate.
 
+Archive bytes are independent of the checkout and host. Known UTF-8 text (`.py`, `.md`,
+`.json`, `.toml`, `.lock`, `LICENSE`, `Dockerfile`, `.dockerignore`, `.editorconfig`,
+`.python-version`) is stored with LF endings, so a Windows checkout with
+`core.autocrlf=true` and a Linux checkout of one commit produce identical archives. Only
+CRLF pairs change: BOMs, lone CRs and all other characters are kept, and text that is not
+valid UTF-8 is rejected. Every other type keeps its exact bytes. CSV, log and SQL snapshots
+are deliberately outside the text set because their CR/CRLF can be data; none is packaged
+today. Each entry also records a fixed Unix creator system, since `ZipInfo` otherwise
+stores the building host's OS.
+
 Extract to an empty directory and run its own scripts with the supplied participant
 folder outside the archive:
 

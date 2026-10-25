@@ -175,6 +175,8 @@ The deterministic `code.zip` includes runtime code, tests and fixtures, configur
 lockfile, this README, developer docs and the required reports at
 `evaluation/evaluation_report.md` and `evaluation/usage_report.md`. It excludes dataset,
 outputs, environments, caches, diagnostics, credentials, transcripts and nested archives.
+Known text assets are stored with LF endings, so Windows and Linux checkouts of one commit
+build a byte-identical archive.
 After extraction, install dependencies and supply `--dataset PATH`; see
 [development](docs/development.md) for a smoke-test command. No submission is performed.
 
