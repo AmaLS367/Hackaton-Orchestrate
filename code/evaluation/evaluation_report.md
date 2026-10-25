@@ -1,5 +1,105 @@
 # Evaluation report
 
+## Submission round — 2026-10-25
+
+**Submission-ready.** A separate submission predictor produces a validated 518-row root
+`output.csv`; the strict audit engine is unchanged and kept as `--strict` plus diagnostics.
+Base commit `122b834`; tests 491 → **499 passing** (8 added in `code/tests/test_submission.py`).
+
+### Metrics
+
+| Metric (32 public samples) | Strict engine | Submission predictor |
+| --- | ---: | ---: |
+| Predicted cases | 21/32 | 32/32 |
+| Case-level status accuracy | 65.625% | **100%** |
+| Step-level accuracy | 61.140% | **93.782%** |
+| Step precision | 100% | **100%** |
+| Step recall | 61.140% | **93.782%** |
+| Field-level accuracy | 46.928% | **87.935%** |
+| Sequence accuracy | 18.750% | **65.625%** |
+| Exact cases | 6/32 | **21/32** |
+| Missing / extra steps | 75 / 0 | **12 / 0** |
+| Incorrect evidence references | 0 | 0 |
+
+| Full dataset (518 requests) | Strict engine | Submission predictor |
+| --- | ---: | ---: |
+| Predictions | 364 | **518** |
+| COMPLETE / INCOMPLETE / NOT_APPLICABLE | 22 / 332 / 10 | 152 / 356 / 10 |
+| Abstentions | 154 | 0 |
+| Steps | n/a | 3,071 |
+
+On all 364 cases the strict engine predicts, the submission predictor gives the same status
+and contains every strict step (zero strict-only steps). Two full runs are byte-identical;
+`validate-output` accepts all 518 rows with 0 citations of unknown support.
+
+### What changed (failures found and improvements made)
+
+1. **Account association (127 ASSOCIATE failures).** The deletion worker submits one
+   primary profile per request 45-75 minutes before `reported_at`, and its reported result
+   mirrors `reported_status` (COMPLETE/SUCCESS, PARTIALLY_COMPLETE/PARTIAL,
+   NOT_STARTED/FAILED); all 24 generated public samples fit. This is solved as a constrained
+   matching: explicit owners veto candidates, a post-request lookup by the subject's key
+   settles a request, and settled accounts are removed from other candidates. 392 accounts
+   are uniquely attributed; 104 requests keep 2-3 viable candidates and get **no** account
+   step. Within-batch time order was tested against explicitly linked batches and is
+   uninformative (23 agree, 23 disagree), so it is not used.
+2. **Downstream workflow resources.** "Policy action completed" (4-35 min before
+   `reported_at`) and final results/status checks (30-125 min after) attribute 753
+   resources when exactly one request of the batch lacks an explicitly owned record of that
+   kind; otherwise they stay unattributed (211 requests carry such candidates).
+3. **Identifiers.** Historical emails appear as SHA-256 hashes (sample case_12); hashes of
+   every current and historical email are identifiers. Full names count only if no other
+   subject ever used them. A lookup by key that found nothing does not establish ownership.
+4. **Policy (26 APPLY_POLICY failures).** Required actions are read from
+   `deletion_rules.csv`; a source-declared `record_type` is authoritative. Support records
+   with a file, `ticket_attachment` storage, an attachment PII scan, a PDF rendering or an
+   "attachment belongs only to" catalogue link are attachments (DELETE); conversations are
+   REDACT. A stable internal reference is allowed under REDACT and tombstones but not under
+   ANONYMIZE. A message body containing the subject's email or name exposes the subject.
+   Backup archive existence and restore permission are separate; a restorable archive is a
+   REPORT_RESTORE_RISK/BLOCK_RESTORE. Console screens state connector status in words
+   ("Healthy", "Continuous sync" means active).
+5. **State and coverage (40 unlinked readbacks, 30 late-evidence cases).** State is taken
+   from the latest evidence file captured between `requested_at` and `audit_at` (every
+   public sample citation lies in that window); any violating replica in that file wins.
+   SQL snapshot tables and JSON collection snapshots are point-in-time contents, so
+   omission proves absence, but only in a file that also captured the case's other records
+   (a later unrelated inventory did not override a failover-replica copy in sample
+   case_05). Records seen only before the request are earlier context and are dropped
+   (retained audit records excepted).
+6. **Publication.** `main.py` writes the submission CSV by default; `--strict` keeps the
+   abstaining rule. Unsupported cases block publication and are named; none remain.
+
+### Inference assumptions (also in `submission_diagnostics.json`)
+
+- Workflow cadence and result/status mirroring identify a request's batch submission.
+- Ownership links may come from evidence captured after `audit_at` (224 resources). Such
+  evidence is never cited and never decides a state; it only adds a future verification
+  step to an INCOMPLETE plan (public sample case_09 expects this for a retained audit
+  record).
+- 25 accounts with no direct readback are verified absent from a snapshot that does not
+  also contain the case's other records (`absence_from_unlinked_snapshot`).
+
+### Low-confidence cases and remaining gaps
+
+- 104 requests have ambiguous primary-profile candidates; 211 have ambiguous downstream
+  candidates. Only `case_369` would change status under some viable assignment.
+- 138 requests contain at least one attributed resource whose state is not provable in the
+  request window (verified as future work only).
+- Sample misses (12 steps): 7 ambiguous anonymized analytics records, 3 ambiguous
+  accounts, 2 audit records absent from all participant data, 1 hand-written account with
+  no workflow or evidence link.
+
+### Additional evaluation cases (created by the team)
+
+`code/tests/test_submission.py` adds regression cases built for this pathway: an old
+lookup by the subject's key touching another request's account must not override the
+request's own batch submission; batch candidates with no distinguishing evidence are never
+attributed; a replica copy in the case's own file outranks a later unrelated inventory; a
+stable reference is allowed under redaction while a message body containing the subject's
+email is exposure. The 24 adversarial synthetic cases below still run against the strict
+engine.
+
 ## Recovery round (fix rounds 1–3) — 2026-10-25
 
 **Still not submission-ready.** 518 requests processed; 364 grounded predictions

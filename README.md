@@ -4,18 +4,31 @@ Offline deletion-audit pipeline for HackerRank Orchestrate October 2026. It read
 participant files in `dataset/`, resolves current and historical identifiers, reconstructs
 resource state at `audit_at`, applies the supplied policies, and builds ordered plans.
 
-## Release status (recovery round, 2026-10-25)
+## Release status (submission round, 2026-10-25)
 
-The final measured run processes 518 requests: **22 COMPLETE, 332 INCOMPLETE,
-10 NOT_APPLICABLE, and 154 abstentions**. A root `output.csv` is **not available**:
-not every case has a justified prediction. Exit code **2** is the expected publication
-block, not an unofficial submission status. Partial decisions remain in
-`code/evaluation/full_prediction_diagnostics.json`; they are not a submission CSV.
-Every abstention's root causes are in `code/evaluation/abstention_diagnostics.json`.
+`uv run python code/main.py` writes the root **`output.csv`: 518 rows, one per request,
+sorted, validated** (152 COMPLETE, 356 INCOMPLETE, 10 NOT_APPLICABLE; 3,071 steps). Two runs
+are byte-identical. Every citation is a file or activity available at the case's
+`audit_at` that states the cited fact, and every resource ID appears in participant data.
 
-On 32 public samples: 21 predictions, 65.625% status accuracy, 6/32 exact cases,
-100% step precision and 61.140% recall. These are sample measurements, not hidden-test
-accuracy. See [the evaluation report](code/evaluation/evaluation_report.md).
+Two pathways share the same parsing:
+
+- **Submission predictor** (`ghost_audit/submission.py`, default): the best-supported
+  official answer per request. Ownership comes from exact current/historical identifiers
+  (including SHA-256 of historical emails), readback traces, catalogue links, and the
+  deletion worker's documented cadence (one primary-profile submission per request about
+  an hour before `reported_at`, its result mirroring the reported status, solved as a
+  constrained one-to-one matching). Ambiguous assignments are never attributed; whether
+  they could change the status is recorded. State is read from evidence captured between
+  `requested_at` and `audit_at`.
+- **Strict audit engine** (`--strict`): publishes only conclusively grounded predictions
+  and abstains otherwise (364 predictions, 154 abstentions). Its diagnostics are still
+  written on every run as the audit-confidence record.
+
+On the 32 public samples the submission predictor scores 100% status accuracy, 100% step
+precision, 93.8% step recall and 21/32 exact cases (strict engine: 65.6%, 100%, 61.1%,
+6/32). Sample measurements are not hidden-test accuracy. See
+[the evaluation report](code/evaluation/evaluation_report.md).
 
 ## Setup
 
@@ -110,9 +123,14 @@ uv run python code/main.py phase3 --case-id CASE_ID
 uv run python code/main.py validate-output --predictions output.csv
 ```
 
-The last command applies only when a complete prediction file exists. `dataset/output.csv`
-is the untouched blank template, not the root submission. Publication never writes a partial
-CSV and does not replace an existing file when the run is blocked. Diagnostics contain
+`dataset/output.csv` is the untouched blank template, not the root submission. Output is
+written atomically only after every row validates; a case that cannot be represented without
+an unsupported finding or verification blocks publication (exit 2) and is named in the
+error. `code/evaluation/submission_diagnostics.json` records, per case, how each resource
+was attributed (`explicit_identifier`, `explicit_identifier_after_audit`,
+`workflow_batch_unique`, `workflow_batch_downstream`), ambiguous candidates, and resources
+whose state was not provable (identifiers only, no personal data). `--strict` restores the
+abstaining publication rule. Diagnostics contain
 fictional participant evidence and should be handled separately from source archives.
 
 Each prediction run also writes `abstention_diagnostics.json` beside the diagnostics file:
@@ -153,5 +171,5 @@ To finish traces, follow [agent_trace_instructions.md](agent_trace_instructions.
    export a live Claude conversation or certify that every personal detail was removed.
 
 The trace archive is separate from `code.zip`. No HackerRank submission is performed.
-The release remains blocked by evidence/ownership/policy gaps documented in the report;
-there is no fabricated 518-row fallback. An independent code review follows Phase 6.
+Known limits (ambiguous workflow attributions, undiscoverable resources) are listed in the
+evaluation report.

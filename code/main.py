@@ -19,6 +19,8 @@ def main(argv=None) -> int:
     parser.add_argument("--predictions", type=Path)
     parser.add_argument("--diagnostics", type=Path, help="Prediction diagnostic JSON (includes abstentions)")
     parser.add_argument("--case-id", help="Inspect one Phase 2/3 case (includes raw fictional evidence)")
+    parser.add_argument("--strict", action="store_true",
+                        help="Publish only the strict audit engine's fully grounded predictions (abstains otherwise)")
     args = parser.parse_args(argv)
     if args.command == "validate-output" and args.predictions is None:
         parser.error("validate-output requires --predictions")
@@ -46,14 +48,33 @@ def main(argv=None) -> int:
             parser.error('prediction artifacts must be outside the read-only dataset directory')
         write_diagnostics(diagnostic_path, run)
         summary = diagnostics(run)
-        try:
-            publish(output_path, run, dataset, index)
-        except PredictionBlocked as exc:
-            summary.update(output_written=False, error=str(exc))
+        if args.strict:
+            try:
+                publish(output_path, run, dataset, index)
+            except PredictionBlocked as exc:
+                summary.update(output_written=False, error=str(exc))
+                print(json.dumps(summary, indent=2))
+                return 2
+            summary.update(output_written=True, output_path=str(output_path))
             print(json.dumps(summary, indent=2))
+            return 0
+        # Submission pathway: the best-supported official answer for every request. The
+        # strict diagnostics above are kept as the audit-confidence record.
+        from ghost_audit.output import write_output
+        from ghost_audit.submission import predict_submission, submission_diagnostics
+
+        try:
+            cases = predict_submission(dataset)
+        except ValueError as exc:
+            print(json.dumps({'output_written': False, 'error': str(exc)}, indent=2))
             return 2
-        summary.update(output_written=True, output_path=str(output_path))
-        print(json.dumps(summary, indent=2))
+        write_output(output_path, [c.row for c in cases], dataset.requests, index)
+        report = submission_diagnostics(cases)
+        submission_path = diagnostic_path.with_name(('sample_' if args.samples else '') + 'submission_diagnostics.json')
+        submission_path.write_text(json.dumps(report, ensure_ascii=False, indent=1) + '\n', encoding='utf-8')
+        print(json.dumps({'strict_engine': {k: summary[k] for k in ('status_counts', 'undecidable_count')},
+                          'submission': report['summary'], 'output_written': True,
+                          'output_path': str(output_path), 'diagnostics_path': str(submission_path)}, indent=2))
     elif args.command in {"phase2", "phase3"}:
         from ghost_audit.phase2 import Phase2Analyzer, diagnostics
 
@@ -86,7 +107,8 @@ def main(argv=None) -> int:
             "parsed_files": sum(doc.status == "parsed" for doc in dataset.documents),
             "deferred_files": sum(doc.status == "deferred" for doc in dataset.documents),
             "observations": len(index.observations),
-            "prediction_engine": "deterministic policy and planning; abstains when evidence cannot establish a verdict",
+            "prediction_engine": "deterministic submission predictor (best-supported answer per request); "
+                                 "--strict publishes only the abstaining audit engine's grounded predictions",
         }, indent=2))
     return 0
 

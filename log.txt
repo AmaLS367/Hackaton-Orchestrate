@@ -5075,3 +5075,380 @@ branch=master
 repo_root=C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-october26
 worktree=main
 parent_agent=none
+
+## [2026-10-25T04:25:01Z] SESSION START
+
+tool=Claude Code
+model=claude-opus-5-5
+Repo Root: C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-october26
+Branch: master
+Worktree: main
+Parent Agent: none
+Language: py
+Time Remaining: not configured
+
+## [2026-10-25T05:16:00Z] Submission predictor: validated 518-row output.csv
+
+User Prompt (verbatim, secrets redacted):
+# URGENT: PRODUCE THE FINAL 518-ROW OUTPUT.CSV
+
+You are the lead engineer responsible for delivering the final HackerRank Orchestrate October 2026 submission.
+
+Repository:
+https://github.com/AmaLS367/Hackaton-Orchestrate
+
+Base commit:
+122b8349f743b093d8ff3f3cf5426ecc3204287d
+
+## THE ONLY OBJECTIVE
+
+**Produce a valid root-level `output.csv` containing exactly 518 predictions.**
+
+The previous development process has spent too much time increasing proof requirements and returning abstentions. We need a competition-ready prediction system, not an engine that refuses to predict whenever evidence is incomplete.
+
+Treat this as a single end-to-end implementation task. Do not stop after investigating, adding diagnostics, or completing another partial improvement.
+
+Make all necessary targeted code changes, evaluate them, and attempt to deliver the actual file.
+
+## CURRENT STATE
+
+- 491 passing tests.
+- 518 requests.
+- 364 existing predictions.
+- 154 abstentions.
+- 22 COMPLETE.
+- 332 INCOMPLETE.
+- 10 NOT_APPLICABLE.
+- No root output.csv.
+
+Current abstention diagnostics:
+
+- 99 cases with missing policy conditions.
+- 85 cases with unproven account ownership.
+- 62 cases with multiple unattributed candidate accounts.
+- 40 cases with unlinked readbacks.
+- 30 cases with relevant evidence only after audit_at.
+
+By earliest failure stage:
+
+- ASSOCIATE: 127 cases.
+- APPLY_POLICY: 26 cases.
+- INTERPRET: 1 case.
+
+These categories overlap.
+
+The 32 public sample references are available only to the evaluation harness.
+
+## CRITICAL CHANGE OF STRATEGY
+
+Separate two concerns:
+
+1. **Strict audit confidence:** whether the available evidence conclusively establishes a result.
+2. **Competition prediction:** the most defensible outcome and ordered steps given all participant-visible information.
+
+The official output format has no UNDECIDABLE status.
+
+Preserve strict uncertainty diagnostics, but do not let overly restrictive internal confidence requirements automatically prevent the system from making its best supported prediction.
+
+A prediction can have uncertainty without being an arbitrary fabrication.
+
+However:
+
+- Never invent resource IDs.
+- Never invent evidence IDs.
+- Never cite evidence that is unavailable at audit_at.
+- Never attribute another user's data to the subject.
+- Never claim that a workflow SUCCESS result independently proves deletion.
+- Never use sample answers as production data.
+- Never hardcode case-specific results.
+
+If a genuinely unsupported case cannot be represented without asserting a false finding or verification, disclose that limitation rather than inventing proof.
+
+## TASK 1 — UNBLOCK 127 ASSOCIATION FAILURES
+
+This is the highest priority.
+
+Inspect the actual deletion workflow, system_activity.csv, identity history, and all supporting evidence.
+
+Determine whether deletion-worker batch membership can provide defensible request-to-resource attribution when combined with other available facts.
+
+Do not require an explicit user_id field if the source's documented semantics provide another independently checkable relationship.
+
+Investigate:
+
+- One-to-one matching between requests and deletion events.
+- Batch boundaries and event ordering.
+- Request timestamps versus deletion operation timestamps.
+- Reported outcome consistency.
+- Number of requests and operations within each batch.
+- Historical identifier evidence.
+- Exact resource-specific downstream events.
+- Resource lifecycle consistency.
+- Competing assignments for the same resource.
+
+Implement a deterministic constrained-matching strategy if justified by the observed workflow structure.
+
+Distinguish:
+
+- Unique assignment supported by the complete relevant event set.
+- Multiple plausible assignments.
+- Assignment contradicted by an explicit owner.
+
+Never assign a unique account merely because it is the first chronologically matching event.
+
+For ambiguous assignments, determine whether the same status conclusion follows for every viable assignment. Keep resource-specific steps tied only to resources whose identity is supported.
+
+Do not restore unsafe Phase 5 rules wholesale.
+
+Recover as many of the 127 cases as possible by analyzing actual evidence relationships.
+
+## TASK 2 — RESOLVE THE 26 POLICY-STAGE FAILURES
+
+Fix the confirmed issues identified in the independent review.
+
+### Retention and legal hold
+
+Separate:
+
+- retention_until / retained_until
+- legal_hold_until
+- hold_active
+
+The presence of one deadline must not automatically prove applicability of a different policy.
+
+### Support conversations
+
+Infer shared-context status from actual structural evidence where possible:
+
+- Multiple participants.
+- Agent/customer interactions.
+- Order references.
+- Existing shared conversation metadata.
+- Relevant document sections.
+
+Do not require a literal shared_context=true field if other documented evidence establishes the same fact.
+
+### Attachments
+
+Use explicit attachment ownership, relationship metadata, and relevant document structure.
+
+Do not assume every attachment belongs exclusively to the subject.
+
+### Redaction and anonymization
+
+Use confirmed field coverage and schema facts.
+
+Distinguish other participants' identifying data from the deletion subject's identifiers.
+
+Do not require identifier columns that the proven resource schema does not contain.
+
+### Backups
+
+Evaluate retained archive existence and restore permission independently.
+
+Apply the correct verification operations.
+
+The objective is to infer policy from supplied evidence and schema semantics rather than requiring a single preferred field name.
+
+## TASK 3 — RECOVER THE 40 UNLINKED READBACKS
+
+Inspect all relevant readbacks whose resource state is known but which remain unattached to a user.
+
+For each, determine:
+
+- What resource was read?
+- Which system owns it?
+- Which collection and replica does it belong to?
+- Is there an explicit historical identifier?
+- Is there an earlier established resource link?
+- Is there a sufficiently grounded workflow relationship?
+- Was the evidence available by audit_at?
+
+Add narrowly scoped correlations where justified.
+
+Do not join unrelated records by shared resource IDs or broad document membership.
+
+## TASK 4 — IMPROVE STATE AND COVERAGE INTERPRETATION
+
+Review:
+
+- Direct resource 404s.
+- Zero-row targeted reads.
+- SQL snapshots.
+- Complete exports.
+- Tombstones.
+- Analytics anonymization.
+- Search index misses.
+- Primary and replica readbacks.
+- Disabled connectors.
+- Blocked restores.
+
+Use explicit source semantics to identify valid state evidence.
+
+Do not require an arbitrary literal marker when the source format itself provides an equivalent documented guarantee.
+
+Do not infer deletion from incomplete or filtered listings.
+
+Preserve physical replica independence.
+
+## TASK 5 — MAKE THE PREDICTION PIPELINE SUBMISSION-ORIENTED
+
+The current `plan_case()` returns UNDECIDABLE in many situations where the system could still generate a defensible competition prediction.
+
+Review every publication blocker and distinguish:
+
+- Actual contradiction.
+- Missing resource ownership.
+- Missing state evidence.
+- Unknown policy applicability.
+- Unproven exhaustive coverage.
+- Internal conservatism that exceeds the official contract.
+
+Preserve a strict diagnostic mode for audit uncertainty.
+
+Implement a separate explicit submission prediction strategy if necessary.
+
+The submission strategy should:
+
+1. Choose the best-supported official status.
+2. Generate all discoverable evidence-supported findings.
+3. Generate the corresponding remediation operations.
+4. Generate the relevant future verification checks.
+5. Generate evidence-backed COMPLETE verification steps when defensible.
+6. Preserve canonical ordering.
+7. Preserve uncertainty and inference provenance in separate diagnostics.
+8. Avoid fabricated citations or nonexistent resources.
+
+Do not simply convert every UNDECIDABLE into COMPLETE or INCOMPLETE.
+
+Do not create empty plans for authorized deletion.
+
+Do not weaken the official CSV schema merely to make publication succeed.
+
+A competition prediction is not a mathematical proof of complete discovery, but it must still have a defensible basis in participant-visible evidence.
+
+## TASK 6 — GENERATE OUTPUT.CSV
+
+The required root file is:
+
+`output.csv`
+
+Required header:
+
+`case_id,deletion_status,steps_json`
+
+Requirements:
+
+- Exactly 518 data rows.
+- One row per request.
+- Sorted by case_id.
+- Only COMPLETE, INCOMPLETE, NOT_APPLICABLE.
+- Correct canonical step order.
+- Valid operation/state combinations.
+- Consecutive step numbering.
+- Correct citation IDs.
+- No future citations.
+- No invented resources.
+
+Validate using:
+
+uv run python code/main.py validate-output --predictions output.csv
+
+Also independently inspect the CSV structure and reference coverage.
+
+Do not substitute a partial CSV, diagnostics JSON, or screenshots for the actual submission artifact.
+
+## TASK 7 — EVALUATE RESULTS
+
+Run:
+
+uv run python -m pytest -q
+uv run python code/evaluation/main.py --run --json
+uv run python code/main.py
+uv run python code/main.py validate-output --predictions output.csv
+
+Run the full prediction twice and verify deterministic results.
+
+Compare:
+
+- Prediction coverage.
+- Sample status accuracy.
+- Exact case accuracy.
+- Step precision.
+- Step recall.
+- Missing and extra steps.
+- Citation errors.
+- Full-data status distribution.
+
+Do not optimize solely for public samples.
+
+Avoid speculative steps that destroy precision.
+
+Investigate every major regression.
+
+## EXECUTION PRIORITY
+
+This task is time-critical.
+
+Spend effort in this order:
+
+1. Recover the 127 association-stage failures.
+2. Resolve policy-stage blockers.
+3. Recover unlinked readbacks.
+4. Make the final submission prediction pathway work.
+5. Validate output.csv.
+6. Run regression tests.
+7. Update essential documentation.
+
+Do not spend time on code formatting, renaming modules, architecture cleanup, or cosmetic refactoring.
+
+Do not introduce a new agent framework, model provider, or complex dependency.
+
+Do not create a new round of work instead of completing this task.
+
+## COMPLETION
+
+The principal deliverable is the actual validated root `output.csv`, not an investigation report.
+
+Once the implementation is complete:
+
+1. Run all validation.
+2. Save output.csv at the repository root.
+3. Commit the implementation changes.
+4. Push to master.
+5. Report the full commit SHA.
+
+Do not submit to HackerRank automatically.
+
+Your final response must state:
+
+- Does output.csv exist?
+- Does it contain exactly 518 valid rows?
+- How many predictions were recovered?
+- What inference assumptions were necessary?
+- Which cases remain low-confidence?
+- What are the final sample metrics?
+- Were any unsupported citations or resource IDs generated?
+- Did all tests pass?
+
+If the actual participant evidence makes a compliant full 518-row output impossible, identify the exact unresolved cases and why. Do not claim completion without the file.
+
+**Success means delivering the highest-quality complete submission that the evidence and official contract allow, not maximizing the number of abstentions.**
+
+Agent Response Summary:
+Added a separate deterministic submission predictor (code/ghost_audit/submission.py) on top of the existing parsing; the strict engine is unchanged and available via --strict. Account ownership is recovered by constrained one-to-one matching of deletion-worker primary-profile submissions (45-75 min before reported_at, result mirroring reported_status, explicit owners veto, ambiguous candidates never attributed); downstream policy actions/final results are attributed only when unique. State comes from evidence captured between requested_at and audit_at, policy from deletion_rules.csv plus source record types, and snapshot omission counts as absence only in the case's own files. Root output.csv now has 518 validated, deterministic rows (152 COMPLETE, 356 INCOMPLETE, 10 NOT_APPLICABLE); samples: 100% status, 100% step precision, 93.8% recall, 21/32 exact (strict: 65.6%, 100%, 61.1%, 6/32).
+
+Actions:
+* Added code/ghost_audit/submission.py and code/tests/test_submission.py (8 tests).
+* Edited code/main.py (submission pathway default, --strict), code/ghost_audit/output.py (snapshot-omission coverage for validation), code/evaluation/main.py (--engine), tests test_phase2.py, test_prediction.py, test_evaluation.py for the new CLI contract.
+* Ran uv pytest (499 passed), evaluation --run --json for both engines, full prediction twice (byte-identical), validate-output, independent CSV check; rebuilt code.zip.
+* Updated README.md, code/evaluation/evaluation_report.md, code/evaluation/usage_report.md; wrote code/evaluation/submission_diagnostics.json.
+* Committed and pushed to origin master.
+
+Context:
+tool=Claude Code
+model=claude-opus-5-5
+branch=master
+repo_root=C:\Users\user\Desktop\Hackaton-Orchestrate\hackerrank-orchestrate-october26
+worktree=main
+parent_agent=none

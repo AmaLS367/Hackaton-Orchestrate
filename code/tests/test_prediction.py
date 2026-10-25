@@ -386,15 +386,20 @@ def test_unassigned_deferred_pool_does_not_block_otherwise_complete_case(rules):
     assert plan_case(state, PolicyEvaluator(rules).evaluate(state)).decision == 'COMPLETE'
 
 
-def test_default_and_sample_cli_block_without_writing_and_preserve_inspect(rules, tmp_path, monkeypatch, capsys):
+def test_default_and_strict_cli_block_without_writing_and_preserve_inspect(rules, tmp_path, monkeypatch, capsys):
     import main
     d = dataset(rules)
     monkeypatch.setattr(main, 'load_dataset', lambda *a, **k: d)
     out = tmp_path / 'output.csv'
     diagnostic = tmp_path / 'diagnostics.json'
-    assert main.main(['--predictions', str(out), '--diagnostics', str(diagnostic)]) == 2
+    # The strict engine abstains; the submission pathway has no evidence to cite either,
+    # so neither writes a partial or fabricated submission.
+    assert main.main(['--strict', '--predictions', str(out), '--diagnostics', str(diagnostic)]) == 2
     assert json.loads(capsys.readouterr().out)['output_written'] is False
     assert json.loads(diagnostic.read_text(encoding='utf-8'))['summary']['cases_processed'] == 1
+    assert main.main(['--predictions', str(out), '--diagnostics', str(diagnostic)]) == 2
+    report = json.loads(capsys.readouterr().out)
+    assert report['output_written'] is False and 'synthetic' in report['error']
     assert not out.exists()
     assert main.main(['inspect']) == 0
     assert json.loads(capsys.readouterr().out)['requests'] == 1

@@ -1,8 +1,8 @@
-# Phase 6 runtime usage — 2026-10-24
+# Runtime usage — final submission run, 2026-10-25
 
-The final complete-dataset attempt processes all **518** requests. Publication is blocked
-by unsupported cases: **no root output.csv was produced**. These measurements describe
-that attempted final run, rather than a nonexistent successful submission export.
+The final full-dataset run (`uv run python code/main.py`) processed all **518** requests
+and wrote the root `output.csv` (518 rows). It also runs the strict audit engine for its
+diagnostics. Both are local deterministic Python; no model is called.
 
 | Runtime item | Actual value |
 | --- | ---: |
@@ -23,12 +23,16 @@ Python code. PDFs use pypdf; optional local Tesseract (tested version 5.3.1.2023
 no API and consumes no model tokens. Gemini is not a dependency. Installation/network
 traffic for Python packages and Git is not model inference.
 
-Two repeated full-dataset predictions and two sample evaluations were measured separately;
+Two repeated full-dataset predictions (byte-identical output) and sample evaluations of both
+engines were measured separately;
 each also uses zero model calls and tokens. OCR-disabled and missing-binary full runs use
 zero model calls/tokens as well. CPU/electricity/storage costs are not measured and are
 not included in the zero **model API cost** claim.
 
 ## Development-assistant usage (separate)
+
+The submission round (2026-10-25) was implemented with **Claude Code / claude-opus-5-5**;
+its token usage is not exposed to the session and is not claimed. Earlier rounds:
 
 This implementation session uses **Codex Desktop / gpt-6.1-sol**, confirmed from the local
 session metadata and turn context. Earlier challenge development also used Codex and

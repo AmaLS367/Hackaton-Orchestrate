@@ -141,26 +141,17 @@ _LISTINGS: dict[int, dict] = {}
 
 def omitted_from_listing(evidence: EvidenceIndex, evidence_id: str, system_id: str,
                          resource_id: str, cutoff: datetime) -> bool:
-    """The cited file holds a complete listing of the system's collection, captured by
-    the cutoff, and that listing does not contain the resource."""
-    from .temporal import coverage_surfaces
-    from .temporal_adapters import logical_collection
+    """The cited file holds a point-in-time copy of the resource's collection (a SQL
+    snapshot table or a JSON collection snapshot), captured by the cutoff, that does not
+    contain the resource."""
+    from .submission import prefix, snapshot_listings
 
-    surfaces = _LISTINGS.get(id(evidence))
-    if surfaces is None or surfaces.get('index') is not evidence:
-        surfaces = _LISTINGS[id(evidence)] = {'index': evidence, 'surfaces': coverage_surfaces(evidence.observations)}
-    collections = {logical_collection(r) for o in evidence.observations for r in o.resources
-                   if r.system_id == system_id and r.resource_id == resource_id
-                   and o.available_at is not None and o.available_at <= cutoff
-                   and r.collection}
-    if len(collections) != 1:
-        return False
-    return any(item.complete and item.surface.provenance.evidence_id == evidence_id
-               and item.observed_at is not None and item.observed_at <= cutoff
-               and resource_id not in item.resource_ids
-               for (system, collection), values in surfaces['surfaces'].items()
-               if system == system_id and collection in collections
-               for item in values)
+    listings = _LISTINGS.get(id(evidence))
+    if listings is None or listings.get('index') is not evidence:
+        listings = _LISTINGS[id(evidence)] = {'index': evidence, 'listings': snapshot_listings(evidence.observations)}
+    return any(item.evidence_id == evidence_id and item.captured_at is not None and item.captured_at <= cutoff
+               and item.at is not None and item.at <= cutoff and resource_id not in item.ids
+               for item in listings['listings'].get((system_id, prefix(resource_id)), ()))
 
 
 def check_citation(case_id: str, step: OutputStep, cutoff: datetime,

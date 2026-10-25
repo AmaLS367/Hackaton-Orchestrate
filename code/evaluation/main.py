@@ -26,6 +26,8 @@ def main(argv=None) -> int:
     group.add_argument("--check-reference", action="store_true", help="Check public sample schema only")
     group.add_argument('--run', action='store_true', help='Independently predict all samples, counting abstentions as errors')
     parser.add_argument('--diagnostics', type=Path, help='Write prediction diagnostics for --run')
+    parser.add_argument('--engine', choices=('submission', 'strict'), default='submission',
+                        help='Prediction pathway for --run (strict counts abstentions as errors)')
     parser.add_argument('--json', action='store_true', help='Print metrics and per-case failure analysis as JSON')
     args = parser.parse_args(argv)
     if args.diagnostics and args.diagnostics.resolve().is_relative_to(args.dataset.resolve()):
@@ -37,12 +39,24 @@ def main(argv=None) -> int:
         print(f"Validated {len(references)} public sample reference rows; no prediction accuracy measured.")
     else:
         run = None
-        if args.run:
+        summary = None
+        if args.run and args.engine == 'submission':
+            from ghost_audit.ingestion import load_dataset
+            from ghost_audit.submission import predict_submission, submission_diagnostics
+
+            cases = predict_submission(load_dataset(args.dataset, samples=True))
+            predictions = [c.row for c in cases]
+            report = submission_diagnostics(cases)
+            summary = report['summary']
+            if args.diagnostics:
+                args.diagnostics.write_text(json.dumps(report, ensure_ascii=False, indent=1) + '\n', encoding='utf-8')
+        elif args.run:
             from ghost_audit.ingestion import load_dataset
             from ghost_audit.prediction import predict, diagnostics, write_diagnostics
 
             run = predict(load_dataset(args.dataset, samples=True))
             predictions = run.predictions
+            summary = diagnostics(run)
             if args.diagnostics:
                 write_diagnostics(args.diagnostics, run)
         else:
@@ -52,8 +66,8 @@ def main(argv=None) -> int:
         metrics = evaluate(predictions, references)
         failures = failure_analysis(predictions, references, run.cases if run else ())
         result = {'metrics': asdict(metrics), 'failures': failures}
-        if run:
-            result['prediction_summary'] = diagnostics(run)
+        if summary is not None:
+            result['prediction_summary'] = summary
         if args.json:
             print(json.dumps(result, indent=2))
         else:

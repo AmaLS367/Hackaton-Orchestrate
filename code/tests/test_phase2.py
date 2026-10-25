@@ -42,7 +42,6 @@ def test_full_dataset_finishes_and_contract_is_ready_for_phase3(analyzed):
         locators = [(o.observation.provenance.evidence_id, o.observation.provenance.locator)
                     for o in bundle.observations]
         assert len(locators) == len(set(locators))
-    assert not (Path(__file__).resolve().parents[2] / 'output.csv').exists()
 
 
 def test_aggregate_is_an_association_report_without_raw_pii(analyzed):

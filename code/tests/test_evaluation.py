@@ -75,7 +75,7 @@ def test_sample_run_harness_counts_abstentions_against_all_32_cases(dataset_path
         assessments=[], unresolved=['synthetic_missing_evidence'], blockers=['no_grounded_answer']) for r in requests],
         elapsed_seconds=0.0)
     monkeypatch.setattr(ghost_audit.prediction, 'predict', lambda *a, **k: run)
-    assert main(['--run', '--json']) == 0
+    assert main(['--run', '--engine', 'strict', '--json']) == 0
     result = json.loads(capsys.readouterr().out)
     assert result['metrics']['reference_cases'] == result['metrics']['missing_cases'] == 32
     assert result['metrics']['status_accuracy'] == result['metrics']['exact_case_accuracy'] == 0
