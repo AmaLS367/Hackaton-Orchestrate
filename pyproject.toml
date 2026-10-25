@@ -4,11 +4,41 @@ version = "0.1.0"
 description = "Ghost Data Still Exists deletion-audit agent (HackerRank Orchestrate October 2026)"
 readme = "README.md"
 requires-python = ">=3.12"
+license = { file = "LICENSE" }
+keywords = [
+    "deletion-audit",
+    "privacy",
+    "gdpr",
+    "compliance",
+    "ghost-data",
+    "data-retention",
+    "clean-architecture",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Legal Industry",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: System :: Archiving",
+    "Operating System :: OS Independent",
+    "Typing :: Typed",
+]
 # All direct dependency constraints live in this file; uv.lock pins their resolution.
 dependencies = [
     "pydantic>=2.10,<3",
     "pypdf>=5,<7",
 ]
+
+[project.urls]
+Homepage = "https://github.com/AmaLS367/Hackaton-Orchestrate"
+Repository = "https://github.com/AmaLS367/Hackaton-Orchestrate"
+"Issue Tracker" = "https://github.com/AmaLS367/Hackaton-Orchestrate/issues"
+"Challenge" = "https://wwww.hackerrank.com/contests/hackerrank-orchestrate-october26/challenges/ghost-data-still-exists"
 
 [dependency-groups]
 dev = [

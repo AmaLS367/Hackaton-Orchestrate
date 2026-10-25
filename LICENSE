@@ -1,0 +1,35 @@
+Licensing and Provenance Notice
+
+1. Participant Solution Code
+----------------------------
+The original source code, architectural documentation, test suites, and packaging
+configuration in this repository (under `code/`, `docs/`, `pyproject.toml`, and related
+configuration files) were created as an entry for the HackerRank Orchestrate (October 2026)
+"Ghost Data Still Exists" challenge.
+
+All rights to this original solution software are reserved by the respective authors and
+contributors. Formal open-source licensing (such as MIT or Apache-2.0) is pending explicit
+authorization by the copyright holder(s).
+
+Recommended License for Future Open-Source Release:
+The authors recommend releasing original solution components under the MIT License or
+the Apache License, Version 2.0 upon final sign-off.
+
+2. HackerRank Challenge Materials and Datasets
+---------------------------------------------
+All challenge specifications, problem descriptions (`problem_statement.md`), competition
+rules, scoring rubrics, and dataset files located in `dataset/` (including CSV files,
+synthetic databases, documents, logs, and evidence records) are the intellectual property
+of HackerRank Inc. and/or its licensors.
+
+Nothing in this repository or license notice grants, transfers, or implies any license,
+commercial exploitation rights, or redistribution rights to HackerRank materials or datasets.
+Use of these materials is governed exclusively by the terms and conditions of the HackerRank
+Orchestrate competition.
+
+3. Third-Party Dependencies and Tools
+-------------------------------------
+Third-party libraries, tools, and dependencies declared in `pyproject.toml` and pinned in
+`uv.lock` (including Pydantic, pypdf, pytest, Ruff, mypy, import-linter, and Hatchling)
+remain subject to their respective upstream open-source licenses.
+
