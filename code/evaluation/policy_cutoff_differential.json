@@ -1,0 +1,721 @@
+{
+ "checkpoints": {
+  "BASELINE": {
+   "commit": "2d858594f03a24833376a80d639ab67929ffd71f",
+   "output_sha256": "eada7a560b75e6acca66706444b19c6ee5b7b4d0cd5f3cb50cc13bdfaef43ea6"
+  },
+  "POST_P0": {
+   "output_sha256": "807803941b11aa438f36365a98c77fcb9de447887fd830aba10ce9a2166343a5"
+  }
+ },
+ "compared_fields": [
+  "case_id",
+  "deletion_status",
+  "step_count",
+  "operation",
+  "state",
+  "system_id",
+  "resource_id",
+  "evidence_id",
+  "step_order"
+ ],
+ "cases_compared": 518,
+ "cases_changed": 9,
+ "status_changes": 0,
+ "steps_total": {
+  "BASELINE": 3067,
+  "POST_P0": 3067
+ },
+ "status_counts": {
+  "COMPLETE": 154,
+  "INCOMPLETE": 354,
+  "NOT_APPLICABLE": 10
+ },
+ "sample_metrics_unchanged": true,
+ "strict_engine_unchanged": true,
+ "diagnostic_only_changes": [
+  {
+   "case_id": "case_67",
+   "resource_id": "search_9837",
+   "change": "future-only ownership: COMPLIANT -> UNKNOWN (no output step changed)"
+  },
+  {
+   "case_id": "case_72",
+   "resource_id": "search_209",
+   "change": "future-only ownership: COMPLIANT -> UNKNOWN (no output step changed)"
+  },
+  {
+   "case_id": "case_176",
+   "resource_id": "search_2597",
+   "change": "future-only ownership: COMPLIANT -> UNKNOWN (no output step changed)"
+  }
+ ],
+ "cases": [
+  {
+   "case_id": "case_61",
+   "audit_at": "2026-02-14T10:00:00+00:00",
+   "resource_id": "support_001",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_ATTACHMENT",
+   "category_after": "SUPPORT_MESSAGE",
+   "action_before": "DELETE",
+   "action_after": "REDACT",
+   "leaking_evidence": {
+    "evidence_id": "evidence_58",
+    "available_at": "2026-09-12T07:30:00Z",
+    "signal": "attachment PDF document"
+   },
+   "time_valid_evidence": null,
+   "steps_before": 4,
+   "steps_after": 4,
+   "removed_steps": [
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_001",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_001",
+     ""
+    ]
+   ],
+   "evidence_reference_changes": [],
+   "reason": "Resource is attributed only through evidence captured after audit_at; its category can no longer come from that later document. Only its future verification step remains.",
+   "confirmed_improvement": true
+  },
+  {
+   "case_id": "case_71",
+   "audit_at": "2026-09-16T09:00:00+00:00",
+   "resource_id": "support_1370",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_ATTACHMENT",
+   "category_after": "SUPPORT_MESSAGE",
+   "action_before": "DELETE",
+   "action_after": "REDACT",
+   "leaking_evidence": {
+    "evidence_id": "evidence_06",
+    "available_at": "2026-09-18T11:55:24Z",
+    "signal": "attachment_pii_scan log line (its own clock 2026-09-16T08:59:28Z precedes audit_at; the file does not)"
+   },
+   "time_valid_evidence": {
+    "evidence_id": "evidence_93",
+    "available_at": "2026-09-16T08:37:39Z",
+    "signal": "support record without attachment schema, type or catalogue link"
+   },
+   "steps_before": 8,
+   "steps_after": 8,
+   "removed_steps": [
+    [
+     "FINDING",
+     "REPORT_REMAINING_RECORD",
+     "PRESENT",
+     "support_platform",
+     "support_1370",
+     "evidence_93"
+    ],
+    [
+     "REMEDIATION",
+     "DELETE_RECORD",
+     "ABSENT",
+     "support_platform",
+     "support_1370",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_1370",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "FINDING",
+     "REPORT_EXPOSED_PII",
+     "PRESENT",
+     "support_platform",
+     "support_1370",
+     "evidence_93"
+    ],
+    [
+     "REMEDIATION",
+     "REDACT_RECORD",
+     "REDACTED",
+     "support_platform",
+     "support_1370",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_1370",
+     ""
+    ]
+   ],
+   "evidence_reference_changes": [],
+   "reason": "The only attachment signal was captured after audit_at. Evidence available at the cutoff shows a support record, so rule_05 (REDACT) applies instead of rule_06 (DELETE). The finding still cites the same pre-audit evidence.",
+   "confirmed_improvement": true
+  },
+  {
+   "case_id": "case_119",
+   "audit_at": "2026-08-22T11:00:00+00:00",
+   "resource_id": "support_9309",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_ATTACHMENT",
+   "category_after": "SUPPORT_MESSAGE",
+   "action_before": "DELETE",
+   "action_after": "REDACT",
+   "leaking_evidence": {
+    "evidence_id": "evidence_11",
+    "available_at": "2026-08-24T13:56:43Z",
+    "signal": "attachment_pii_scan log line"
+   },
+   "time_valid_evidence": {
+    "evidence_id": "evidence_88",
+    "available_at": "2026-08-22T10:39:10Z",
+    "signal": "support record without attachment schema, type or catalogue link"
+   },
+   "steps_before": 8,
+   "steps_after": 8,
+   "removed_steps": [
+    [
+     "FINDING",
+     "REPORT_REMAINING_RECORD",
+     "PRESENT",
+     "support_platform",
+     "support_9309",
+     "evidence_88"
+    ],
+    [
+     "REMEDIATION",
+     "DELETE_RECORD",
+     "ABSENT",
+     "support_platform",
+     "support_9309",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_9309",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "FINDING",
+     "REPORT_EXPOSED_PII",
+     "PRESENT",
+     "support_platform",
+     "support_9309",
+     "evidence_88"
+    ],
+    [
+     "REMEDIATION",
+     "REDACT_RECORD",
+     "REDACTED",
+     "support_platform",
+     "support_9309",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_9309",
+     ""
+    ]
+   ],
+   "evidence_reference_changes": [],
+   "reason": "The only attachment signal was captured after audit_at. Evidence available at the cutoff shows a support record, so rule_05 (REDACT) applies instead of rule_06 (DELETE). The finding still cites the same pre-audit evidence.",
+   "confirmed_improvement": true
+  },
+  {
+   "case_id": "case_131",
+   "audit_at": "2026-08-17T10:00:00+00:00",
+   "resource_id": "support_2315",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_ATTACHMENT",
+   "category_after": "SUPPORT_MESSAGE",
+   "action_before": "DELETE",
+   "action_after": "REDACT",
+   "leaking_evidence": {
+    "evidence_id": "evidence_12",
+    "available_at": "2026-08-19T10:00:00Z",
+    "signal": "snapshot bundle ticket_attachments row (file_name, storage_class)"
+   },
+   "time_valid_evidence": {
+    "evidence_id": "evidence_87",
+    "available_at": "2026-08-17T09:42:50Z",
+    "signal": "support record without attachment schema, type or catalogue link"
+   },
+   "steps_before": 14,
+   "steps_after": 14,
+   "removed_steps": [
+    [
+     "FINDING",
+     "REPORT_REMAINING_RECORD",
+     "PRESENT",
+     "support_platform",
+     "support_2315",
+     "evidence_87"
+    ],
+    [
+     "REMEDIATION",
+     "DELETE_RECORD",
+     "ABSENT",
+     "support_platform",
+     "support_2315",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_2315",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "FINDING",
+     "REPORT_EXPOSED_PII",
+     "PRESENT",
+     "support_platform",
+     "support_2315",
+     "evidence_87"
+    ],
+    [
+     "REMEDIATION",
+     "REDACT_RECORD",
+     "REDACTED",
+     "support_platform",
+     "support_2315",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_2315",
+     ""
+    ]
+   ],
+   "evidence_reference_changes": [],
+   "reason": "The only attachment signal was captured after audit_at. Evidence available at the cutoff shows a support record, so rule_05 (REDACT) applies instead of rule_06 (DELETE). The finding still cites the same pre-audit evidence.",
+   "confirmed_improvement": true
+  },
+  {
+   "case_id": "case_179",
+   "audit_at": "2026-07-23T12:00:00+00:00",
+   "resource_id": "support_2283",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_ATTACHMENT",
+   "category_after": "SUPPORT_MESSAGE",
+   "action_before": "DELETE",
+   "action_after": "REDACT",
+   "leaking_evidence": {
+    "evidence_id": "evidence_17",
+    "available_at": "2026-07-25T15:00:00Z",
+    "signal": "snapshot bundle ticket_attachments row (file_name, storage_class)"
+   },
+   "time_valid_evidence": {
+    "evidence_id": "evidence_84",
+    "available_at": "2026-07-23T11:43:30Z",
+    "signal": "support record without attachment schema, type or catalogue link"
+   },
+   "steps_before": 5,
+   "steps_after": 5,
+   "removed_steps": [
+    [
+     "FINDING",
+     "REPORT_REMAINING_RECORD",
+     "PRESENT",
+     "support_platform",
+     "support_2283",
+     "evidence_84"
+    ],
+    [
+     "REMEDIATION",
+     "DELETE_RECORD",
+     "ABSENT",
+     "support_platform",
+     "support_2283",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_2283",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "FINDING",
+     "REPORT_EXPOSED_PII",
+     "PRESENT",
+     "support_platform",
+     "support_2283",
+     "evidence_84"
+    ],
+    [
+     "REMEDIATION",
+     "REDACT_RECORD",
+     "REDACTED",
+     "support_platform",
+     "support_2283",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_2283",
+     ""
+    ]
+   ],
+   "evidence_reference_changes": [],
+   "reason": "The only attachment signal was captured after audit_at. Evidence available at the cutoff shows a support record, so rule_05 (REDACT) applies instead of rule_06 (DELETE). The finding still cites the same pre-audit evidence.",
+   "confirmed_improvement": true
+  },
+  {
+   "case_id": "case_227",
+   "audit_at": "2026-06-28T07:00:00+00:00",
+   "resource_id": "support_5830",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_ATTACHMENT",
+   "category_after": "SUPPORT_MESSAGE",
+   "action_before": "DELETE",
+   "action_after": "REDACT",
+   "leaking_evidence": {
+    "evidence_id": "evidence_22",
+    "available_at": "2026-06-30T07:00:00Z",
+    "signal": "snapshot bundle ticket_attachments row (file_name, storage_class)"
+   },
+   "time_valid_evidence": {
+    "evidence_id": "evidence_80",
+    "available_at": "2026-06-28T06:25:56Z",
+    "signal": "support record without attachment schema, type or catalogue link"
+   },
+   "steps_before": 7,
+   "steps_after": 7,
+   "removed_steps": [
+    [
+     "FINDING",
+     "REPORT_REMAINING_RECORD",
+     "PRESENT",
+     "support_platform",
+     "support_5830",
+     "evidence_80"
+    ],
+    [
+     "REMEDIATION",
+     "DELETE_RECORD",
+     "ABSENT",
+     "support_platform",
+     "support_5830",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_5830",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "FINDING",
+     "REPORT_EXPOSED_PII",
+     "PRESENT",
+     "support_platform",
+     "support_5830",
+     "evidence_80"
+    ],
+    [
+     "REMEDIATION",
+     "REDACT_RECORD",
+     "REDACTED",
+     "support_platform",
+     "support_5830",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_5830",
+     ""
+    ]
+   ],
+   "evidence_reference_changes": [],
+   "reason": "The only attachment signal was captured after audit_at. Evidence available at the cutoff shows a support record, so rule_05 (REDACT) applies instead of rule_06 (DELETE). The finding still cites the same pre-audit evidence.",
+   "confirmed_improvement": true
+  },
+  {
+   "case_id": "case_275",
+   "audit_at": "2026-06-03T09:00:00+00:00",
+   "resource_id": "support_3684",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_ATTACHMENT",
+   "category_after": "SUPPORT_MESSAGE",
+   "action_before": "DELETE",
+   "action_after": "REDACT",
+   "leaking_evidence": {
+    "evidence_id": "evidence_26",
+    "available_at": "2026-06-05T12:00:00Z",
+    "signal": "snapshot bundle ticket_attachments row (file_name, storage_class)"
+   },
+   "time_valid_evidence": {
+    "evidence_id": "evidence_77",
+    "available_at": "2026-06-03T08:34:57Z",
+    "signal": "support record without attachment schema, type or catalogue link"
+   },
+   "steps_before": 7,
+   "steps_after": 7,
+   "removed_steps": [
+    [
+     "FINDING",
+     "REPORT_REMAINING_RECORD",
+     "PRESENT",
+     "support_platform",
+     "support_3684",
+     "evidence_77"
+    ],
+    [
+     "REMEDIATION",
+     "DELETE_RECORD",
+     "ABSENT",
+     "support_platform",
+     "support_3684",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_3684",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "FINDING",
+     "REPORT_EXPOSED_PII",
+     "PRESENT",
+     "support_platform",
+     "support_3684",
+     "evidence_77"
+    ],
+    [
+     "REMEDIATION",
+     "REDACT_RECORD",
+     "REDACTED",
+     "support_platform",
+     "support_3684",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_3684",
+     ""
+    ]
+   ],
+   "evidence_reference_changes": [],
+   "reason": "The only attachment signal was captured after audit_at. Evidence available at the cutoff shows a support record, so rule_05 (REDACT) applies instead of rule_06 (DELETE). The finding still cites the same pre-audit evidence.",
+   "confirmed_improvement": true
+  },
+  {
+   "case_id": "case_431",
+   "audit_at": "2026-03-20T08:00:00+00:00",
+   "resource_id": "support_3615",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_ATTACHMENT",
+   "category_after": "SUPPORT_MESSAGE",
+   "action_before": "DELETE",
+   "action_after": "REDACT",
+   "leaking_evidence": {
+    "evidence_id": "evidence_40",
+    "available_at": "2026-03-22T08:00:00Z",
+    "signal": "snapshot bundle ticket_attachments row (file_name, storage_class)"
+   },
+   "time_valid_evidence": {
+    "evidence_id": "evidence_68",
+    "available_at": "2026-03-20T07:23:49Z",
+    "signal": "support record without attachment schema, type or catalogue link"
+   },
+   "steps_before": 8,
+   "steps_after": 8,
+   "removed_steps": [
+    [
+     "FINDING",
+     "REPORT_REMAINING_RECORD",
+     "PRESENT",
+     "support_platform",
+     "support_3615",
+     "evidence_68"
+    ],
+    [
+     "REMEDIATION",
+     "DELETE_RECORD",
+     "ABSENT",
+     "support_platform",
+     "support_3615",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_3615",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "FINDING",
+     "REPORT_EXPOSED_PII",
+     "PRESENT",
+     "support_platform",
+     "support_3615",
+     "evidence_68"
+    ],
+    [
+     "REMEDIATION",
+     "REDACT_RECORD",
+     "REDACTED",
+     "support_platform",
+     "support_3615",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_3615",
+     ""
+    ]
+   ],
+   "evidence_reference_changes": [],
+   "reason": "The only attachment signal was captured after audit_at. Evidence available at the cutoff shows a support record, so rule_05 (REDACT) applies instead of rule_06 (DELETE). The finding still cites the same pre-audit evidence.",
+   "confirmed_improvement": true
+  },
+  {
+   "case_id": "case_527",
+   "audit_at": "2026-01-29T12:00:00+00:00",
+   "resource_id": "support_3896",
+   "status_before": "INCOMPLETE",
+   "status_after": "INCOMPLETE",
+   "category_before": "SUPPORT_ATTACHMENT",
+   "category_after": "SUPPORT_MESSAGE",
+   "action_before": "DELETE",
+   "action_after": "REDACT",
+   "leaking_evidence": {
+    "evidence_id": "evidence_49",
+    "available_at": "2026-01-31T15:00:00Z",
+    "signal": "snapshot bundle ticket_attachments row (file_name, storage_class)"
+   },
+   "time_valid_evidence": {
+    "evidence_id": "evidence_62",
+    "available_at": "2026-01-29T11:44:59Z",
+    "signal": "support record without attachment schema, type or catalogue link"
+   },
+   "steps_before": 14,
+   "steps_after": 14,
+   "removed_steps": [
+    [
+     "FINDING",
+     "REPORT_REMAINING_RECORD",
+     "PRESENT",
+     "support_platform",
+     "support_3896",
+     "evidence_62"
+    ],
+    [
+     "REMEDIATION",
+     "DELETE_RECORD",
+     "ABSENT",
+     "support_platform",
+     "support_3896",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_ABSENT",
+     "ABSENT",
+     "support_platform",
+     "support_3896",
+     ""
+    ]
+   ],
+   "added_steps": [
+    [
+     "FINDING",
+     "REPORT_EXPOSED_PII",
+     "PRESENT",
+     "support_platform",
+     "support_3896",
+     "evidence_62"
+    ],
+    [
+     "REMEDIATION",
+     "REDACT_RECORD",
+     "REDACTED",
+     "support_platform",
+     "support_3896",
+     ""
+    ],
+    [
+     "VERIFICATION",
+     "VERIFY_RECORD_REDACTED",
+     "REDACTED",
+     "support_platform",
+     "support_3896",
+     ""
+    ]
+   ],
+   "evidence_reference_changes": [],
+   "reason": "The only attachment signal was captured after audit_at. Evidence available at the cutoff shows a support record, so rule_05 (REDACT) applies instead of rule_06 (DELETE). The finding still cites the same pre-audit evidence.",
+   "confirmed_improvement": true
+  }
+ ]
+}

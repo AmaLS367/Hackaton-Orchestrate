@@ -68,7 +68,7 @@ class SubmissionPredictor:
                 and all(at < request.requested_at for at, _ in links)
                 and not any(
                     request.requested_at <= f.captured_at <= audit_at
-                    for f in self.records.facts(resource_id, user)[0]
+                    for f in self.records.facts(resource_id, user, audit_at)[0]
                 )
             ):
                 # Seen only before the request: earlier context, not the state the request changed.
@@ -141,15 +141,23 @@ class SubmissionPredictor:
         audit_at = request.audit_at
         assessments = []
         gathered = {
-            r.resource_id: self.records.facts(r.resource_id, user) for r in resources.values()
+            r.resource_id: self.records.facts(r.resource_id, user, audit_at)
+            for r in resources.values()
         }
         case_files = {f.evidence_id for facts, _ in gathered.values() for f in facts}
         for resource in sorted(resources.values(), key=lambda r: (r.system_id, r.resource_id)):
             facts, signals = gathered[resource.resource_id]
-            category = self.records.category(resource.resource_id, signals)
+            category = self.records.category(resource.resource_id, signals, audit_at)
             action = self.records.required.get(category)
             if action is None:
                 notes.append("unsupported_category:" + resource.resource_id)
+                continue
+            if resource.methods == {"explicit_identifier_after_audit"}:
+                # Ownership learned only after audit_at may shape the future plan, but it
+                # cannot attribute cutoff-time facts to this subject as findings or proof.
+                assessments.append(
+                    ResourceAssessment(resource, category, action, "UNKNOWN", None, [])
+                )
                 continue
             if action == "DELETE":
                 # Snapshot contents prove absence only in a file that captured this case's
@@ -195,8 +203,10 @@ class SubmissionPredictor:
         )
         flips = []
         for resource_id in candidates:
-            facts, signals = self.records.facts(resource_id, user)
-            action = self.records.required.get(self.records.category(resource_id, signals))
+            facts, signals = self.records.facts(resource_id, user, audit_at)
+            action = self.records.required.get(
+                self.records.category(resource_id, signals, audit_at)
+            )
             if action is None:
                 continue
             visible = [

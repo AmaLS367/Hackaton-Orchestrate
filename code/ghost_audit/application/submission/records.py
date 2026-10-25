@@ -47,8 +47,14 @@ class SubmissionRecords:
         self.required["DATA_FLOW"] = "DISABLE"
         self.listings = snapshot_listings(evidence.observations)
 
-    def facts(self, resource_id: str, user: str) -> tuple[list[Fact], RecordSignals]:
-        """Interpreted readbacks of one resource, with the record category signals."""
+    def facts(
+        self, resource_id: str, user: str, audit_at: datetime
+    ) -> tuple[list[Fact], RecordSignals]:
+        """Interpreted readbacks of one resource, with the record category signals.
+
+        Facts keep their clocks for later state selection, but category signals come
+        only from observations available by audit_at: a later scan, schema or record
+        type cannot retroactively change the policy that applied at the cutoff."""
         result: list[Fact] = []
         signals: RecordSignals = {
             "events": set(),
@@ -81,12 +87,13 @@ class SubmissionRecords:
             )
             t = interpret(item, refs[0])
             data = record_payload(o.payload)
-            signals["events"].add(str(o.payload.get("event", "")))
-            signals["types"].add(str(data.get("record_type") or "").upper())
-            signals["collections"].add(str(refs[0].collection or ""))
-            signals["keys"].update(data)
-            if t.category == "DOCUMENT":
-                signals["documents"].add(o.provenance.file_path)
+            if o.available_at <= audit_at:
+                signals["events"].add(str(o.payload.get("event", "")))
+                signals["types"].add(str(data.get("record_type") or "").upper())
+                signals["collections"].add(str(refs[0].collection or ""))
+                signals["keys"].update(data)
+                if t.category == "DOCUMENT":
+                    signals["documents"].add(o.provenance.file_path)
             if t.support in {"CLAIM_ONLY", "UNKNOWN"} and t.category != "DOCUMENT":
                 continue
             if t.category == "DOCUMENT":
@@ -194,9 +201,16 @@ class SubmissionRecords:
             direct = False
         return direct, stable, subject
 
-    def category(self, resource_id: str, signals: RecordSignals) -> str:
-        """Infer the supplied record category from named types, schemas and supported signals."""
+    def category(self, resource_id: str, signals: RecordSignals, audit_at: datetime) -> str:
+        """Infer the supplied record category from named types, schemas and supported signals.
+
+        Catalogue links count only once recorded by audit_at, like the signals."""
         kind = prefix(resource_id)
+        catalogue = [
+            a.details
+            for a in self.evidence.activities_by_resource.get(resource_id, ())
+            if a.event_time <= audit_at
+        ]
         # A source that names the record's data category is authoritative.
         named = sorted(t for t in signals["types"] if t in self.required and t != "BACKUP_ARCHIVE")
         if len(named) == 1:
@@ -217,10 +231,7 @@ class SubmissionRecords:
         }
         if kind in fixed:
             return fixed[kind]
-        if kind == "object" and any(
-            "belongs only to" in a.details
-            for a in self.evidence.activities_by_resource.get(resource_id, ())
-        ):
+        if kind == "object" and any("belongs only to" in details for details in catalogue):
             return "SUPPORT_ATTACHMENT"
         if kind == "analytics":
             # A contact record carrying a marketing opt-in is a marketing profile kept
@@ -230,8 +241,8 @@ class SubmissionRecords:
             return "ANALYTICS_PROFILE"
         if kind == "support":
             catalogued = any(
-                "Attachment catalog" in a.details and "belongs only to" in a.details
-                for a in self.evidence.activities_by_resource.get(resource_id, ())
+                "Attachment catalog" in details and "belongs only to" in details
+                for details in catalogue
             )
             if (
                 "SUPPORT_ATTACHMENT" in signals["types"]
