@@ -1,10 +1,23 @@
 # Development
 
-Use Python 3.12 and `uv sync --frozen`. The editable install exposes `ghost_audit` and
-`evaluation`; scripts also remain runnable directly. `code/requirements.txt` preserves
-the pip fallback. Ruff, mypy and import-linter are development dependencies, never
-mandatory solution-runtime dependencies. Update `uv.lock` with `uv sync` after changing
-project dependency metadata, then verify `uv sync --frozen`.
+Use Python 3.12 and `uv sync --locked`. The editable install exposes `ghost_audit` and
+`evaluation`; scripts also remain runnable directly. All direct constraints live in
+`pyproject.toml`: runtime requirements under `project.dependencies`, quality tools under
+`dependency-groups.dev`, and the wheel backend under `build-system.requires`.
+`uv.lock` records the resolution. `code/requirements.txt` is generated, includes every
+development tool, and supports pip in both the checkout and extracted archive:
+
+```text
+uv lock
+uv export --locked --all-groups --no-emit-project --output-file code/requirements.txt
+python -m pip install -r code/requirements.txt
+python -m pip install --no-deps -e .
+```
+
+Run exports from the repository root. The project install uses the build requirements
+in `pyproject.toml`; dependency installation uses the hashed, locked export. Never edit
+the export manually or add ad hoc tool versions to installation commands. Verify
+metadata with `uv sync --locked`; runtime-only uv users may add `--no-dev`.
 
 ## Conventions
 

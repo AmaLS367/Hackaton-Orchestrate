@@ -12,24 +12,32 @@ are read. The dataset is distributed separately from `code.zip`.
 ## Install
 
 ```text
-uv sync --frozen
+uv sync --locked
 ```
 
 This installs the editable Python package and development tools from `uv.lock`.
-For runtime-only installation use `uv sync --frozen --no-dev`.
+For runtime-only installation use `uv sync --locked --no-dev`.
 
 Pip fallback:
 
 ```text
 python -m venv .venv
 python -m pip install -r code/requirements.txt
+python -m pip install --no-deps -e .
 python code/main.py
 ```
 
 Activate the environment first: `.venv\Scripts\Activate.ps1` on PowerShell or
 `source .venv/bin/activate` on Linux/macOS. Use `py -3.12` / `python3.12` when necessary.
-For pip-based quality checks also install the project and tools:
-`python -m pip install -e . ruff mypy import-linter`.
+The generated export includes runtime dependencies and all development tools, so the
+same environment supports tests and quality checks. `pyproject.toml` owns all direct
+constraints; `uv.lock` pins their resolution. After changing dependencies, regenerate
+the pip artifact from the repository root (never edit it manually):
+
+```text
+uv lock
+uv export --locked --all-groups --no-emit-project --output-file code/requirements.txt
+```
 
 ## Predict and inspect
 
