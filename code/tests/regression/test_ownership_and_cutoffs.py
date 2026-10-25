@@ -6,7 +6,6 @@ through the real modules; the last builds participant-style files end to end.
 
 import json
 import shutil
-from pathlib import Path
 
 import pytest
 from ghost_audit.application.evidence_association import EvidenceAssociationService
@@ -35,7 +34,8 @@ from ghost_audit.infrastructure.parsers.structured import ExtractionContext, par
 from ghost_audit.infrastructure.serialization.prediction_artifacts import (
     write_abstention_diagnostics,
 )
-from test_phase5 import (
+
+from tests.fixtures.evidence_cases import (
     AFTER,
     CUTOFF,
     LISTING,
@@ -49,11 +49,7 @@ from test_phase5 import (
     steps,
     worker,
 )
-from test_phase5 import (
-    rules as rules,
-)
-
-ROOT = Path(__file__).resolve().parents[2]
+from tests.fixtures.paths import DATASET_ROOT
 
 
 def search_row(file, at, email, rid="search_1", observed=None):
@@ -654,7 +650,7 @@ def write_csv(path, header, rows):
 def test_participant_style_ingestion_through_planning(tmp_path, audit, expected):
     (tmp_path / "evidence/logs").mkdir(parents=True)
     (tmp_path / "evidence/records").mkdir(parents=True)
-    shutil.copy(ROOT / "dataset/deletion_rules.csv", tmp_path / "deletion_rules.csv")
+    shutil.copy(DATASET_ROOT / "deletion_rules.csv", tmp_path / "deletion_rules.csv")
     write_csv(
         tmp_path / "deletion_requests.csv",
         "case_id,email,requested_at,reported_status,reported_at,audit_at,request_text",

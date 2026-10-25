@@ -8,17 +8,9 @@ from ghost_audit.domain.snapshot_coverage import coverage_surfaces
 from ghost_audit.infrastructure.parsers.documents import document_observations, parse_document
 from ghost_audit.infrastructure.parsers.image_ocr import image_panels, image_text, panels_from_tsv
 from ghost_audit.infrastructure.parsers.structured import parse_json
-from test_phase5 import ctx, snapshot
-from test_prediction import (
-    EARLY,
-    FUTURE,
-    LATE,
-    absent,
-    dataset,
-    decision,
-    observation,
-)
-from test_prediction import rules as rules
+
+from tests.fixtures.audit_cases import EARLY, FUTURE, LATE, absent, dataset, decision, observation
+from tests.fixtures.evidence_cases import ctx, snapshot
 
 
 def test_new_primary_read_does_not_erase_older_surviving_replica(rules):

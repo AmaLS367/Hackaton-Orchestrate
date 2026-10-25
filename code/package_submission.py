@@ -12,16 +12,20 @@ REPORTS = ("evaluation_report.md", "usage_report.md")
 
 def contents(root: Path) -> dict[str, bytes]:
     files = {name: (root / name).read_bytes() for name in ROOT_FILES}
-    for path in sorted((root / "code").rglob("*")):
-        relative = path.relative_to(root)
-        if any(part.startswith(".") or part == "__pycache__" for part in relative.parts):
-            continue
-        if (
-            path.is_file()
-            and path.suffix in {".py", ".md"}
-            or path == root / "code/requirements.txt"
-        ):
-            files[relative.as_posix()] = path.read_bytes()
+    for directory in (root / "code", root / "docs"):
+        for path in sorted(directory.rglob("*")):
+            relative = path.relative_to(root)
+            if any(part.startswith(".") or part == "__pycache__" for part in relative.parts):
+                continue
+            if not path.is_file() or path.is_symlink() or not path.resolve().is_relative_to(root):
+                continue
+            fixture = relative.is_relative_to("code/tests/fixtures") and path.suffix == ".json"
+            if (
+                path.suffix in {".py", ".md"}
+                or fixture
+                or relative.as_posix() == "code/requirements.txt"
+            ):
+                files[relative.as_posix()] = path.read_bytes()
     # The challenge requires these archive-root paths; source locations stay intact.
     for name in REPORTS:
         files["evaluation/" + name] = (root / "code/evaluation" / name).read_bytes()

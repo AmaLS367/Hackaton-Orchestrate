@@ -194,9 +194,36 @@ def compare(baseline: Path, current: Path) -> list[dict]:
     old = json.loads((baseline / "snapshot.json").read_text(encoding="utf-8"))
     new = json.loads((current / "snapshot.json").read_text(encoding="utf-8"))
     changes = []
-    for field in ("output_sha256", "counts", "steps", "dataset_sha256", "strict", "submission"):
+    for field in ("output_sha256", "counts", "steps", "dataset_sha256"):
         if old[field] != new[field]:
             changes.append({"field": field, "before": old[field], "after": new[field]})
+    for artifact in ("strict", "submission"):
+        before_artifact, after_artifact = old[artifact], new[artifact]
+        if before_artifact["summary"] != after_artifact["summary"]:
+            changes.append(
+                {
+                    "field": artifact + ".summary",
+                    "before": before_artifact["summary"],
+                    "after": after_artifact["summary"],
+                }
+            )
+        for collection in ("cases", "abstentions"):
+            before_records = {
+                record["case_id"]: record for record in before_artifact.get(collection, [])
+            }
+            after_records = {
+                record["case_id"]: record for record in after_artifact.get(collection, [])
+            }
+            for case_id in sorted(before_records.keys() | after_records.keys()):
+                if before_records.get(case_id) != after_records.get(case_id):
+                    changes.append(
+                        {
+                            "field": artifact + "." + collection,
+                            "case_id": case_id,
+                            "before": before_records.get(case_id),
+                            "after": after_records.get(case_id),
+                        }
+                    )
     before = {row["case_id"]: row for row in old["cases"]}
     after = {row["case_id"]: row for row in new["cases"]}
     for case_id in sorted(before.keys() | after.keys()):
@@ -215,7 +242,7 @@ def compare(baseline: Path, current: Path) -> list[dict]:
         "package_help",
         "trace_help",
     }
-    for name in old["commands"].keys() - excluded:
+    for name in sorted(old["commands"].keys() - excluded):
         if old["commands"][name] != new["commands"].get(name):
             changes.append(
                 {
